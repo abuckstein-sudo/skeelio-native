@@ -71,6 +71,7 @@ export default function ChildHomeScreen() {
     // Fetch mastery data
     setIsMasteryLoading(true);
     const masteryData = await getSubjectMastery(id);
+    console.log("[MASTERY_RAW]", JSON.stringify(masteryData, null, 2));
     setMastery(masteryData);
 
     // Convert to MasteryRow[] for whatsNext logic
@@ -79,7 +80,9 @@ export default function ChildHomeScreen() {
       score: data.score / 100, // Convert 0–100 to 0–1
       attempts: data.totalQuestionAttempts,
     }));
+    console.log("[MASTERY_MAPPED]", JSON.stringify(rows, null, 2));
     const step = getWhatsNext(rows);
+    console.log("[whatsnext]", step);
     setNextStep(step);
 
     setIsMasteryLoading(false);
@@ -91,8 +94,12 @@ export default function ChildHomeScreen() {
   };
 
   const handleWhatsNext = () => {
-    if (nextStep) {
+    if (nextStep && child) {
       console.log("[whatsnext]", nextStep);
+      router.push({
+        pathname: "/practice",
+        params: { childId: child.id, topic: nextStep.topic },
+      });
     }
   };
 
