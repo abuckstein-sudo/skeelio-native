@@ -297,6 +297,19 @@ export default function ChildHomeScreen() {
         <Text style={styles.buttonText}>Scan a worksheet</Text>
       </TouchableOpacity>
 
+      {/* TEMP: Test button for division practice */}
+      <TouchableOpacity
+        style={[styles.button, styles.testButton]}
+        onPress={() =>
+          router.push({
+            pathname: "/practice",
+            params: { topic: "division", childId: child.id },
+          })
+        }
+      >
+        <Text style={styles.buttonText}>▶ TEST: Practice Division</Text>
+      </TouchableOpacity>
+
       <TouchableOpacity style={styles.button} onPress={handleBack}>
         <Text style={styles.buttonText}>Back to Who's Learning?</Text>
       </TouchableOpacity>
@@ -456,6 +469,9 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 16,
     fontWeight: "bold",
+  },
+  testButton: {
+    backgroundColor: "#9c27b0",
   },
   errorTitle: {
     fontSize: 24,
