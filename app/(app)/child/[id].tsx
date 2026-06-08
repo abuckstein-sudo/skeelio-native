@@ -88,6 +88,16 @@ export default function ChildHomeScreen() {
     setIsMasteryLoading(false);
   };
 
+  const handleEditSettings = () => {
+    if (child) {
+      console.log("[nav] edit settings:", child.id);
+      router.push({
+        pathname: "/child-settings/[childId]",
+        params: { childId: child.id },
+      });
+    }
+  };
+
   const handleBack = () => {
     console.log("[nav] back to children");
     router.push("/children");
@@ -293,6 +303,10 @@ export default function ChildHomeScreen() {
       {/* Actions */}
       <TouchableOpacity style={styles.button} onPress={handleScanWorksheet}>
         <Text style={styles.buttonText}>Scan a worksheet</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity style={styles.button} onPress={handleEditSettings}>
+        <Text style={styles.buttonText}>Edit {child?.name}'s settings</Text>
       </TouchableOpacity>
 
       <TouchableOpacity style={styles.button} onPress={handleBack}>
