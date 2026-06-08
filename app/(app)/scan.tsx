@@ -226,7 +226,7 @@ export default function ScanScreen() {
       {!isLoading && !result && (
         <View style={styles.buttonContainer}>
           <TouchableOpacity
-            style={styles.button}
+            style={[styles.button, styles.primaryButton]}
             onPress={() => handlePickImage(true)}
             disabled={isLoading}
           >
@@ -234,7 +234,7 @@ export default function ScanScreen() {
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={styles.button}
+            style={[styles.button, styles.primaryButton]}
             onPress={() => handlePickImage(false)}
             disabled={isLoading}
           >
