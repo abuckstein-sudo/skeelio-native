@@ -44,6 +44,7 @@ export default function ChildHomeScreen() {
   const [mastery, setMastery] = useState<Record<string, TopicMastery>>({});
   const [nextStep, setNextStep] = useState<NextStep | null>(null);
   const [todayPracticeCount, setTodayPracticeCount] = useState(0);
+  const [stars, setStars] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [isMasteryLoading, setIsMasteryLoading] = useState(false);
   const [error, setError] = useState("");
@@ -103,6 +104,15 @@ export default function ChildHomeScreen() {
     if (attemptsData) {
       setTodayPracticeCount(attemptsData.length);
     }
+
+    // Fetch rewards (stars)
+    const { data: rewardsData } = await supabase
+      .from("rewards")
+      .select("stars")
+      .eq("child_id", id)
+      .maybeSingle();
+
+    setStars(rewardsData?.stars ?? 0);
 
     setIsLoading(false);
 
@@ -300,9 +310,10 @@ export default function ChildHomeScreen() {
             </View>
           </View>
 
-          {/* Today's Practice */}
+          {/* Today's Practice & Stars */}
           <View style={styles.todayPractice}>
             <Text style={styles.todayPracticeText}>Practiced today: {todayPracticeCount}</Text>
+            <Text style={styles.starsText}>⭐ {stars}</Text>
           </View>
 
           {/* Action Buttons */}
@@ -481,6 +492,12 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "600",
     color: "#333",
+    marginBottom: 4,
+  },
+  starsText: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#ffc107",
   },
   actionButtonsTop: {
     gap: 8,

@@ -41,6 +41,7 @@ export default function ChildHomeScreen() {
   const router = useRouter();
   const { childId } = useLocalSearchParams<{ childId: string }>();
   const [child, setChild] = useState<Child | null>(null);
+  const [stars, setStars] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -71,6 +72,16 @@ export default function ChildHomeScreen() {
 
     console.log("[child-home] child loaded:", childId);
     setChild(data as Child);
+
+    // Fetch rewards (stars)
+    const { data: rewardsData } = await supabase
+      .from("rewards")
+      .select("stars")
+      .eq("child_id", childId)
+      .maybeSingle();
+
+    setStars(rewardsData?.stars ?? 0);
+
     setIsLoading(false);
   };
 
@@ -127,6 +138,7 @@ export default function ChildHomeScreen() {
           </Text>
         )}
         <Text style={styles.greetingText}>Hi {child.name}! Ready to learn?</Text>
+        <Text style={styles.starsText}>⭐ {stars}</Text>
       </View>
 
       {/* Subject Grid */}
@@ -193,6 +205,12 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: "700",
     color: "#1a1a1a",
+    marginBottom: 6,
+  },
+  starsText: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#ffc107",
   },
   subjectsContainer: {
     display: "flex",

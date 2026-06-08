@@ -12,6 +12,7 @@ import {
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { supabase } from "@/lib/supabase";
+import { addStars } from "@/lib/addStars";
 import { useAuth } from "../_layout";
 
 interface Question {
@@ -249,6 +250,11 @@ export default function PracticeScreen() {
           message: isCorrect ? "✓ Correct!" : `✗ Not quite. The answer is ${question.correct_answer}.`,
         });
 
+        // Award stars for correct math answers
+        if (isCorrect && topic === "division") {
+          addStars(childId, 2);
+        }
+
         const newAnswer: Answer = {
           questionIndex: currentQuestionIndex,
           userAnswer: userAnswer.trim(),
@@ -279,6 +285,16 @@ export default function PracticeScreen() {
 
   const handleDone = () => {
     console.log("[practice] session complete, returning to home");
+
+    // Award +5 bonus for math topics if all answers were correct
+    if (topic === "division" && answers.length === questions.length) {
+      const allCorrect = answers.every((a) => a.isCorrect);
+      if (allCorrect) {
+        addStars(childId, 5);
+        console.log("[practice] awarded +5 bonus for perfect session");
+      }
+    }
+
     router.push({
       pathname: "/child/[id]",
       params: { id: childId },

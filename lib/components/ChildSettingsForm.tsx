@@ -241,16 +241,29 @@ export default function ChildSettingsForm({
         return;
       }
 
-      const { error: insertError } = await supabase
+      const { data: insertedData, error: insertError } = await supabase
         .from("children")
         .insert({
           ...updateData,
           parent_id: userId,
-        });
+        })
+        .select();
 
       error = insertError;
-      if (!error) {
+      if (!error && insertedData && insertedData.length > 0) {
+        const newChildId = insertedData[0].id;
         console.log("[child-insert] inserted:", updateData);
+
+        // Create rewards row for new child
+        const { error: rewardsError } = await supabase.from("rewards").insert({
+          child_id: newChildId,
+          stars: 0,
+          streak_days: 0,
+        });
+
+        if (rewardsError) {
+          console.warn("[child-insert] rewards row creation failed:", rewardsError);
+        }
       }
     } else {
       const { error: updateError } = await supabase
