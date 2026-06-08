@@ -7,6 +7,8 @@ import {
   FlatList,
   ActivityIndicator,
   SafeAreaView,
+  Modal,
+  TextInput,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { supabase } from "@/lib/supabase";
@@ -15,6 +17,8 @@ interface Child {
   id: string;
   name: string;
   grade_level: string;
+  pin: string;
+  selected_avatar?: string;
 }
 
 export default function ChildrenScreen() {
@@ -22,6 +26,10 @@ export default function ChildrenScreen() {
   const [children, setChildren] = useState<Child[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
+  const [pinModalVisible, setPinModalVisible] = useState(false);
+  const [selectedChildForPin, setSelectedChildForPin] = useState<Child | null>(null);
+  const [enteredPin, setEnteredPin] = useState("");
+  const [pinError, setPinError] = useState("");
 
   useEffect(() => {
     fetchChildren();
@@ -33,7 +41,7 @@ export default function ChildrenScreen() {
 
     const { data, error: dbError } = await supabase
       .from("children")
-      .select("id, name, grade_level");
+      .select("id, name, grade_level, pin, selected_avatar");
 
     if (dbError) {
       console.log("[nav] children fetch error:", dbError.message);
@@ -47,12 +55,39 @@ export default function ChildrenScreen() {
     setIsLoading(false);
   };
 
-  const handleSelectChild = (childId: string) => {
-    console.log("[nav] child selected:", childId);
-    router.push({
-      pathname: "/child-home/[childId]",
-      params: { childId },
-    });
+  const handleSelectChild = (child: Child) => {
+    console.log("[nav] opening PIN for:", child.id);
+    setSelectedChildForPin(child);
+    setPinModalVisible(true);
+    setEnteredPin("");
+    setPinError("");
+  };
+
+  const handlePinSubmit = () => {
+    if (!selectedChildForPin) return;
+
+    if (enteredPin === selectedChildForPin.pin) {
+      console.log("[nav] PIN correct, navigating to child home");
+      setPinModalVisible(false);
+      setEnteredPin("");
+      setPinError("");
+      router.push({
+        pathname: "/child-home/[childId]",
+        params: { childId: selectedChildForPin.id },
+      });
+    } else {
+      console.log("[nav] PIN incorrect");
+      setPinError("Wrong PIN — try again");
+      setEnteredPin("");
+    }
+  };
+
+  const handlePinCancel = () => {
+    console.log("[nav] PIN cancelled");
+    setPinModalVisible(false);
+    setSelectedChildForPin(null);
+    setEnteredPin("");
+    setPinError("");
   };
 
   const handleParent = (childId: string) => {
@@ -95,7 +130,7 @@ export default function ChildrenScreen() {
           <View style={styles.childRowContainer}>
             <TouchableOpacity
               style={styles.childRow}
-              onPress={() => handleSelectChild(item.id)}
+              onPress={() => handleSelectChild(item)}
             >
               <View>
                 <Text style={styles.childName}>{item.name}</Text>
@@ -116,6 +151,52 @@ export default function ChildrenScreen() {
       <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
         <Text style={styles.logoutButtonText}>Log Out</Text>
       </TouchableOpacity>
+
+      {/* PIN Modal */}
+      <Modal
+        visible={pinModalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={handlePinCancel}
+      >
+        <View style={styles.pinModalOverlay}>
+          <View style={styles.pinModalContainer}>
+            <Text style={styles.pinModalTitle}>
+              {selectedChildForPin?.name}'s PIN
+            </Text>
+
+            <TextInput
+              style={styles.pinInput}
+              placeholder="Enter 4–6 digits"
+              keyboardType="number-pad"
+              secureTextEntry={true}
+              maxLength={6}
+              value={enteredPin}
+              onChangeText={setEnteredPin}
+              editable={!pinError}
+            />
+
+            {pinError && <Text style={styles.pinError}>{pinError}</Text>}
+
+            <View style={styles.pinButtonContainer}>
+              <TouchableOpacity
+                style={[styles.pinButton, styles.pinButtonStart]}
+                onPress={handlePinSubmit}
+                disabled={enteredPin.length < 4}
+              >
+                <Text style={styles.pinButtonText}>Start</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.pinButton, styles.pinButtonCancel]}
+                onPress={handlePinCancel}
+              >
+                <Text style={styles.pinButtonCancelText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -183,5 +264,73 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 16,
     fontWeight: "bold",
+  },
+  pinModalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  pinModalContainer: {
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    padding: 24,
+    width: "80%",
+    maxWidth: 320,
+    alignItems: "center",
+  },
+  pinModalTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#1a1a1a",
+    marginBottom: 20,
+  },
+  pinInput: {
+    borderWidth: 2,
+    borderColor: "#ddd",
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 24,
+    textAlign: "center",
+    letterSpacing: 4,
+    marginBottom: 12,
+    width: "100%",
+  },
+  pinError: {
+    color: "#d32f2f",
+    fontSize: 13,
+    fontWeight: "600",
+    marginBottom: 16,
+  },
+  pinButtonContainer: {
+    flexDirection: "column",
+    gap: 8,
+    width: "100%",
+    marginTop: 12,
+  },
+  pinButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    alignItems: "center",
+  },
+  pinButtonStart: {
+    backgroundColor: "#0000ff",
+  },
+  pinButtonCancel: {
+    backgroundColor: "#f5f5f5",
+    borderWidth: 1,
+    borderColor: "#ddd",
+  },
+  pinButtonText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  pinButtonCancelText: {
+    color: "#666",
+    fontSize: 14,
+    fontWeight: "700",
   },
 });

@@ -7,7 +7,17 @@ interface Child {
   id: string;
   name: string;
   grade_level: string;
+  selected_avatar?: string;
 }
+
+const AVATAR_EMOJI: Record<string, string> = {
+  cat: "🐱",
+  owl: "🦉",
+  fox: "🦊",
+  bear: "🐻",
+  rabbit: "🐰",
+  panda: "🐼",
+};
 
 interface SubjectTile {
   topic: string;
@@ -48,7 +58,7 @@ export default function ChildHomeScreen() {
 
     const { data, error: dbError } = await supabase
       .from("children")
-      .select("id, name, grade_level")
+      .select("id, name, grade_level, selected_avatar")
       .eq("id", childId)
       .single();
 
@@ -111,6 +121,11 @@ export default function ChildHomeScreen() {
 
       {/* Greeting */}
       <View style={styles.greetingBanner}>
+        {child.selected_avatar && (
+          <Text style={styles.avatarEmoji}>
+            {AVATAR_EMOJI[child.selected_avatar] || AVATAR_EMOJI.fox}
+          </Text>
+        )}
         <Text style={styles.greetingText}>Hi {child.name}! Ready to learn?</Text>
       </View>
 
@@ -169,6 +184,10 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: "center",
     marginBottom: 32,
+  },
+  avatarEmoji: {
+    fontSize: 48,
+    marginBottom: 12,
   },
   greetingText: {
     fontSize: 20,
