@@ -21,12 +21,28 @@ interface Question {
   correct_answer: string;
   a: number;
   b: number;
+  dividend?: number;
+  divisor?: number;
 }
 
 interface Answer {
   questionIndex: number;
   userAnswer: string;
   isCorrect: boolean;
+}
+
+interface HintData {
+  hint_1: string;
+  hint_2: string;
+  encouragement: string;
+  parent_note: string;
+  finalQuotient?: number;
+  finalRemainder?: number;
+}
+
+interface TeachingMethod {
+  method_name: string;
+  method_description: string;
 }
 
 function generateQuestion(topic: string, questionIndex: number): Question {
@@ -71,16 +87,19 @@ function generateQuestion(topic: string, questionIndex: number): Question {
       b,
     };
   } else if (topic === "division") {
-    // exact a ÷ b (a = b*q, integer result)
-    const q = Math.floor(Math.random() * 9) + 1;
-    const a = b * q;
+    // multi-digit exact divisions: divisor in 2..9, quotient in 11..50
+    const divisor = Math.floor(Math.random() * 8) + 2; // 2-9
+    const quotient = Math.floor(Math.random() * 40) + 11; // 11-50
+    const dividend = divisor * quotient; // 2-3 digits
     return {
       topic,
-      skill: `÷${b}`,
-      question_text: `${a} ÷ ${b}`,
-      correct_answer: `${q}`,
-      a,
-      b,
+      skill: `÷${divisor}`,
+      question_text: `${dividend} ÷ ${divisor}`,
+      correct_answer: `${quotient}`,
+      a: dividend,
+      b: divisor,
+      dividend,
+      divisor,
     };
   }
 
@@ -107,6 +126,11 @@ export default function PracticeScreen() {
   const [feedback, setFeedback] = useState<{ isCorrect: boolean; message: string } | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [divisionMethod, setDivisionMethod] = useState<TeachingMethod | null>(null);
+  const [hintLevel, setHintLevel] = useState(0); // 0=no hint, 1=hint_1, 2=hint_2
+  const [storedHint, setStoredHint] = useState<HintData | null>(null);
+  const [hintLoading, setHintLoading] = useState(false);
+  const [hintUsedPerQuestion, setHintUsedPerQuestion] = useState<boolean[]>([]);
 
   useEffect(() => {
     if (!topic || !childId || !session?.user?.id) {
@@ -114,20 +138,77 @@ export default function PracticeScreen() {
       return;
     }
 
-    if (topic === "word_problems") {
-      // Word problems not implemented
+    const initializePractice = async () => {
+      if (topic === "word_problems") {
+        // Word problems not implemented
+        setIsLoading(false);
+        return;
+      }
+
+      // Fetch division method if topic is division
+      if (topic === "division") {
+        const { data: method } = await supabase
+          .from("child_teaching_methods")
+          .select("method_name, method_description")
+          .eq("child_id", childId)
+          .eq("subject", "division")
+          .eq("confirmed", true)
+          .maybeSingle();
+
+        if (method) {
+          setDivisionMethod(method as TeachingMethod);
+        }
+      }
+
+      // Generate 8 questions for this session
+      const qs: Question[] = [];
+      for (let i = 0; i < 8; i++) {
+        qs.push(generateQuestion(topic, i));
+      }
+      setQuestions(qs);
+      setHintUsedPerQuestion(new Array(8).fill(false));
       setIsLoading(false);
+    };
+
+    initializePractice();
+  }, [topic, childId, session]);
+
+  const handleRequestHint = async () => {
+    const question = questions[currentQuestionIndex];
+    if (!question.dividend || !question.divisor || hintLevel !== 0) {
       return;
     }
 
-    // Generate 8 questions for this session
-    const qs: Question[] = [];
-    for (let i = 0; i < 8; i++) {
-      qs.push(generateQuestion(topic, i));
+    setHintLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("division-hint", {
+        body: {
+          dividend: question.dividend,
+          divisor: question.divisor,
+          methodName: divisionMethod?.method_name,
+          methodDescription: divisionMethod?.method_description,
+          attempt: 1,
+        },
+      });
+
+      console.log("[hint] error", error, "data", data);
+
+      if (error) {
+        console.error("[hint] error:", error);
+        return;
+      }
+
+      setStoredHint(data as HintData);
+      setHintLevel(1);
+      setHintUsedPerQuestion((prev) => {
+        const updated = [...prev];
+        updated[currentQuestionIndex] = true;
+        return updated;
+      });
+    } finally {
+      setHintLoading(false);
     }
-    setQuestions(qs);
-    setIsLoading(false);
-  }, [topic, childId, session]);
+  };
 
   const handleSubmit = async () => {
     if (!userAnswer.trim() || !session?.user?.id || !childId || !topic) {
@@ -151,6 +232,7 @@ export default function PracticeScreen() {
           correct_answer: question.correct_answer,
           user_answer: userAnswer.trim(),
           was_correct: isCorrect,
+          ai_hint_used: hintUsedPerQuestion[currentQuestionIndex],
         },
       ]);
 
@@ -188,6 +270,8 @@ export default function PracticeScreen() {
   const handleNext = () => {
     setUserAnswer("");
     setFeedback(null);
+    setHintLevel(0);
+    setStoredHint(null);
     if (currentQuestionIndex < questions.length - 1) {
       setCurrentQuestionIndex(currentQuestionIndex + 1);
     }
@@ -277,6 +361,47 @@ export default function PracticeScreen() {
         <View style={styles.questionBox}>
           <Text style={styles.question}>{question.question_text} = ?</Text>
         </View>
+
+        {topic === "division" && (
+          <>
+            {hintLevel === 0 && (
+              <TouchableOpacity
+                style={[styles.hintButton, hintLoading && styles.hintButtonDisabled]}
+                onPress={handleRequestHint}
+                disabled={hintLoading || showingFeedback}
+              >
+                {hintLoading ? (
+                  <ActivityIndicator size="small" color="#666" />
+                ) : (
+                  <Text style={styles.hintButtonText}>Need a hint?</Text>
+                )}
+              </TouchableOpacity>
+            )}
+
+            {hintLevel === 1 && storedHint && (
+              <View style={styles.hintContainer}>
+                <Text style={styles.hintText}>{storedHint.hint_1}</Text>
+                <TouchableOpacity
+                  style={[styles.hintButton, styles.hintButtonSecondary]}
+                  onPress={() => setHintLevel(2)}
+                  disabled={showingFeedback}
+                >
+                  <Text style={styles.hintButtonText}>Still stuck?</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {hintLevel === 2 && storedHint && (
+              <View style={styles.hintContainer}>
+                <Text style={styles.hintLabel}>First step:</Text>
+                <Text style={styles.hintText}>{storedHint.hint_1}</Text>
+                <Text style={styles.hintLabel}>Next:</Text>
+                <Text style={styles.hintText}>{storedHint.hint_2}</Text>
+                <Text style={styles.hintEncouragement}>{storedHint.encouragement}</Text>
+              </View>
+            )}
+          </>
+        )}
 
         <TextInput
           style={styles.input}
@@ -447,5 +572,55 @@ const styles = StyleSheet.create({
     color: "#666",
     textAlign: "center",
     lineHeight: 20,
+  },
+  hintButton: {
+    borderWidth: 2,
+    borderColor: "#ddd",
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    marginBottom: 16,
+    alignItems: "center",
+  },
+  hintButtonDisabled: {
+    opacity: 0.6,
+  },
+  hintButtonSecondary: {
+    borderColor: "#2196f3",
+    marginBottom: 0,
+    marginTop: 12,
+  },
+  hintButtonText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#666",
+  },
+  hintContainer: {
+    backgroundColor: "#fef9f0",
+    borderLeftWidth: 4,
+    borderLeftColor: "#ff9800",
+    padding: 16,
+    borderRadius: 8,
+    marginBottom: 16,
+  },
+  hintLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#ff9800",
+    textTransform: "uppercase",
+    marginBottom: 4,
+    letterSpacing: 0.5,
+  },
+  hintText: {
+    fontSize: 15,
+    color: "#1a1a1a",
+    lineHeight: 22,
+    marginBottom: 12,
+  },
+  hintEncouragement: {
+    fontSize: 14,
+    color: "#ff9800",
+    fontStyle: "italic",
+    marginTop: 8,
   },
 });
