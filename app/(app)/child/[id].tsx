@@ -103,6 +103,15 @@ export default function ChildHomeScreen() {
     }
   };
 
+  const handleScanWorksheet = () => {
+    if (child) {
+      router.push({
+        pathname: "/scan",
+        params: { childId: child.id },
+      });
+    }
+  };
+
   const categorizeMastery = (): CategorizedMastery => {
     const strengths: Array<[string, TopicMastery]> = [];
     const building: Array<[string, TopicMastery]> = [];
@@ -284,6 +293,10 @@ export default function ChildHomeScreen() {
       )}
 
       {/* Actions */}
+      <TouchableOpacity style={styles.button} onPress={handleScanWorksheet}>
+        <Text style={styles.buttonText}>Scan a worksheet</Text>
+      </TouchableOpacity>
+
       <TouchableOpacity style={styles.button} onPress={handleBack}>
         <Text style={styles.buttonText}>Back to Who's Learning?</Text>
       </TouchableOpacity>
