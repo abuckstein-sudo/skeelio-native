@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, ScrollView, SafeAreaView } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { supabase } from "@/lib/supabase";
-import { useAuth } from "../_layout";
+import { useAuth } from "../../_layout";
 import { getSubjectMastery, TopicMastery } from "@/lib/mastery";
 import { getWhatsNext, NextStep } from "@/lib/whatsNext";
 
