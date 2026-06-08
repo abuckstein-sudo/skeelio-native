@@ -282,15 +282,29 @@ export default function ChildSettingsForm({
       {
         text: "Delete",
         onPress: async () => {
-          const { error } = await supabase.from("children").delete().eq("id", childId);
+          console.log("[child-delete] attempting", { childId });
+
+          const { data, error } = await supabase
+            .from("children")
+            .delete()
+            .eq("id", childId)
+            .select();
+
+          console.log("[child-delete] result", { error, deletedCount: data?.length, deleted: data });
 
           if (error) {
-            console.error("[settings-delete] error:", error);
+            console.error("[child-delete] error:", error);
             Alert.alert("Error", `Couldn't delete: ${error.message}`);
             return;
           }
 
-          console.log("[settings-delete] deleted:", childId);
+          if (!data || data.length === 0) {
+            console.error("[child-delete] no rows deleted");
+            Alert.alert("Error", "Child was not found or already deleted");
+            return;
+          }
+
+          console.log("[child-delete] successfully deleted child");
           onDeleted?.();
         },
         style: "destructive",
