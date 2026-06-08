@@ -52,12 +52,14 @@ export default function ChildHomeScreen() {
   const fetchStars = useCallback(async () => {
     if (!id) return;
 
+    console.log("[parent-dashboard] re-fetching stars on focus");
     const { data: rewardsData } = await supabase
       .from("rewards")
       .select("stars")
       .eq("child_id", id)
       .maybeSingle();
 
+    console.log("[parent-dashboard] stars fetched:", rewardsData?.stars ?? 0);
     setStars(rewardsData?.stars ?? 0);
   }, [id]);
 

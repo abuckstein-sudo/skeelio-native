@@ -278,8 +278,8 @@ export default function PracticeScreen() {
     }
   };
 
-  const handleDone = () => {
-    console.log("[practice] session complete, returning to child home");
+  const handleDone = async () => {
+    console.log("[practice] session complete, awarding stars and returning to child home");
 
     // Award stars for math topics
     if (answers.length === questions.length) {
@@ -288,7 +288,8 @@ export default function PracticeScreen() {
       const starsDelta = (correctCount * 2) + (allCorrect ? 5 : 0);
 
       console.log("[practice] awarding stars:", { correctCount, allCorrect, starsDelta });
-      addStars(childId, starsDelta);
+      await addStars(childId, starsDelta);
+      console.log("[practice] stars awarded, navigating to child home");
     }
 
     router.push({
