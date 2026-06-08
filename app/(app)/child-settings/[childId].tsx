@@ -1,17 +1,23 @@
 import { SafeAreaView } from "react-native";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
+import { useAuth } from "../_layout";
 import ChildSettingsForm from "@/lib/components/ChildSettingsForm";
 
 export default function ChildSettingsScreen() {
   const router = useRouter();
-  const { childId } = require("expo-router").useLocalSearchParams<{ childId: string }>();
+  const { session } = useAuth();
+  const { childId, mode } = useLocalSearchParams<{ childId?: string; mode?: string }>();
+
+  const isAddMode = mode === "add";
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: "#fff" }}>
       <ChildSettingsForm
         childId={childId}
+        isAddMode={isAddMode}
+        userId={session?.user?.id}
         onSaved={() => {
-          router.back();
+          router.push("/children");
         }}
         onDeleted={() => {
           router.push("/children");

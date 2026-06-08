@@ -103,20 +103,28 @@ const AVATAR_EMOJI: Record<string, string> = {
 };
 
 interface ChildSettingsFormProps {
-  childId: string;
+  childId?: string;
+  isAddMode?: boolean;
+  userId?: string;
   onSaved?: () => void;
   onDeleted?: () => void;
 }
 
-export default function ChildSettingsForm({ childId, onSaved, onDeleted }: ChildSettingsFormProps) {
-  const [isLoading, setIsLoading] = useState(true);
+export default function ChildSettingsForm({
+  childId,
+  isAddMode = false,
+  userId,
+  onSaved,
+  onDeleted,
+}: ChildSettingsFormProps) {
+  const [isLoading, setIsLoading] = useState(!isAddMode);
   const [isSaving, setIsSaving] = useState(false);
   const [name, setName] = useState("");
   const [birthYear, setBirthYear] = useState("");
   const [birthMonth, setBirthMonth] = useState("");
   const [birthDay, setBirthDay] = useState("");
   const [pin, setPin] = useState("");
-  const [languages, setLanguages] = useState<string[]>([]);
+  const [languages, setLanguages] = useState<string[]>(["English"]);
   const [schoolSystem, setSchoolSystem] = useState("");
   const [gradeLevel, setGradeLevel] = useState("");
   const [schoolGradeLevel, setSchoolGradeLevel] = useState("");
@@ -129,8 +137,10 @@ export default function ChildSettingsForm({ childId, onSaved, onDeleted }: Child
   const [selectedAvatar, setSelectedAvatar] = useState("fox");
 
   useEffect(() => {
-    fetchChild();
-  }, [childId]);
+    if (!isAddMode && childId) {
+      fetchChild();
+    }
+  }, [childId, isAddMode]);
 
   const fetchChild = async () => {
     const { data, error } = await supabase
@@ -212,20 +222,46 @@ export default function ChildSettingsForm({ childId, onSaved, onDeleted }: Child
     if (birthDayInt) updateData.birth_day = birthDayInt;
     if (age) updateData.age = age;
 
-    const { error } = await supabase
-      .from("children")
-      .update(updateData)
-      .eq("id", childId);
+    let error;
+
+    if (isAddMode) {
+      if (!userId) {
+        Alert.alert("Error", "User ID is required");
+        setIsSaving(false);
+        return;
+      }
+
+      const { error: insertError } = await supabase
+        .from("children")
+        .insert({
+          ...updateData,
+          parent_id: userId,
+        });
+
+      error = insertError;
+      if (!error) {
+        console.log("[child-insert] inserted:", updateData);
+      }
+    } else {
+      const { error: updateError } = await supabase
+        .from("children")
+        .update(updateData)
+        .eq("id", childId);
+
+      error = updateError;
+      if (!error) {
+        console.log("[settings-save] saved:", updateData);
+      }
+    }
 
     if (error) {
-      console.error("[settings-save] error:", error);
-      Alert.alert("Error", `Couldn't save settings: ${error.message}`);
+      console.error(isAddMode ? "[child-insert] error" : "[settings-save] error:", error);
+      Alert.alert("Error", `Couldn't save: ${error.message}`);
       setIsSaving(false);
       return;
     }
 
-    console.log("[settings-save] saved:", updateData);
-    Alert.alert("Success", "Settings saved!");
+    Alert.alert("Success", isAddMode ? "Child added!" : "Settings saved!");
     setIsSaving(false);
     onSaved?.();
   };
@@ -264,7 +300,7 @@ export default function ChildSettingsForm({ childId, onSaved, onDeleted }: Child
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
-      <Text style={styles.title}>Edit {name}'s Settings</Text>
+      <Text style={styles.title}>{isAddMode ? "Add a Child" : `Edit ${name}'s Settings`}</Text>
 
       {/* Basic Info */}
       <Text style={styles.sectionTitle}>Basic Information</Text>
@@ -494,16 +530,22 @@ export default function ChildSettingsForm({ childId, onSaved, onDeleted }: Child
         onPress={handleSave}
         disabled={isSaving}
       >
-        {isSaving ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Save Settings</Text>}
+        {isSaving ? (
+          <ActivityIndicator color="#fff" />
+        ) : (
+          <Text style={styles.buttonText}>{isAddMode ? "Add Child" : "Save Settings"}</Text>
+        )}
       </TouchableOpacity>
 
-      {/* Danger Zone */}
-      <View style={styles.dangerZone}>
-        <Text style={styles.dangerZoneTitle}>Danger Zone</Text>
-        <TouchableOpacity style={styles.deleteButton} onPress={handleDelete}>
-          <Text style={styles.deleteButtonText}>Delete {name}</Text>
-        </TouchableOpacity>
-      </View>
+      {/* Danger Zone (only in edit mode) */}
+      {!isAddMode && (
+        <View style={styles.dangerZone}>
+          <Text style={styles.dangerZoneTitle}>Danger Zone</Text>
+          <TouchableOpacity style={styles.deleteButton} onPress={handleDelete}>
+            <Text style={styles.deleteButtonText}>Delete {name}</Text>
+          </TouchableOpacity>
+        </View>
+      )}
     </ScrollView>
   );
 }

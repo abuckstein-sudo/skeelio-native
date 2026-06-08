@@ -146,6 +146,19 @@ export default function ChildrenScreen() {
           </View>
         )}
         scrollEnabled={false}
+        ListFooterComponent={
+          <TouchableOpacity
+            style={styles.addChildButton}
+            onPress={() =>
+              router.push({
+                pathname: "/child-settings/[childId]",
+                params: { mode: "add" },
+              })
+            }
+          >
+            <Text style={styles.addChildButtonText}>+ Add a child</Text>
+          </TouchableOpacity>
+        }
       />
 
       <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
@@ -332,5 +345,21 @@ const styles = StyleSheet.create({
     color: "#666",
     fontSize: 14,
     fontWeight: "700",
+  },
+  addChildButton: {
+    marginTop: 16,
+    paddingVertical: 16,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: "#f0f8ff",
+    borderWidth: 2,
+    borderColor: "#2196f3",
+    borderStyle: "dashed",
+    alignItems: "center",
+  },
+  addChildButtonText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#2196f3",
   },
 });
