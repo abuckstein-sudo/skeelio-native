@@ -6,6 +6,7 @@ import {
   StyleSheet,
   FlatList,
   ActivityIndicator,
+  SafeAreaView,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { supabase } from "@/lib/supabase";
@@ -82,7 +83,7 @@ export default function ChildrenScreen() {
   }
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container}>
       <Text style={styles.title}>Who's Learning?</Text>
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -115,7 +116,7 @@ export default function ChildrenScreen() {
       <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
         <Text style={styles.logoutButtonText}>Log Out</Text>
       </TouchableOpacity>
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -123,7 +124,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     paddingHorizontal: 20,
-    paddingTop: 40,
     backgroundColor: "#fff",
   },
   title: {

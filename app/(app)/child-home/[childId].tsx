@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, FlatList } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, FlatList, SafeAreaView } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { supabase } from "@/lib/supabase";
 
@@ -7,8 +7,6 @@ interface Child {
   id: string;
   name: string;
   grade_level: string;
-  avatar?: string;
-  star_count?: number;
 }
 
 interface SubjectTile {
@@ -50,37 +48,19 @@ export default function ChildHomeScreen() {
 
     const { data, error: dbError } = await supabase
       .from("children")
-      .select("id, name, grade_level, avatar, star_count")
+      .select("id, name, grade_level")
       .eq("id", childId)
       .single();
 
     if (dbError) {
-      if (dbError.code === "PGRST116") {
-        // Columns don't exist, try without them
-        const { data: dataBasic, error: dbErrorBasic } = await supabase
-          .from("children")
-          .select("id, name, grade_level")
-          .eq("id", childId)
-          .single();
-
-        if (dbErrorBasic) {
-          console.log("[child-home] fetch error:", dbErrorBasic.message);
-          setError(dbErrorBasic.message);
-          setIsLoading(false);
-          return;
-        }
-
-        console.log("[child-home] child loaded:", childId);
-        setChild(dataBasic);
-      } else {
-        console.log("[child-home] fetch error:", dbError.message);
-        setError(dbError.message);
-      }
-    } else {
-      console.log("[child-home] child loaded:", childId);
-      setChild(data);
+      console.log("[child-home] fetch error:", dbError.message);
+      setError(dbError.message);
+      setIsLoading(false);
+      return;
     }
 
+    console.log("[child-home] child loaded:", childId);
+    setChild(data as Child);
     setIsLoading(false);
   };
 
@@ -120,24 +100,18 @@ export default function ChildHomeScreen() {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
+    <SafeAreaView style={styles.container}>
+      <ScrollView contentContainerStyle={styles.contentContainer}>
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={handleAllDone}>
           <Text style={styles.allDoneText}>All done</Text>
         </TouchableOpacity>
-        {child.star_count !== undefined && (
-          <View style={styles.starBadge}>
-            <Text style={styles.starCount}>⭐ {child.star_count}</Text>
-          </View>
-        )}
       </View>
 
       {/* Greeting */}
       <View style={styles.greetingBanner}>
-        {child.avatar && <Text style={styles.avatar}>{child.avatar}</Text>}
-        <Text style={styles.greetingText}>Hi {child.name}!</Text>
-        <Text style={styles.greetingSubtext}>Ready to learn?</Text>
+        <Text style={styles.greetingText}>Hi {child.name}! Ready to learn?</Text>
       </View>
 
       {/* Subject Grid */}
@@ -155,7 +129,8 @@ export default function ChildHomeScreen() {
           </TouchableOpacity>
         ))}
       </View>
-    </ScrollView>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
@@ -166,7 +141,7 @@ const styles = StyleSheet.create({
   },
   contentContainer: {
     paddingHorizontal: 16,
-    paddingTop: 16,
+    paddingVertical: 16,
     paddingBottom: 40,
   },
   centerContainer: {
@@ -177,7 +152,7 @@ const styles = StyleSheet.create({
   },
   header: {
     flexDirection: "row",
-    justifyContent: "space-between",
+    justifyContent: "flex-start",
     alignItems: "center",
     marginBottom: 24,
   },
@@ -185,17 +160,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
     color: "#2196f3",
-  },
-  starBadge: {
-    backgroundColor: "#ffd700",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-  },
-  starCount: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#333",
   },
   greetingBanner: {
     backgroundColor: "#f0f8ff",
@@ -206,19 +170,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 32,
   },
-  avatar: {
-    fontSize: 48,
-    marginBottom: 12,
-  },
   greetingText: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: "700",
     color: "#1a1a1a",
-    marginBottom: 4,
-  },
-  greetingSubtext: {
-    fontSize: 16,
-    color: "#666",
   },
   subjectsContainer: {
     display: "flex",
