@@ -5,11 +5,25 @@ const corsHeaders = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-
 
 const SYSTEM = `You are Skeelio, an AI homework tutor for children aged 6-9.
 RULES:
-- Stay strictly on the math problem.
-- Never give the final answer in hint_1.
 - Use warm, encouraging, age-appropriate language. Short sentences.
-- If asked anything off-topic, harmful, medical, violent, adult, or personal, gently say "Let's keep this to math!"
-- Never collect personal info; never ask for location/contact.`;
+- You are GIVEN the exact, already-computed steps. NEVER do your own arithmetic, never change or invent a number. Only phrase the given steps in kid-friendly words.
+- Never reveal the final answer in hint_1.
+- If asked anything off-topic/harmful/personal, gently say "Let's keep this to math!"`;
+
+function longDivisionSteps(dividend: number, divisor: number) {
+  const digits = String(dividend).split("").map(Number);
+  const steps: any[] = [];
+  let remainder = 0, quotient = "";
+  for (let i = 0; i < digits.length; i++) {
+    const current = remainder * 10 + digits[i];
+    const q = Math.floor(current / divisor);
+    const product = q * divisor;
+    remainder = current - product;
+    quotient += String(q);
+    steps.push({ current, quotientDigit: q, product, remainderAfter: remainder, nextDigit: digits[i + 1] ?? null });
+  }
+  return { steps, finalQuotient: parseInt(quotient, 10), finalRemainder: remainder };
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -18,29 +32,34 @@ Deno.serve(async (req) => {
     const { dividend, divisor, methodName, methodDescription, attempt } = await req.json();
     if (dividend == null || divisor == null) return json({ error: "dividend and divisor are required" }, 400);
 
-    const hasMethod = !!(methodName && methodDescription);
-    const methodBlock = hasMethod
-      ? `This child's school teaches division using: ${methodName}.
-Method description: ${methodDescription}
-Coach the child through THIS method, step by step, for ${dividend} ÷ ${divisor}. Use the method's own vocabulary (divide, multiply, subtract, bring down). Do NOT use a different method, dot arrays, or reframe it as sharing or repeated subtraction.`
-      : `Coach the child through ${dividend} ÷ ${divisor} in warm, concrete language.`;
+    const { steps, finalQuotient, finalRemainder } = longDivisionSteps(Number(dividend), Number(divisor));
+    const stepLines = steps.map((s, i) =>
+      `Step ${i + 1}: look at ${s.current}. ${divisor} goes into ${s.current} ${s.quotientDigit} time(s). ${s.quotientDigit} × ${divisor} = ${s.product}. ${s.current} − ${s.product} = ${s.remainderAfter}.` +
+      (s.nextDigit != null ? ` Bring down the ${s.nextDigit} to make ${s.remainderAfter * 10 + s.nextDigit}.` : ``)
+    ).join("\n");
 
-    const user = `A child (age 6-9) is working on ${dividend} ÷ ${divisor}.${attempt ? ` Attempt #${attempt}.` : ""}
+    const methodLine = (methodName && methodDescription)
+      ? `The child's school teaches division as "${methodName}": ${methodDescription} Use this method's vocabulary (divide, multiply, subtract, bring down).`
+      : `Use standard long-division vocabulary (divide, multiply, subtract, bring down).`;
 
-${methodBlock}
+    const user = `A child (age 6-9) is dividing ${dividend} ÷ ${divisor}.${attempt ? ` Attempt #${attempt}.` : ""}
+${methodLine}
 
-Rules:
-- hint_1 must be ONE SHORT SENTENCE (<=18 words) giving the FIRST step. It must NOT state the final answer.
-- hint_2 must be ONE SHORT SENTENCE (<=18 words) giving the NEXT step. It MAY state the final answer.
-- Use the EXACT numbers given. Do not invent or recompute beyond the method's steps.
-- Keep "encouragement" under 12 words and "parent_note" under 20 words.
+Worked steps (already computed — DO NOT recompute or change any number):
+${stepLines}
+Final answer: ${finalQuotient}${finalRemainder ? ` remainder ${finalRemainder}` : ``}.
 
-Return STRICT JSON only (no prose, no markdown), keys: hint_1, hint_2, encouragement, parent_note.`;
+Write two progressive hints using ONLY the numbers above:
+- hint_1: ONE warm sentence (<=18 words) for the FIRST step (how many times the divisor fits into the leading part). Do NOT reveal the final answer.
+- hint_2: ONE warm sentence (<=18 words) for the NEXT action (multiply, subtract, bring down). Mention the final answer only if the division is fully complete.
+Do NOT use dot arrays or reframe as sharing/repeated subtraction.
+
+Return STRICT JSON only, keys: hint_1, hint_2, encouragement, parent_note. encouragement <12 words, parent_note <20 words.`;
 
     const res = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
-      body: JSON.stringify({ model: "gpt-4o-mini", messages: [ { role: "system", content: SYSTEM }, { role: "user", content: user } ] }),
+      body: JSON.stringify({ model: "gpt-4o-mini", messages: [{ role: "system", content: SYSTEM }, { role: "user", content: user }] }),
     });
     if (!res.ok) { const t = await res.text(); console.error("[division-hint] OpenAI error", res.status, t); return json({ error: "OpenAI request failed", status: res.status }, 502); }
 
@@ -49,12 +68,12 @@ Return STRICT JSON only (no prose, no markdown), keys: hint_1, hint_2, encourage
     console.log("[division-hint] RAW:", raw);
     let c = raw.trim();
     if (c.startsWith("```")) { const f = c.lastIndexOf("```"); if (f > 3) c = c.substring(c.indexOf("\n") + 1, f); }
-    const s = c.indexOf("{"), e = c.lastIndexOf("}");
-    if (s !== -1 && e !== -1 && e > s) c = c.substring(s, e + 1);
+    const a = c.indexOf("{"), b = c.lastIndexOf("}");
+    if (a !== -1 && b !== -1 && b > a) c = c.substring(a, b + 1);
     let hint;
     try { hint = JSON.parse(c.trim()); } catch (err) { console.error("[division-hint] parse FAILED", err); return json({ error: "parse failed", raw }, 502); }
-    return json(hint, 200);
+    return json({ ...hint, finalQuotient, finalRemainder }, 200);
   } catch (e) { console.error("[division-hint] error", e); return json({ error: String(e) }, 500); }
 });
 
-function json(body, status) { return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } }); }
+function json(body: unknown, status: number) { return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } }); }
