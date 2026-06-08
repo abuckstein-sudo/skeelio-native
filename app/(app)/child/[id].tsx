@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, ScrollView, SafeAreaView } from "react-native";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "../../_layout";
 import { getSubjectMastery, TopicMastery } from "@/lib/mastery";
@@ -49,11 +49,30 @@ export default function ChildHomeScreen() {
   const [isMasteryLoading, setIsMasteryLoading] = useState(false);
   const [error, setError] = useState("");
 
+  const fetchStars = useCallback(async () => {
+    if (!id) return;
+
+    const { data: rewardsData } = await supabase
+      .from("rewards")
+      .select("stars")
+      .eq("child_id", id)
+      .maybeSingle();
+
+    setStars(rewardsData?.stars ?? 0);
+  }, [id]);
+
   useEffect(() => {
     if (id && session?.user?.id) {
       fetchChild();
     }
   }, [id, session?.user?.id]);
+
+  // Re-fetch stars when screen gains focus
+  useFocusEffect(
+    useCallback(() => {
+      fetchStars();
+    }, [fetchStars])
+  );
 
   const fetchChild = async () => {
     if (!id || !session?.user?.id) return;

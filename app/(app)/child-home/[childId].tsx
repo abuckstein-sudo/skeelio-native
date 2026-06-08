@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, FlatList, SafeAreaView } from "react-native";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
 import { supabase } from "@/lib/supabase";
 
 interface Child {
@@ -45,11 +45,30 @@ export default function ChildHomeScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
 
+  const fetchStars = useCallback(async () => {
+    if (!childId) return;
+
+    const { data: rewardsData } = await supabase
+      .from("rewards")
+      .select("stars")
+      .eq("child_id", childId)
+      .maybeSingle();
+
+    setStars(rewardsData?.stars ?? 0);
+  }, [childId]);
+
   useEffect(() => {
     if (childId) {
       fetchChild();
     }
   }, [childId]);
+
+  // Re-fetch stars when screen gains focus
+  useFocusEffect(
+    useCallback(() => {
+      fetchStars();
+    }, [fetchStars])
+  );
 
   const fetchChild = async () => {
     if (!childId) return;
