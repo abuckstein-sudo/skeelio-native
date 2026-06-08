@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, ScrollView } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, ScrollView, SafeAreaView } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { supabase } from "@/lib/supabase";
+import { useAuth } from "../_layout";
 import { getSubjectMastery, TopicMastery } from "@/lib/mastery";
 import { getWhatsNext, NextStep } from "@/lib/whatsNext";
 
@@ -22,6 +23,11 @@ interface Child {
   grade_level: string;
 }
 
+interface ChildOption {
+  id: string;
+  name: string;
+}
+
 interface CategorizedMastery {
   strengths: Array<[string, TopicMastery]>;
   building: Array<[string, TopicMastery]>;
@@ -31,26 +37,30 @@ interface CategorizedMastery {
 
 export default function ChildHomeScreen() {
   const router = useRouter();
+  const { session } = useAuth();
   const { id } = useLocalSearchParams<{ id: string }>();
   const [child, setChild] = useState<Child | null>(null);
+  const [allChildren, setAllChildren] = useState<ChildOption[]>([]);
   const [mastery, setMastery] = useState<Record<string, TopicMastery>>({});
   const [nextStep, setNextStep] = useState<NextStep | null>(null);
+  const [todayPracticeCount, setTodayPracticeCount] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [isMasteryLoading, setIsMasteryLoading] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    if (id) {
+    if (id && session?.user?.id) {
       fetchChild();
     }
-  }, [id]);
+  }, [id, session?.user?.id]);
 
   const fetchChild = async () => {
-    if (!id) return;
+    if (!id || !session?.user?.id) return;
 
     setIsLoading(true);
     setError("");
 
+    // Fetch current child
     const { data, error: dbError } = await supabase
       .from("children")
       .select("id, name, grade_level")
@@ -66,6 +76,34 @@ export default function ChildHomeScreen() {
 
     console.log("[nav] child loaded:", id);
     setChild(data);
+
+    // Fetch all children for switcher
+    const { data: childrenData } = await supabase
+      .from("children")
+      .select("id, name")
+      .eq("parent_id", session.user.id);
+
+    if (childrenData) {
+      setAllChildren(childrenData);
+    }
+
+    // Fetch today's practice count
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const { data: attemptsData } = await supabase
+      .from("learning_attempts")
+      .select("id", { count: "exact" })
+      .eq("child_id", id)
+      .gte("created_at", today.toISOString())
+      .lt("created_at", tomorrow.toISOString());
+
+    if (attemptsData) {
+      setTodayPracticeCount(attemptsData.length);
+    }
+
     setIsLoading(false);
 
     // Fetch mastery data
@@ -88,14 +126,34 @@ export default function ChildHomeScreen() {
     setIsMasteryLoading(false);
   };
 
+  const handleSwitchChild = (childId: string) => {
+    if (childId !== id) {
+      console.log("[nav] switch to child:", childId);
+      router.push({
+        pathname: "/child/[id]",
+        params: { id: childId },
+      });
+    }
+  };
+
   const handleEditSettings = () => {
     if (child) {
       console.log("[nav] edit settings:", child.id);
       router.push({
         pathname: "/child-settings/[childId]",
-        params: { childId: child.id },
+        params: { childId: child.id, mode: "edit" },
       });
     }
+  };
+
+  const handleSignOut = async () => {
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      console.log("[auth] signout error:", error.message);
+      return;
+    }
+    console.log("[auth] signed out");
+    // Auth state change will trigger redirect to login
   };
 
   const handleBack = () => {
@@ -212,11 +270,56 @@ export default function ChildHomeScreen() {
   const hasData = Object.keys(mastery).length > 0;
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.headerName}>Parent dashboard</Text>
-      </View>
+    <SafeAreaView style={styles.container}>
+      <ScrollView contentContainerStyle={styles.contentContainer}>
+        {/* Top Chrome */}
+        <View style={styles.topChrome}>
+          {/* Child Switcher */}
+          <View style={styles.childSwitcher}>
+            <Text style={styles.childSwitcherLabel}>Child:</Text>
+            <View style={styles.childSwitcherButtons}>
+              {allChildren.map((childOption) => (
+                <TouchableOpacity
+                  key={childOption.id}
+                  style={[
+                    styles.childSwitcherButton,
+                    childOption.id === id && styles.childSwitcherButtonActive,
+                  ]}
+                  onPress={() => handleSwitchChild(childOption.id)}
+                >
+                  <Text
+                    style={[
+                      styles.childSwitcherButtonText,
+                      childOption.id === id && styles.childSwitcherButtonTextActive,
+                    ]}
+                  >
+                    {childOption.name}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+
+          {/* Today's Practice */}
+          <View style={styles.todayPractice}>
+            <Text style={styles.todayPracticeText}>Practiced today: {todayPracticeCount}</Text>
+          </View>
+
+          {/* Action Buttons */}
+          <View style={styles.actionButtonsTop}>
+            <TouchableOpacity style={styles.actionButton} onPress={handleEditSettings}>
+              <Text style={styles.actionButtonText}>Edit {child?.name}'s settings</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.actionButton} onPress={handleSignOut}>
+              <Text style={styles.actionButtonText}>Sign Out</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Header */}
+        <View style={styles.header}>
+          <Text style={styles.headerName}>Parent dashboard</Text>
+        </View>
 
       {hasData && nextStep && (
         <TouchableOpacity style={styles.whatsnextCard} onPress={handleWhatsNext}>
@@ -312,7 +415,8 @@ export default function ChildHomeScreen() {
       <TouchableOpacity style={styles.button} onPress={handleBack}>
         <Text style={styles.buttonText}>Back to Hub</Text>
       </TouchableOpacity>
-    </ScrollView>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
@@ -323,8 +427,75 @@ const styles = StyleSheet.create({
   },
   contentContainer: {
     paddingHorizontal: 20,
-    paddingTop: 24,
+    paddingVertical: 16,
     paddingBottom: 40,
+  },
+  topChrome: {
+    backgroundColor: "#f9f9f9",
+    marginHorizontal: -20,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    marginBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
+  },
+  childSwitcher: {
+    marginBottom: 12,
+  },
+  childSwitcherLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#666",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginBottom: 6,
+  },
+  childSwitcherButtons: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  childSwitcherButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: "#ddd",
+    backgroundColor: "#fff",
+  },
+  childSwitcherButtonActive: {
+    borderColor: "#2196f3",
+    backgroundColor: "#e3f2fd",
+  },
+  childSwitcherButtonText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#666",
+  },
+  childSwitcherButtonTextActive: {
+    color: "#2196f3",
+  },
+  todayPractice: {
+    marginBottom: 12,
+  },
+  todayPracticeText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#333",
+  },
+  actionButtonsTop: {
+    gap: 8,
+  },
+  actionButton: {
+    backgroundColor: "#2196f3",
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    alignItems: "center",
+  },
+  actionButtonText: {
+    color: "#fff",
+    fontSize: 13,
+    fontWeight: "600",
   },
   centerContainer: {
     flex: 1,
