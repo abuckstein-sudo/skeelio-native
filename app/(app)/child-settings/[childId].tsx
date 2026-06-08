@@ -1,6 +1,6 @@
 import { SafeAreaView } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
-import { useAuth } from "../_layout";
+import { useAuth } from "../../_layout";
 import ChildSettingsForm from "@/lib/components/ChildSettingsForm";
 
 export default function ChildSettingsScreen() {
