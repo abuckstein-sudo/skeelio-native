@@ -16,8 +16,10 @@ export default function ScanScreen() {
   const router = useRouter();
   const { childId } = useLocalSearchParams<{ childId: string }>();
   const [isLoading, setIsLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [result, setResult] = useState<ExtractResult | null>(null);
   const [error, setError] = useState("");
+  const [saveSuccess, setSaveSuccess] = useState(false);
 
   const handlePickImage = async (fromCamera: boolean) => {
     setError("");
@@ -71,6 +73,82 @@ export default function ScanScreen() {
     }
   };
 
+  const handleScanAgain = () => {
+    setResult(null);
+    setError("");
+    setSaveSuccess(false);
+  };
+
+  const handleSave = async () => {
+    if (!result || !childId) return;
+
+    setIsSaving(true);
+    setSaveSuccess(false);
+
+    try {
+      const { data: existing, error: selectError } = await supabase
+        .from("child_teaching_methods")
+        .select("id")
+        .eq("child_id", childId)
+        .eq("subject", result.subject)
+        .maybeSingle();
+
+      if (selectError && selectError.code !== "PGRST116") {
+        console.error("[scan] select error:", selectError);
+        Alert.alert("Error", "Couldn't check for existing method");
+        return;
+      }
+
+      if (existing) {
+        const { error: updateError } = await supabase
+          .from("child_teaching_methods")
+          .update({
+            method_name: result.method_name,
+            method_description: result.method_description,
+            example_observed: result.example_observed,
+            confidence: result.confidence,
+            source: "vision",
+            confirmed: true,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", existing.id);
+
+        if (updateError) {
+          console.error("[scan] update error:", updateError);
+          Alert.alert("Error", "Couldn't save the method");
+          return;
+        }
+
+        console.log("[scan] method updated for id:", existing.id);
+      } else {
+        const { error: insertError } = await supabase
+          .from("child_teaching_methods")
+          .insert({
+            child_id: childId,
+            subject: result.subject,
+            method_name: result.method_name,
+            method_description: result.method_description,
+            example_observed: result.example_observed,
+            confidence: result.confidence,
+            source: "vision",
+            confirmed: true,
+          });
+
+        if (insertError) {
+          console.error("[scan] insert error:", insertError);
+          Alert.alert("Error", "Couldn't save the method");
+          return;
+        }
+
+        console.log("[scan] method inserted for child:", childId, "subject:", result.subject);
+      }
+
+      setSaveSuccess(true);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const handleBack = () => {
     router.back();
   };
@@ -95,25 +173,57 @@ export default function ScanScreen() {
       )}
 
       {result && !isLoading && (
-        <View style={styles.resultContainer}>
-          <Text style={styles.resultLabel}>Subject</Text>
-          <Text style={styles.resultValue}>{result.subject}</Text>
+        <>
+          <View style={styles.resultContainer}>
+            <Text style={styles.resultLabel}>Subject</Text>
+            <Text style={styles.resultValue}>{result.subject}</Text>
 
-          <Text style={styles.resultLabel}>Method</Text>
-          <Text style={styles.resultValue}>{result.method_name}</Text>
+            <Text style={styles.resultLabel}>Method</Text>
+            <Text style={styles.resultValue}>{result.method_name}</Text>
 
-          <Text style={styles.resultLabel}>Description</Text>
-          <Text style={styles.resultText}>{result.method_description}</Text>
+            <Text style={styles.resultLabel}>Description</Text>
+            <Text style={styles.resultText}>{result.method_description}</Text>
 
-          <Text style={styles.resultLabel}>Example Observed</Text>
-          <Text style={styles.resultText}>{result.example_observed}</Text>
+            <Text style={styles.resultLabel}>Example Observed</Text>
+            <Text style={styles.resultText}>{result.example_observed}</Text>
 
-          <Text style={styles.resultLabel}>Confidence</Text>
-          <Text style={styles.resultValue}>{(result.confidence * 100).toFixed(0)}%</Text>
-        </View>
+            <Text style={styles.resultLabel}>Confidence</Text>
+            <Text style={styles.resultValue}>{(result.confidence * 100).toFixed(0)}%</Text>
+          </View>
+
+          {saveSuccess && (
+            <View style={styles.successContainer}>
+              <Text style={styles.successText}>✓ Method saved!</Text>
+            </View>
+          )}
+
+          {!saveSuccess && (
+            <View style={styles.actionButtonContainer}>
+              <TouchableOpacity
+                style={[styles.button, styles.primaryButton]}
+                onPress={handleSave}
+                disabled={isSaving}
+              >
+                {isSaving ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.buttonText}>Yes, save this method</Text>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.button, styles.secondaryButton]}
+                onPress={handleScanAgain}
+                disabled={isSaving}
+              >
+                <Text style={[styles.buttonText, styles.secondaryButtonText]}>Scan again</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </>
       )}
 
-      {!isLoading && (
+      {!isLoading && !result && (
         <View style={styles.buttonContainer}>
           <TouchableOpacity
             style={styles.button}
@@ -211,17 +321,44 @@ const styles = StyleSheet.create({
   buttonContainer: {
     marginBottom: 24,
   },
+  actionButtonContainer: {
+    marginBottom: 24,
+  },
   button: {
-    backgroundColor: "#0000ff",
     padding: 16,
     borderRadius: 8,
     alignItems: "center",
     marginBottom: 12,
   },
+  primaryButton: {
+    backgroundColor: "#0000ff",
+  },
+  secondaryButton: {
+    backgroundColor: "#f0f0f0",
+    borderWidth: 1,
+    borderColor: "#ccc",
+  },
   buttonText: {
-    color: "#fff",
     fontSize: 16,
     fontWeight: "bold",
+    color: "#fff",
+  },
+  secondaryButtonText: {
+    color: "#1a1a1a",
+  },
+  successContainer: {
+    backgroundColor: "#e8f5e9",
+    padding: 16,
+    borderRadius: 8,
+    borderLeftWidth: 4,
+    borderLeftColor: "#4caf50",
+    marginBottom: 24,
+  },
+  successText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#2e7d32",
+    textAlign: "center",
   },
   backButton: {
     backgroundColor: "#e0e0e0",
