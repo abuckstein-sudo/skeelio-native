@@ -143,6 +143,11 @@ export default function ChildSettingsForm({
   }, [childId, isAddMode]);
 
   const fetchChild = async () => {
+    if (!childId) {
+      setIsLoading(false);
+      return;
+    }
+
     const { data, error } = await supabase
       .from("children")
       .select("*")
@@ -156,25 +161,30 @@ export default function ChildSettingsForm({
       return;
     }
 
+    if (!data) {
+      setIsLoading(false);
+      return;
+    }
+
     console.log("[settings] child loaded:", childId);
 
-    // Pre-fill form
-    setName(data.name || "");
+    // Pre-fill form from child data (safely handle undefined fields)
+    setName(data.name ?? "");
     setBirthYear(data.birth_year ? String(data.birth_year) : "");
     setBirthMonth(data.birth_month ? String(data.birth_month) : "");
     setBirthDay(data.birth_day ? String(data.birth_day) : "");
-    setPin(data.pin || "");
-    setLanguages(data.languages || ["English"]);
-    setSchoolSystem(data.school_system || "");
-    setGradeLevel(data.grade_level || "");
-    setSchoolGradeLevel(data.school_grade_level || "");
+    setPin(data.pin ?? "");
+    setLanguages(Array.isArray(data.languages) ? data.languages : ["English"]);
+    setSchoolSystem(data.school_system ?? "");
+    setGradeLevel(data.grade_level ?? "");
+    setSchoolGradeLevel(data.school_grade_level ?? "");
     setAdditionLevel(data.max_addition_number ? String(data.max_addition_number) : "not_started");
-    setSubtractionLevel(data.math_subtraction_level || "not_started");
+    setSubtractionLevel(data.math_subtraction_level ?? "not_started");
     setMultiplicationLevel(data.max_times_table ? String(data.max_times_table) : "not_started");
-    setDivisionLevel(data.math_division_level || "not_started");
-    setFocusSubjects(data.focus_subjects || []);
-    setMainGoal(data.child_goal || "");
-    setSelectedAvatar(data.selected_avatar || "fox");
+    setDivisionLevel(data.math_division_level ?? "not_started");
+    setFocusSubjects(Array.isArray(data.focus_subjects) ? data.focus_subjects : []);
+    setMainGoal(data.child_goal ?? "");
+    setSelectedAvatar(data.selected_avatar ?? "fox");
 
     setIsLoading(false);
   };
@@ -296,7 +306,7 @@ export default function ChildSettingsForm({
     );
   }
 
-  const availableGrades = schoolSystem ? GRADES_BY_SYSTEM[schoolSystem] || [] : [];
+  const availableGrades = schoolSystem && GRADES_BY_SYSTEM[schoolSystem] ? GRADES_BY_SYSTEM[schoolSystem] : [];
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
@@ -323,15 +333,15 @@ export default function ChildSettingsForm({
         {["English", "French"].map((lang) => (
           <TouchableOpacity
             key={lang}
-            style={[styles.optionButton, languages.includes(lang) && styles.optionButtonActive]}
+            style={[styles.optionButton, (languages || []).includes(lang) && styles.optionButtonActive]}
             onPress={() =>
               setLanguages((prev) =>
-                prev.includes(lang) ? prev.filter((l) => l !== lang) : [...prev, lang]
+                (prev || []).includes(lang) ? (prev || []).filter((l) => l !== lang) : [...(prev || []), lang]
               )
             }
           >
             <Text
-              style={[styles.optionButtonText, languages.includes(lang) && styles.optionButtonTextActive]}
+              style={[styles.optionButtonText, (languages || []).includes(lang) && styles.optionButtonTextActive]}
             >
               {lang}
             </Text>
@@ -364,7 +374,7 @@ export default function ChildSettingsForm({
 
       <Text style={styles.label}>Grade Level</Text>
       <View style={styles.pickerContainer}>
-        {availableGrades.map((grade) => (
+        {(availableGrades || []).map((grade) => (
           <TouchableOpacity
             key={grade}
             style={[styles.optionButton, gradeLevel === grade && styles.optionButtonActive]}
@@ -475,17 +485,17 @@ export default function ChildSettingsForm({
         {SUBJECTS.map(({ key, label }) => (
           <TouchableOpacity
             key={key}
-            style={[styles.optionButton, focusSubjects.includes(key) && styles.optionButtonActive]}
+            style={[styles.optionButton, (focusSubjects || []).includes(key) && styles.optionButtonActive]}
             onPress={() =>
               setFocusSubjects((prev) =>
-                prev.includes(key) ? prev.filter((s) => s !== key) : [...prev, key]
+                (prev || []).includes(key) ? (prev || []).filter((s) => s !== key) : [...(prev || []), key]
               )
             }
           >
             <Text
               style={[
                 styles.optionButtonText,
-                focusSubjects.includes(key) && styles.optionButtonTextActive,
+                (focusSubjects || []).includes(key) && styles.optionButtonTextActive,
               ]}
             >
               {label}
