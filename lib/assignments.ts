@@ -72,12 +72,19 @@ function questionToCustom(
 
 export async function createMathAssignment(params: {
   childId: string;
-  parentId: string;
   topic: Operation;
   count: number;
   dueDate?: string | null;
 }): Promise<Assignment> {
-  const { childId, parentId, topic, count, dueDate } = params;
+  const { childId, topic, count, dueDate } = params;
+
+  // Get the current authenticated user to ensure parent_id is set correctly
+  const { data: authData, error: authError } = await supabase.auth.getUser();
+  if (authError || !authData?.user?.id) {
+    console.error("[assignments] auth error:", authError);
+    throw new Error("Not authenticated");
+  }
+  const parentId = authData.user.id;
 
   // Fetch child data for tier calculation
   const { data: childData } = await supabase
@@ -129,7 +136,15 @@ export async function createMathAssignment(params: {
     .single();
 
   if (error) {
-    console.error("[assignments] error creating:", error);
+    console.error(
+      "[assignments] error creating:",
+      JSON.stringify({
+        message: error?.message,
+        code: error?.code,
+        details: error?.details,
+        hint: error?.hint,
+      })
+    );
     throw error;
   }
 

@@ -104,7 +104,6 @@ export default function ChildHomeScreen() {
     try {
       await createMathAssignment({
         childId: id,
-        parentId: session.user.id,
         topic: selectedTopic,
         count: questionCount,
         dueDate: dueDate || undefined,
