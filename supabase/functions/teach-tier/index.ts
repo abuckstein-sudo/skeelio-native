@@ -20,10 +20,14 @@ Deno.serve(async (req) => {
     if (!OPENAI_API_KEY) return json({ error: "OPENAI_API_KEY not configured" }, 500);
 
     const body = await req.json();
-    const { operation, tierLabel, example, steps, method, child } = body;
+    const { operation, tierLabel, example, steps, method, strategy, child } = body;
 
     if (!operation || !tierLabel || !example) {
       return json({ error: "operation, tierLabel, and example are required" }, 400);
+    }
+
+    if (!strategy) {
+      return json({ error: "strategy is required" }, 400);
     }
 
     const { a, b, answer, remainder } = example;
@@ -89,15 +93,18 @@ Teach in ${language}.
 - If anything is off-topic, gently redirect to math.`;
 
     // User prompt
-    const user = `Teach the skill: ${tierLabel} (${opName})
+    const user = `Teach this strategy for ${tierLabel} (${opName}):
+"${strategy}"
+
+The child has never done this before. Teach ONLY this given strategy. Use the worked example to ILLUSTRATE it, not to teach a different idea. Do NOT invent your own concept or method.
 
 Worked example (already computed — DO NOT recompute or change any number):
 ${exampleText}${stepsText}${methodLine}${childContext}
 
 Create a teaching introduction and walkthrough:
-1. intro: 1–2 sentences explaining what this skill is (in simple terms)
-2. example_walkthrough: 2–4 short sentences walking through the provided example step by step, using the EXACT given numbers and answer
-3. encouragement: 1 short sentence of encouragement
+1. intro: 1–2 sentences that introduce and explain the given strategy
+2. example_walkthrough: 2–4 short sentences showing how the strategy applies to this example, using the EXACT given numbers and answer
+3. encouragement: 1 short forward-looking nudge like "Ready to try one?" or "Shall we practice?" (NOT praise — the child hasn't practiced yet)
 
 Return STRICT JSON only with keys: intro, example_walkthrough (array of strings), encouragement.
 All text in ${language}.`;

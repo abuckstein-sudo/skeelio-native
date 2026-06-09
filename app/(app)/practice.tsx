@@ -11,11 +11,12 @@ import {
   Platform,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { supabase } from "@/lib/supabase";
 import { addStars } from "@/lib/addStars";
 import { generateQuestion } from "@/lib/tutor/generate";
 import { currentTierAndBand, Attempt } from "@/lib/tutor/ability";
-import { LADDERS, GATE, Operation } from "@/lib/tutorConfig";
+import { LADDERS, GATE, Operation, TEACH_NOTES } from "@/lib/tutorConfig";
 import { computeExampleSteps } from "@/lib/tutor/steps";
 import { useAuth } from "../_layout";
 
@@ -47,6 +48,7 @@ interface TeachData {
 
 export default function PracticeScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { topic, childId } = useLocalSearchParams<{ topic: string; childId: string }>();
   const { session } = useAuth();
 
@@ -184,6 +186,7 @@ export default function PracticeScreen() {
                 },
                 steps,
                 method,
+                strategy: TEACH_NOTES[workingTierId],
                 child: childContext,
               }),
             });
@@ -415,7 +418,7 @@ export default function PracticeScreen() {
   // Show teach screen if we have teach data and it hasn't been acknowledged yet
   if (teachData && !teachAcknowledged) {
     return (
-      <View style={styles.container}>
+      <View style={[styles.container, { paddingTop: insets.top }]}>
         <ScrollView contentContainerStyle={styles.contentContainer}>
           <Text style={styles.title}>Let's Learn!</Text>
 
@@ -431,8 +434,8 @@ export default function PracticeScreen() {
             </View>
           ))}
 
-          <View style={styles.encouragementBox}>
-            <Text style={styles.encouragementText}>{teachData.encouragement}</Text>
+          <View style={styles.nudgeBox}>
+            <Text style={styles.nudgeText}>{teachData.encouragement}</Text>
           </View>
 
           <TouchableOpacity style={styles.button} onPress={handleTeachAcknowledged}>
@@ -740,18 +743,18 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     flex: 1,
   },
-  encouragementBox: {
-    backgroundColor: "#e8f5e9",
+  nudgeBox: {
+    backgroundColor: "#f5f5f5",
     padding: 16,
     borderRadius: 8,
     marginVertical: 24,
     borderLeftWidth: 4,
-    borderLeftColor: "#4caf50",
+    borderLeftColor: "#999",
   },
-  encouragementText: {
+  nudgeText: {
     fontSize: 15,
-    fontWeight: "600",
-    color: "#1a1a1a",
+    fontWeight: "500",
+    color: "#666",
     textAlign: "center",
     lineHeight: 22,
   },
