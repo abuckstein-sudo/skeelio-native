@@ -26,18 +26,14 @@ interface Answer {
   isCorrect: boolean;
 }
 
-interface HintData {
-  hint_1: string;
-  hint_2: string;
-  encouragement: string;
-  parent_note: string;
-  finalQuotient?: number;
-  finalRemainder?: number;
-}
-
 interface TeachingMethod {
   method_name: string;
   method_description: string;
+}
+
+interface PracticeHintResponse {
+  hint: string;
+  reveals_answer: boolean;
 }
 
 interface TeachData {
@@ -62,12 +58,18 @@ export default function PracticeScreen() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
-  // Division-specific state
-  const [divisionMethod, setDivisionMethod] = useState<TeachingMethod | null>(null);
-  const [hintLevel, setHintLevel] = useState(0);
-  const [storedHint, setStoredHint] = useState<HintData | null>(null);
+  // Hint state (all operations)
+  const [currentHintLevel, setCurrentHintLevel] = useState(0);
+  const [currentHint, setCurrentHint] = useState<string>("");
   const [hintLoading, setHintLoading] = useState(false);
   const [hintUsedPerQuestion, setHintUsedPerQuestion] = useState<boolean[]>([]);
+  const [childLanguage, setChildLanguage] = useState<string>("English");
+  const [operationMethods, setOperationMethods] = useState<Record<string, TeachingMethod | null>>({
+    addition: null,
+    subtraction: null,
+    multiplication: null,
+    division: null,
+  });
 
   // Outcome state
   const [sessionComplete, setSessionComplete] = useState(false);
@@ -90,9 +92,13 @@ export default function PracticeScreen() {
         // Fetch child data for starting tier calculation
         const { data: childData } = await supabase
           .from("children")
-          .select("max_addition_number, max_times_table, math_subtraction_level, math_division_level")
+          .select("max_addition_number, max_times_table, math_subtraction_level, math_division_level, preferred_language, languages")
           .eq("id", childId)
           .single();
+
+        // Set child language for hints
+        const language = childData?.preferred_language || childData?.languages?.[0] || "English";
+        setChildLanguage(language);
 
         // Fetch attempt log for this operation
         const { data: attemptData, error: attemptError } = await supabase
@@ -204,20 +210,28 @@ export default function PracticeScreen() {
           }
         }
 
-        // Fetch division method if needed (for hints during practice)
-        if (topic === "division") {
+        // Fetch teaching methods for all operations (for hints during practice)
+        const methods: Record<string, TeachingMethod | null> = {
+          addition: null,
+          subtraction: null,
+          multiplication: null,
+          division: null,
+        };
+
+        for (const op of ["addition", "subtraction", "multiplication", "division"]) {
           const { data: method } = await supabase
             .from("child_teaching_methods")
             .select("method_name, method_description")
             .eq("child_id", childId)
-            .eq("subject", "division")
+            .eq("subject", op)
             .eq("confirmed", true)
             .maybeSingle();
 
           if (method) {
-            setDivisionMethod(method as TeachingMethod);
+            methods[op] = method as TeachingMethod;
           }
         }
+        setOperationMethods(methods);
 
         // Generate set of questions
         const numQuestions = GATE.minAttemptsToAdvance;
@@ -241,29 +255,53 @@ export default function PracticeScreen() {
 
   const handleRequestHint = async () => {
     const question = questions[currentQuestionIndex];
-    if (!question.a || !question.b || hintLevel !== 0 || topic !== "division") {
+    if (!question.a || !question.b || !topic) {
       return;
     }
 
     setHintLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke("division-hint", {
-        body: {
-          dividend: question.a,
-          divisor: question.b,
-          methodName: divisionMethod?.method_name,
-          methodDescription: divisionMethod?.method_description,
-          attempt: 1,
+      const steps = computeExampleSteps(
+        topic as Operation,
+        question.a,
+        question.b,
+        question.remainder
+      );
+
+      const method = operationMethods[topic as Operation]?.method_name;
+
+      const baseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+      const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+      const res = await fetch(`${baseUrl}/functions/v1/practice-hint`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${anonKey}`,
         },
+        body: JSON.stringify({
+          operation: topic,
+          problem: {
+            a: question.a,
+            b: question.b,
+            answer: question.answer,
+            remainder: question.remainder,
+          },
+          steps,
+          hintLevel: currentHintLevel + 1,
+          method,
+          language: childLanguage,
+        }),
       });
 
-      if (error) {
-        console.error("[hint] error:", error);
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error("[hint] error", res.status, errorText);
         return;
       }
 
-      setStoredHint(data as HintData);
-      setHintLevel(1);
+      const hintData = (await res.json()) as PracticeHintResponse;
+      setCurrentHint(hintData.hint);
+      setCurrentHintLevel(currentHintLevel + 1);
       setHintUsedPerQuestion((prev) => {
         const updated = [...prev];
         updated[currentQuestionIndex] = true;
@@ -348,8 +386,8 @@ export default function PracticeScreen() {
   const handleNext = () => {
     setUserAnswer("");
     setFeedback(null);
-    setHintLevel(0);
-    setStoredHint(null);
+    setCurrentHintLevel(0);
+    setCurrentHint("");
     if (currentQuestionIndex < questions.length - 1) {
       setCurrentQuestionIndex(currentQuestionIndex + 1);
     }
@@ -530,45 +568,26 @@ export default function PracticeScreen() {
           </Text>
         </View>
 
-        {topic === "division" && (
-          <>
-            {hintLevel === 0 && (
-              <TouchableOpacity
-                style={[styles.hintButton, hintLoading && styles.hintButtonDisabled]}
-                onPress={handleRequestHint}
-                disabled={hintLoading || showingFeedback}
-              >
-                {hintLoading ? (
-                  <ActivityIndicator size="small" color="#666" />
-                ) : (
-                  <Text style={styles.hintButtonText}>Need a hint?</Text>
-                )}
-              </TouchableOpacity>
-            )}
+        {/* Hint button for all operations */}
+        <TouchableOpacity
+          style={[styles.hintButton, hintLoading && styles.hintButtonDisabled]}
+          onPress={handleRequestHint}
+          disabled={hintLoading || showingFeedback}
+        >
+          {hintLoading ? (
+            <ActivityIndicator size="small" color="#666" />
+          ) : (
+            <Text style={styles.hintButtonText}>
+              {currentHintLevel === 0 ? "Need a hint?" : "Another hint?"}
+            </Text>
+          )}
+        </TouchableOpacity>
 
-            {hintLevel === 1 && storedHint && (
-              <View style={styles.hintContainer}>
-                <Text style={styles.hintText}>{storedHint.hint_1}</Text>
-                <TouchableOpacity
-                  style={[styles.hintButton, styles.hintButtonSecondary]}
-                  onPress={() => setHintLevel(2)}
-                  disabled={showingFeedback}
-                >
-                  <Text style={styles.hintButtonText}>Still stuck?</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-
-            {hintLevel === 2 && storedHint && (
-              <View style={styles.hintContainer}>
-                <Text style={styles.hintLabel}>First step:</Text>
-                <Text style={styles.hintText}>{storedHint.hint_1}</Text>
-                <Text style={styles.hintLabel}>Next:</Text>
-                <Text style={styles.hintText}>{storedHint.hint_2}</Text>
-                <Text style={styles.hintEncouragement}>{storedHint.encouragement}</Text>
-              </View>
-            )}
-          </>
+        {/* Hint display for all operations */}
+        {currentHint && (
+          <View style={styles.hintContainer}>
+            <Text style={styles.hintText}>{currentHint}</Text>
+          </View>
         )}
 
         <TextInput
