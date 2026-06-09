@@ -108,7 +108,7 @@ export default function PracticeScreen() {
         // Fetch attempt log for this operation
         const { data: attemptData, error: attemptError } = await supabase
           .from("learning_attempts")
-          .select("tier, was_correct")
+          .select("tier, was_correct, ai_hint_used")
           .eq("child_id", childId)
           .eq("topic", topic)
           .not("tier", "is", null); // Ignore old data without tier
@@ -117,10 +117,11 @@ export default function PracticeScreen() {
           console.error("[practice] error fetching attempts:", attemptError);
         }
 
-        // Convert to attempt format: [{tierId, correct}]
+        // Convert to attempt format: [{tierId, correct, hintUsed}]
         const attempts: Attempt[] = (attemptData || []).map((row: any) => ({
           tierId: row.tier,
           correct: row.was_correct,
+          hintUsed: row.ai_hint_used || false,
         }));
 
         // Get current tier and band

@@ -23,7 +23,7 @@ export async function getOperationStatus(
     // Fetch attempt log for this operation, filtering out null tiers
     const { data: attemptData } = await supabase
       .from("learning_attempts")
-      .select("tier, was_correct")
+      .select("tier, was_correct, ai_hint_used")
       .eq("child_id", childId)
       .eq("topic", operation)
       .not("tier", "is", null);
@@ -31,6 +31,7 @@ export async function getOperationStatus(
     const attempts: Attempt[] = (attemptData || []).map((row: any) => ({
       tierId: row.tier,
       correct: row.was_correct,
+      hintUsed: row.ai_hint_used || false,
     }));
 
     const hasAttempts = attempts.length > 0;
@@ -53,14 +54,14 @@ export async function getOperationStatus(
 
     if (hasAttempts) {
       const stats = tierStats(attempts);
-      // Find the highest tier index that is solid (8+ attempts, ≥85% accuracy)
+      // Find the highest tier index that is solid (8+ attempts, ≥85% UNAIDED mastery)
       for (let i = ladder.length - 1; i >= 0; i--) {
         const tier = ladder[i];
         const tierStat = stats[tier.id];
         if (
           tierStat &&
           tierStat.attempts >= GATE.minAttemptsToAdvance &&
-          tierStat.accuracy >= GATE.accuracyToAdvance &&
+          tierStat.masteryRate >= GATE.accuracyToAdvance &&
           tierStat.coverageMet
         ) {
           highestSolidTierId = tier.id;

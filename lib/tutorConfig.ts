@@ -55,11 +55,15 @@ export const LADDERS: Record<Operation, Tier[]> = {
 };
 
 // The mastery gate — THIS IS THE PEDAGOGY. Tune these to make it easier/harder.
+// CRITICAL: Mastery is based on UNAIDED correctness only.
+// - An attempt that is correct but used hints (ai_hint_used = true) earns NO mastery credit.
+// - It counts against the rate like a miss: masteryRate = unaided_correct / total_attempts.
+// - This ensures children advance only when they can solve problems independently.
 export const GATE = {
   minAttemptsToAdvance: 8,   // need at least this many attempts at a tier
-  accuracyToAdvance: 0.85,   // and this accuracy, to be "solid" and advance
-  strugglingFloor: 0.60,     // below this at a tier → step down a tier
-  factCoverageRequired: 1.0, // fraction of a fact-tier's facts that must be seen (1.0 = all)
+  accuracyToAdvance: 0.85,   // UNAIDED mastery threshold (correct without hints) to be "solid" and advance
+  strugglingFloor: 0.60,     // below this UNAIDED rate at a tier → step down a tier
+  factCoverageRequired: 1.0, // fraction of a fact-tier's facts that must be seen (1.0 = all; coverage measured by unaided-correct only)
   rangeHardHalfMinAttempts: 2, // for range tiers, min attempts landing in the harder half
 };
 
