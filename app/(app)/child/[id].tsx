@@ -482,50 +482,55 @@ export default function ChildHomeScreen() {
               {assignments.length === 0 ? (
                 <Text style={styles.emptyItemText}>No assignments yet</Text>
               ) : (
-                assignments.map((asn) => (
-                  <View
-                    key={asn.id}
-                    style={[
-                      styles.homeworkRow,
-                      asn.status === "completed" && styles.homeworkRowCompleted,
-                    ]}
-                  >
-                    <View style={styles.homeworkInfo}>
-                      <Text style={styles.homeworkTopic}>
-                        {asn.focus.charAt(0).toUpperCase() + asn.focus.slice(1)}
-                      </Text>
-                      <Text style={styles.homeworkDetails}>
-                        {asn.question_count} questions
-                        {asn.due_date &&
-                          ` • Due: ${new Date(asn.due_date).toLocaleDateString()}`}
-                      </Text>
-                      {asn.status === "completed" && asn.completed_at && (
-                        <Text style={styles.completedDate}>
-                          Completed:{" "}
-                          {new Date(asn.completed_at).toLocaleDateString()}
-                        </Text>
-                      )}
-                    </View>
+                (() => {
+                  const cap = (s?: string | null) =>
+                    s ? s.charAt(0).toUpperCase() + s.slice(1) : "";
+                  return assignments.map((asn) => (
                     <View
+                      key={asn.id}
                       style={[
-                        styles.statusBadge,
-                        asn.status === "completed"
-                          ? styles.statusCompleted
-                          : styles.statusActive,
+                        styles.homeworkRow,
+                        asn.status === "completed" &&
+                          styles.homeworkRowCompleted,
                       ]}
                     >
-                      <Text
+                      <View style={styles.homeworkInfo}>
+                        <Text style={styles.homeworkTopic}>
+                          {cap(asn.focus) || cap(asn.subject) || "Practice"}
+                        </Text>
+                        <Text style={styles.homeworkDetails}>
+                          {asn.question_count} questions
+                          {asn.due_date &&
+                            ` • Due: ${new Date(asn.due_date).toLocaleDateString()}`}
+                        </Text>
+                        {asn.status === "completed" && asn.completed_at && (
+                          <Text style={styles.completedDate}>
+                            Completed:{" "}
+                            {new Date(asn.completed_at).toLocaleDateString()}
+                          </Text>
+                        )}
+                      </View>
+                      <View
                         style={[
-                          styles.statusBadgeText,
-                          asn.status === "completed" &&
-                            styles.statusBadgeTextCompleted,
+                          styles.statusBadge,
+                          asn.status === "completed"
+                            ? styles.statusCompleted
+                            : styles.statusActive,
                         ]}
                       >
-                        {asn.status === "completed" ? "✓" : "→"}
-                      </Text>
+                        <Text
+                          style={[
+                            styles.statusBadgeText,
+                            asn.status === "completed" &&
+                              styles.statusBadgeTextCompleted,
+                          ]}
+                        >
+                          {asn.status === "completed" ? "✓" : "→"}
+                        </Text>
+                      </View>
                     </View>
-                  </View>
-                ))
+                  ));
+                })()
               )}
             </View>
 
