@@ -12,6 +12,9 @@ export type CustomQuestion = {
   topic: string;
   skill?: string;
   tier?: string;
+  operandA?: number;
+  operandB?: number;
+  operator?: string;
 };
 
 export type Assignment = {
@@ -78,6 +81,9 @@ function questionToCustom(
     topic: topic,
     skill,
     tier: generatedQ.tierId,
+    operandA: generatedQ.a,
+    operandB: generatedQ.b,
+    operator: symbol,
   };
 }
 

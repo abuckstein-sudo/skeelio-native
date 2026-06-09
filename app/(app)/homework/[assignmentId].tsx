@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, ActivityIndicator, ScrollView, SafeAreaView } from "react-native";
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, ActivityIndicator, ScrollView, SafeAreaView, KeyboardAvoidingView, Platform } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { supabase } from "@/lib/supabase";
 import { markAssignmentComplete, Assignment, CustomQuestion } from "@/lib/assignments";
@@ -85,6 +85,22 @@ export default function HomeworkScreen() {
     setIsLoading(false);
   };
 
+  // Helper to extract operands from question (with fallback parsing)
+  const getOperands = (question: CustomQuestion): { a: number | undefined; b: number | undefined } => {
+    // First try structured fields
+    if (question.operandA !== undefined && question.operandB !== undefined) {
+      return { a: question.operandA, b: question.operandB };
+    }
+
+    // Fallback: parse from question_text (format: "a op b = ?")
+    const match = question.question_text.match(/^(\d+)\s*[+\−×÷]\s*(\d+)/);
+    if (match) {
+      return { a: parseInt(match[1]), b: parseInt(match[2]) };
+    }
+
+    return { a: undefined, b: undefined };
+  };
+
   const handleRequestHint = async () => {
     if (isQuizMode) return; // No hints in quiz mode
 
@@ -102,19 +118,26 @@ export default function HomeworkScreen() {
     try {
       const topic = assignment.focus as Operation;
       const tierId = question.tier || "";
+      const { a, b } = getOperands(question);
+
+      console.log(
+        "[hw-hint]",
+        JSON.stringify({
+          a,
+          b,
+          op: question.operator,
+          topic,
+          tier: tierId,
+          hasPlan: false,
+        })
+      );
 
       // Check if this is a fact tier
       const isFactTier = FACT_TIERS.has(tierId);
 
-      if (isFactTier) {
+      if (isFactTier && a !== undefined && b !== undefined) {
         // Use deterministic strategy picker based on operation
         let strategy: StrategyPlan | null = null;
-
-        // Parse question_text to extract a and b
-        // Format: "a operation b = ?"
-        const parts = question.question_text.split(/[\+\−×÷]/);
-        const a = parseInt(parts[0].trim());
-        const b = parseInt(parts[1].trim());
 
         if (topic === "addition") {
           strategy = pickAdditionStrategy(a, b);
@@ -126,20 +149,26 @@ export default function HomeworkScreen() {
           strategy = pickDivisionStrategy(a, b);
         }
 
+        console.log(
+          "[hw-hint-strategy]",
+          JSON.stringify({
+            a,
+            b,
+            topic,
+            hasPlan: strategy !== null,
+            planSteps: strategy?.steps?.length || 0,
+          })
+        );
+
         if (strategy) {
           setMulStrategy(strategy);
           setCurrentHintLevel(currentHintLevel + 1);
         }
-      } else {
+      } else if (a !== undefined && b !== undefined) {
         // For procedural tiers, show computed example steps
-        const parts = question.question_text.split(/[\+\−×÷]/);
-        const a = parseInt(parts[0].trim());
-        const b = parseInt(parts[1].trim());
-
         const steps = computeExampleSteps(topic, a, b, undefined);
-        setCurrentHint(
-          `Here's how to solve it:\n${steps.map((s, i) => `${i + 1}. ${s}`).join("\n")}`
-        );
+        console.log("[hw-hint-steps]", JSON.stringify({ a, b, topic, steps: steps.length }));
+        setCurrentHint(`Here's how to solve it:\n${steps.map((s, i) => `${i + 1}. ${s}`).join("\n")}`);
         setCurrentHintLevel(currentHintLevel + 1);
       }
 
@@ -279,82 +308,84 @@ export default function HomeworkScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.contentContainer}>
-        {/* Header */}
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>
-            {assignment.focus ? assignment.focus.charAt(0).toUpperCase() + assignment.focus.slice(1) : "Practice"}{" "}
-            {isQuizMode ? "Quiz" : "Practice"}
-          </Text>
-          <Text style={styles.progressText}>
-            {currentQuestionIndex + 1} of {questions.length}
-          </Text>
-          {isQuizMode && (
-            <Text style={styles.quizModeText}>Quiz mode — no hints available</Text>
-          )}
-        </View>
-
-        {/* Question */}
-        <View style={styles.questionContainer}>
-          <Text style={styles.questionText}>{question.question_text}</Text>
-
-          {/* Strategy View (for fact tiers in practice mode) */}
-          {showingStrategy && mulStrategy && (
-            <View style={styles.strategyContainer}>
-              <StrategyView strategy={mulStrategy} />
-            </View>
-          )}
-
-          {/* Computed steps (for procedural tiers in practice mode) */}
-          {currentHint && !showingStrategy && (
-            <View style={styles.hintBox}>
-              <Text style={styles.hintText}>{currentHint}</Text>
-            </View>
-          )}
-
-          <TextInput
-            style={[styles.answerInput, isAnswered && styles.answerInputDisabled]}
-            placeholder="Your answer"
-            value={userAnswer}
-            onChangeText={setUserAnswer}
-            keyboardType="numeric"
-            editable={!isAnswered}
-          />
-        </View>
-
-        {/* Hint Button (Practice Mode Only) */}
-        {!isQuizMode && !isAnswered && (
-          <TouchableOpacity
-            style={[styles.hintButton, !canShowHint && styles.hintButtonDisabled]}
-            onPress={handleRequestHint}
-            disabled={!canShowHint || hintLoading}
-          >
-            <Text style={styles.hintButtonText}>
-              {hintLoading ? "Loading..." : currentHintLevel === 0 ? "💡 Hint" : "💡 Hint " + currentHintLevel}
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.container}>
+        <ScrollView contentContainerStyle={styles.contentContainer} keyboardShouldPersistTaps="handled">
+          {/* Header */}
+          <View style={styles.header}>
+            <Text style={styles.headerTitle}>
+              {assignment.focus ? assignment.focus.charAt(0).toUpperCase() + assignment.focus.slice(1) : "Practice"}{" "}
+              {isQuizMode ? "Quiz" : "Practice"}
             </Text>
-          </TouchableOpacity>
-        )}
-
-        {/* Feedback */}
-        {feedback && (
-          <View style={[styles.feedbackBox, feedback.isCorrect ? styles.feedbackCorrect : styles.feedbackIncorrect]}>
-            <Text style={styles.feedbackText}>{feedback.message}</Text>
+            <Text style={styles.progressText}>
+              {currentQuestionIndex + 1} of {questions.length}
+            </Text>
+            {isQuizMode && <Text style={styles.quizModeText}>Quiz mode — no hints available</Text>}
           </View>
-        )}
 
-        {/* Buttons */}
-        <View style={styles.buttonContainer}>
-          {!isAnswered ? (
-            <TouchableOpacity style={styles.checkButton} onPress={handleSubmit} disabled={isSubmitting}>
-              <Text style={styles.checkButtonText}>{isSubmitting ? "..." : "Check"}</Text>
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity style={styles.nextButton} onPress={handleNext}>
-              <Text style={styles.nextButtonText}>{isLastQuestion ? "Finish" : "Next"}</Text>
+          {/* Question */}
+          <View style={styles.questionContainer}>
+            <Text style={styles.questionText}>{question.question_text}</Text>
+
+            {/* Strategy View (for fact tiers in practice mode) */}
+            {showingStrategy && mulStrategy && (
+              <View style={styles.strategyContainer}>
+                <StrategyView strategy={mulStrategy} />
+              </View>
+            )}
+
+            {/* Computed steps (for procedural tiers in practice mode) */}
+            {currentHint && !showingStrategy && (
+              <View style={styles.hintBox}>
+                <Text style={styles.hintText}>{currentHint}</Text>
+              </View>
+            )}
+
+            <TextInput
+              style={[styles.answerInput, isAnswered && styles.answerInputDisabled]}
+              placeholder="Your answer"
+              value={userAnswer}
+              onChangeText={setUserAnswer}
+              keyboardType="numeric"
+              editable={!isAnswered}
+            />
+          </View>
+
+          {/* Hint Button (Practice Mode Only) */}
+          {!isQuizMode && !isAnswered && (
+            <TouchableOpacity
+              style={[styles.hintButton, !canShowHint && styles.hintButtonDisabled]}
+              onPress={handleRequestHint}
+              disabled={!canShowHint || hintLoading}
+            >
+              <Text style={styles.hintButtonText}>
+                {hintLoading ? "Loading..." : currentHintLevel === 0 ? "💡 Hint" : "💡 Hint " + currentHintLevel}
+              </Text>
             </TouchableOpacity>
           )}
-        </View>
-      </ScrollView>
+
+          {/* Feedback */}
+          {feedback && (
+            <View
+              style={[styles.feedbackBox, feedback.isCorrect ? styles.feedbackCorrect : styles.feedbackIncorrect]}
+            >
+              <Text style={styles.feedbackText}>{feedback.message}</Text>
+            </View>
+          )}
+
+          {/* Buttons */}
+          <View style={styles.buttonContainer}>
+            {!isAnswered ? (
+              <TouchableOpacity style={styles.checkButton} onPress={handleSubmit} disabled={isSubmitting}>
+                <Text style={styles.checkButtonText}>{isSubmitting ? "..." : "Check"}</Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity style={styles.nextButton} onPress={handleNext}>
+                <Text style={styles.nextButtonText}>{isLastQuestion ? "Finish" : "Next"}</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -411,6 +442,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderLeftWidth: 4,
     borderLeftColor: "#ff9800",
+    minHeight: 100,
   },
   hintBox: {
     marginBottom: 16,
