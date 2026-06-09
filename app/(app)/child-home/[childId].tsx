@@ -4,6 +4,7 @@ import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
 import { supabase } from "@/lib/supabase";
 import { getOperationStatus, OperationStatus } from "@/lib/tutor/status";
 import { Operation } from "@/lib/tutorConfig";
+import { listAssignmentsForChild, Assignment } from "@/lib/assignments";
 
 interface Child {
   id: string;
@@ -47,6 +48,7 @@ export default function ChildHomeScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [operationStatuses, setOperationStatuses] = useState<Record<Operation, OperationStatus>>({});
+  const [pendingAssignments, setPendingAssignments] = useState<Assignment[]>([]);
 
   const fetchStars = useCallback(async () => {
     if (!childId) return;
@@ -62,17 +64,25 @@ export default function ChildHomeScreen() {
     setStars(rewardsData?.stars ?? 0);
   }, [childId]);
 
+  const fetchPendingAssignments = useCallback(async () => {
+    if (!childId) return;
+    const assignments = await listAssignmentsForChild(childId);
+    const pending = assignments.filter((a) => a.status === "pending");
+    setPendingAssignments(pending);
+  }, [childId]);
+
   useEffect(() => {
     if (childId) {
       fetchChild();
     }
   }, [childId]);
 
-  // Re-fetch stars when screen gains focus
+  // Re-fetch stars and assignments when screen gains focus
   useFocusEffect(
     useCallback(() => {
       fetchStars();
-    }, [fetchStars])
+      fetchPendingAssignments();
+    }, [fetchStars, fetchPendingAssignments])
   );
 
   const fetchChild = async () => {
@@ -128,6 +138,14 @@ export default function ChildHomeScreen() {
     }
   };
 
+  const handleHomeworkTap = (assignmentId: string) => {
+    console.log("[child-home] homework assignment selected:", assignmentId);
+    router.push({
+      pathname: "/homework/[assignmentId]",
+      params: { assignmentId, childId },
+    });
+  };
+
   const handleAllDone = () => {
     console.log("[child-home] back to hub");
     router.push("/children");
@@ -173,6 +191,31 @@ export default function ChildHomeScreen() {
         <Text style={styles.greetingText}>Hi {child.name}! Ready to learn?</Text>
         <Text style={styles.starsText}>⭐ {stars}</Text>
       </View>
+
+      {/* Homework Section */}
+      {pendingAssignments.length > 0 && (
+        <View style={styles.homeworkSection}>
+          <Text style={styles.homeworkSectionTitle}>📋 Homework</Text>
+          {pendingAssignments.map((assignment) => (
+            <TouchableOpacity
+              key={assignment.id}
+              style={styles.homeworkCard}
+              onPress={() => handleHomeworkTap(assignment.id)}
+            >
+              <View style={styles.homeworkInfo}>
+                <Text style={styles.homeworkCardTopic}>
+                  {(assignment.focus || assignment.subject || "Practice").charAt(0).toUpperCase() +
+                    (assignment.focus || assignment.subject || "Practice").slice(1)}
+                </Text>
+                <Text style={styles.homeworkCardCount}>
+                  {assignment.question_count} question{assignment.question_count !== 1 ? "s" : ""}
+                </Text>
+              </View>
+              <Text style={styles.playButton}>▶</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
 
       {/* Subject Grid */}
       <View style={styles.subjectsContainer}>
@@ -323,5 +366,47 @@ const styles = StyleSheet.create({
     color: "#d32f2f",
     marginBottom: 20,
     textAlign: "center",
+  },
+  homeworkSection: {
+    backgroundColor: "#fef3e0",
+    borderLeftWidth: 4,
+    borderLeftColor: "#ff9800",
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 24,
+  },
+  homeworkSectionTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#1a1a1a",
+    marginBottom: 12,
+  },
+  homeworkCard: {
+    backgroundColor: "#fff",
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 8,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#ffe0b2",
+  },
+  homeworkInfo: {
+    flex: 1,
+  },
+  homeworkCardTopic: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#1a1a1a",
+    marginBottom: 4,
+  },
+  homeworkCardCount: {
+    fontSize: 12,
+    color: "#666",
+  },
+  playButton: {
+    fontSize: 20,
+    marginLeft: 12,
   },
 });
