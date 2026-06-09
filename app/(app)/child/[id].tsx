@@ -5,6 +5,8 @@ import { supabase } from "@/lib/supabase";
 import { useAuth } from "../../_layout";
 import { getSubjectMastery, TopicMastery } from "@/lib/mastery";
 import { getWhatsNext, NextStep } from "@/lib/whatsNext";
+import { getOperationStatus, OperationStatus } from "@/lib/tutor/status";
+import { Operation } from "@/lib/tutorConfig";
 
 const KNOWN_SUBJECTS = [
   "multiplication",
@@ -42,6 +44,7 @@ export default function ChildHomeScreen() {
   const [child, setChild] = useState<Child | null>(null);
   const [allChildren, setAllChildren] = useState<ChildOption[]>([]);
   const [mastery, setMastery] = useState<Record<string, TopicMastery>>({});
+  const [operationStatuses, setOperationStatuses] = useState<Record<Operation, OperationStatus>>({});
   const [nextStep, setNextStep] = useState<NextStep | null>(null);
   const [todayPracticeCount, setTodayPracticeCount] = useState(0);
   const [stars, setStars] = useState(0);
@@ -142,6 +145,15 @@ export default function ChildHomeScreen() {
     const masteryData = await getSubjectMastery(id);
     console.log("[MASTERY_RAW]", JSON.stringify(masteryData, null, 2));
     setMastery(masteryData);
+
+    // Fetch tier-based operation statuses for math subjects
+    const mathOperations: Operation[] = ["addition", "subtraction", "multiplication", "division"];
+    const statuses: Record<Operation, OperationStatus> = {} as any;
+    for (const op of mathOperations) {
+      const status = await getOperationStatus(id, op, data || {});
+      statuses[op] = status;
+    }
+    setOperationStatuses(statuses);
 
     // Convert to MasteryRow[] for whatsNext logic
     const rows = Object.entries(masteryData).map(([topic, data]) => ({
@@ -362,7 +374,7 @@ export default function ChildHomeScreen() {
         </TouchableOpacity>
       )}
 
-      {!hasData ? (
+      {!hasData && Object.keys(operationStatuses).every((op) => !operationStatuses[op as Operation]?.hasAttempts) ? (
         <View style={styles.emptySection}>
           <Text style={styles.emptyText}>
             No practice data yet. Come back after your first practice session!
@@ -370,16 +382,28 @@ export default function ChildHomeScreen() {
         </View>
       ) : (
         <>
-          {/* Summary */}
-          <Text style={styles.summary}>
-            {child.name} is practicing across {Object.keys(mastery).length} subjects. Here's where things stand.
-          </Text>
+          {/* Math Operations Section */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Math Progress</Text>
+            {(["addition", "subtraction", "multiplication", "division"] as Operation[]).map((op) => {
+              const status = operationStatuses[op];
+              if (!status) return null;
+              return (
+                <View key={op} style={styles.operationRow}>
+                  <View style={styles.operationInfo}>
+                    <Text style={styles.topicName}>{op}</Text>
+                    <Text style={styles.operationStatus}>{status.statusText}</Text>
+                  </View>
+                </View>
+              );
+            })}
+          </View>
 
-          {/* Strengths Section */}
+          {/* Other Subjects Section */}
           {categories.strengths.length > 0 && (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Doing well</Text>
-              {categories.strengths.map(([topic, data]) => (
+              {categories.strengths.filter(([topic]) => !["addition", "subtraction", "multiplication", "division"].includes(topic)).map(([topic, data]) => (
                 <View key={topic} style={styles.strengthRow}>
                   <Text style={styles.topicName}>{topic}</Text>
                   <Text style={styles.strengthScore}>{data.score}%</Text>
@@ -392,7 +416,7 @@ export default function ChildHomeScreen() {
           {categories.building.length > 0 && (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Still building</Text>
-              {categories.building.map(([topic, data]) => (
+              {categories.building.filter(([topic]) => !["addition", "subtraction", "multiplication", "division"].includes(topic)).map(([topic, data]) => (
                 <View key={topic} style={styles.buildingRow}>
                   <View style={styles.buildingInfo}>
                     <Text style={styles.topicName}>{topic}</Text>
@@ -410,13 +434,13 @@ export default function ChildHomeScreen() {
           {(categories.notStarted.length > 0 || categories.neverTried.length > 0) && (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Ready to explore</Text>
-              {categories.neverTried.map((topic) => (
+              {categories.neverTried.filter((topic) => !["addition", "subtraction", "multiplication", "division"].includes(topic)).map((topic) => (
                 <View key={topic} style={styles.notStartedRow}>
                   <Text style={styles.topicName}>{topic}</Text>
                   <Text style={styles.notStartedHint}>Ready when you are</Text>
                 </View>
               ))}
-              {categories.notStarted.map((topic) => (
+              {categories.notStarted.filter((topic) => !["addition", "subtraction", "multiplication", "division"].includes(topic)).map((topic) => (
                 <View key={topic} style={styles.notStartedRow}>
                   <Text style={styles.topicName}>{topic}</Text>
                   <Text style={styles.notStartedHint}>Ready when you are</Text>
@@ -567,6 +591,28 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     textTransform: "uppercase",
     letterSpacing: 0.5,
+  },
+  operationRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    backgroundColor: "#f0f8ff",
+    borderLeftWidth: 4,
+    borderLeftColor: "#2196f3",
+    borderRadius: 6,
+    marginBottom: 10,
+  },
+  operationInfo: {
+    flex: 1,
+  },
+  operationStatus: {
+    fontSize: 13,
+    color: "#666",
+    marginTop: 4,
+    fontStyle: "italic",
+    lineHeight: 18,
   },
   strengthRow: {
     flexDirection: "row",

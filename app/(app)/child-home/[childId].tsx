@@ -2,6 +2,8 @@ import { useEffect, useState, useCallback } from "react";
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, FlatList, SafeAreaView } from "react-native";
 import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
 import { supabase } from "@/lib/supabase";
+import { getOperationStatus, OperationStatus } from "@/lib/tutor/status";
+import { Operation } from "@/lib/tutorConfig";
 
 interface Child {
   id: string;
@@ -44,6 +46,7 @@ export default function ChildHomeScreen() {
   const [stars, setStars] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
+  const [operationStatuses, setOperationStatuses] = useState<Record<Operation, OperationStatus>>({});
 
   const fetchStars = useCallback(async () => {
     if (!childId) return;
@@ -80,7 +83,7 @@ export default function ChildHomeScreen() {
 
     const { data, error: dbError } = await supabase
       .from("children")
-      .select("id, name, grade_level, selected_avatar")
+      .select("id, name, grade_level, selected_avatar, max_addition_number, max_times_table, math_subtraction_level, math_division_level")
       .eq("id", childId)
       .single();
 
@@ -102,6 +105,15 @@ export default function ChildHomeScreen() {
       .maybeSingle();
 
     setStars(rewardsData?.stars ?? 0);
+
+    // Fetch tier-based operation statuses
+    const mathOperations: Operation[] = ["addition", "subtraction", "multiplication", "division"];
+    const statuses: Record<Operation, OperationStatus> = {} as any;
+    for (const op of mathOperations) {
+      const status = await getOperationStatus(childId, op, data || {});
+      statuses[op] = status;
+    }
+    setOperationStatuses(statuses);
 
     setIsLoading(false);
   };
@@ -164,18 +176,26 @@ export default function ChildHomeScreen() {
 
       {/* Subject Grid */}
       <View style={styles.subjectsContainer}>
-        {SUBJECTS.map((subject) => (
-          <TouchableOpacity
-            key={subject.topic}
-            style={[styles.subjectTile, !subject.isActive && styles.subjectTileInactive]}
-            onPress={() => subject.isActive && handleSubjectTap(subject.topic)}
-            disabled={!subject.isActive}
-          >
-            <Text style={styles.subjectLabel}>{subject.label}</Text>
-            <Text style={styles.subjectDescription}>{subject.description}</Text>
-            {!subject.isActive && <Text style={styles.comingSoonLabel}>Coming soon</Text>}
-          </TouchableOpacity>
-        ))}
+        {SUBJECTS.map((subject) => {
+          const isMathSubject = ["addition", "subtraction", "multiplication", "division"].includes(subject.topic);
+          const operationStatus = isMathSubject ? operationStatuses[subject.topic as Operation] : null;
+
+          return (
+            <TouchableOpacity
+              key={subject.topic}
+              style={[styles.subjectTile, !subject.isActive && styles.subjectTileInactive]}
+              onPress={() => subject.isActive && handleSubjectTap(subject.topic)}
+              disabled={!subject.isActive}
+            >
+              <Text style={styles.subjectLabel}>{subject.label}</Text>
+              <Text style={styles.subjectDescription}>{subject.description}</Text>
+              {operationStatus && (
+                <Text style={styles.statusText}>{operationStatus.statusText}</Text>
+              )}
+              {!subject.isActive && <Text style={styles.comingSoonLabel}>Coming soon</Text>}
+            </TouchableOpacity>
+          );
+        })}
       </View>
       </ScrollView>
     </SafeAreaView>
@@ -270,6 +290,14 @@ const styles = StyleSheet.create({
     color: "#999",
     fontStyle: "italic",
     marginTop: 8,
+  },
+  statusText: {
+    fontSize: 11,
+    color: "#2196f3",
+    fontStyle: "italic",
+    marginTop: 8,
+    textAlign: "center",
+    lineHeight: 14,
   },
   button: {
     backgroundColor: "#0000ff",
