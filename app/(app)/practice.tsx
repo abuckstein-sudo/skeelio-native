@@ -195,7 +195,8 @@ export default function PracticeScreen() {
               const teach = (await res.json()) as TeachData;
               setTeachData(teach);
             } else {
-              console.error("[practice] teach-tier error", res.status);
+              const errorData = await res.text();
+              console.error("[practice] teach-tier error", res.status, errorData);
             }
           } catch (err) {
             console.error("[practice] teach error:", err);
