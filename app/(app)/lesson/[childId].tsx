@@ -23,7 +23,7 @@ import {
 } from "@/lib/tutor/strategies";
 import { pickTeachExample } from "@/lib/tutor/generate";
 import { computeExampleSteps } from "@/lib/tutor/steps";
-import { StrategyView } from "@/lib/tutor/visuals/StrategyView";
+import { StrategyView } from "@/lib/tutor/visuals";
 
 const styles = StyleSheet.create({
   container: {

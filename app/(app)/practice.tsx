@@ -25,8 +25,15 @@ import {
   pickDivisionStrategy,
   StrategyPlan,
 } from "@/lib/tutor/strategies";
-import { DotGroups, DotArray, NumberLine, DoublingChain, PartBar, RemoveBar } from "@/lib/tutor/visuals";
-import { StrategyView } from "@/lib/tutor/visuals/StrategyView";
+import {
+  DotGroups,
+  DotArray,
+  NumberLine,
+  DoublingChain,
+  PartBar,
+  RemoveBar,
+  StrategyView,
+} from "@/lib/tutor/visuals";
 import { useAuth } from "../_layout";
 
 interface Answer {

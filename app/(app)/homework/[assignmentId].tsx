@@ -13,7 +13,7 @@ import {
   pickDivisionStrategy,
   StrategyPlan,
 } from "@/lib/tutor/strategies";
-import { StrategyView } from "@/lib/tutor/visuals/StrategyView";
+import { StrategyView } from "@/lib/tutor/visuals";
 
 interface Answer {
   questionIndex: number;
