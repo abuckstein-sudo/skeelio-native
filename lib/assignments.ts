@@ -1,7 +1,7 @@
-import { supabase } from "@/lib/supabase";
-import { generateQuestion, Question } from "@/lib/tutor/generate";
-import { currentTierAndBand } from "@/lib/tutor/ability";
-import { Operation } from "@/lib/tutorConfig";
+import { supabase } from "./supabase";
+import { generateQuestion, Question } from "./tutor/generate";
+import { currentTierAndBand } from "./tutor/ability";
+import { Operation } from "./tutorConfig";
 
 export type CustomQuestion = {
   question_text: string;
