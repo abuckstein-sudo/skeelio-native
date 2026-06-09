@@ -149,8 +149,8 @@ export default function PracticeScreen() {
         // Check attempt count for this tier
         const tierAttempts = attemptData?.filter((a: any) => a.tier === workingTierId) || [];
 
-        // If this is first time at this tier, route to lesson
-        if (tierAttempts.length === 0 && band !== "needs-teach") {
+        // If this is first time at this tier (OR needs-teach), route to lesson
+        if (tierAttempts.length === 0 || band === "needs-teach") {
           router.replace({
             pathname: "/lesson/[childId]",
             params: { childId, tierId: workingTierId, tierLabel: label, operation: topic },
@@ -158,82 +158,7 @@ export default function PracticeScreen() {
           return;
         }
 
-        // If needs-teach, fetch teach content
-        if (band === "needs-teach") {
-          setTeachLoading(true);
-          try {
-            // Generate an illustrative teaching example (not trivial)
-            const exampleQuestion = pickTeachExample(topic as Operation, workingTierId);
-            const steps = computeExampleSteps(
-              topic as Operation,
-              exampleQuestion.a,
-              exampleQuestion.b,
-              exampleQuestion.remainder
-            );
-
-            // Fetch teaching method if applicable
-            let method = null;
-            if (topic === "division") {
-              const { data: methodData } = await supabase
-                .from("child_teaching_methods")
-                .select("method_name, method_description")
-                .eq("child_id", childId)
-                .eq("subject", "division")
-                .eq("confirmed", true)
-                .maybeSingle();
-              if (methodData) {
-                method = methodData.method_name;
-              }
-            }
-
-            // Build child context
-            const childContext = {
-              name: childData?.name,
-              gradeLabel: childData?.grade_level
-                ? `${childData.grade_level}${childData.school_system ? ` (${childData.school_system})` : ""}`
-                : undefined,
-              language: childData?.preferred_language || childData?.languages?.[0] || "English",
-              interests: childData?.child_context?.interests,
-            };
-
-            // Invoke teach-tier function
-            const baseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
-            const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
-            const res = await fetch(`${baseUrl}/functions/v1/teach-tier`, {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${anonKey}`,
-              },
-              body: JSON.stringify({
-                operation: topic,
-                tierLabel: label,
-                example: {
-                  a: exampleQuestion.a,
-                  b: exampleQuestion.b,
-                  answer: exampleQuestion.answer,
-                  remainder: exampleQuestion.remainder,
-                },
-                steps,
-                method,
-                strategy: TEACH_NOTES[workingTierId],
-                child: childContext,
-              }),
-            });
-
-            if (res.ok) {
-              const teach = (await res.json()) as TeachData;
-              setTeachData(teach);
-            } else {
-              const errorData = await res.text();
-              console.error("[practice] teach-tier error", res.status, errorData);
-            }
-          } catch (err) {
-            console.error("[practice] teach error:", err);
-          } finally {
-            setTeachLoading(false);
-          }
-        }
+        // Lesson flow now handles needs-teach (routing happens above before this code)
 
         // Fetch teaching methods for all operations (for hints during practice)
         const methods: Record<string, TeachingMethod | null> = {
@@ -504,36 +429,7 @@ export default function PracticeScreen() {
     }
   };
 
-  // Show teach screen if we have teach data and it hasn't been acknowledged yet
-  if (teachData && !teachAcknowledged) {
-    return (
-      <SafeAreaView style={styles.container} edges={["top"]}>
-        <ScrollView contentContainerStyle={styles.contentContainer}>
-          <Text style={styles.title}>Let's Learn!</Text>
-
-          <View style={styles.introBox}>
-            <Text style={styles.introText}>{teachData.intro}</Text>
-          </View>
-
-          <Text style={styles.stepTitle}>Worked Example:</Text>
-          {teachData.example_walkthrough.map((step, i) => (
-            <View key={i} style={styles.stepBox}>
-              <Text style={styles.stepNumber}>{i + 1}.</Text>
-              <Text style={styles.stepText}>{step}</Text>
-            </View>
-          ))}
-
-          <View style={styles.nudgeBox}>
-            <Text style={styles.nudgeText}>{teachData.encouragement}</Text>
-          </View>
-
-          <TouchableOpacity style={styles.button} onPress={handleTeachAcknowledged}>
-            <Text style={styles.buttonText}>Got it — let's practice!</Text>
-          </TouchableOpacity>
-        </ScrollView>
-      </SafeAreaView>
-    );
-  }
+  // Teach screen removed — now handled by deterministic lesson screen at /lesson/[childId]
 
   if (isLoading || questions.length === 0) {
     return (

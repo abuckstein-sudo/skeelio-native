@@ -176,6 +176,41 @@ export function pickTeachExample(operation: Operation, tierId: string): Question
 
   const { kind } = tier.gen;
 
+  // For addition facts, pick strategy-appropriate examples
+  if (kind === "add") {
+    // A1: count_on (5–9) + (2–4)
+    if (tierId === "A1") {
+      const larger = Math.floor(Math.random() * 5) + 5; // 5-9
+      const smaller = Math.floor(Math.random() * 3) + 2; // 2-4
+      const answer = larger + smaller;
+      return { operation, tierId, a: larger, b: smaller, answer };
+    }
+    // A2: make_ten (sum 11–18)
+    if (tierId === "A2") {
+      let a, b, answer;
+      for (let i = 0; i < 50; i++) {
+        a = Math.floor(Math.random() * 9) + 1; // 1-9
+        b = Math.floor(Math.random() * 9) + 1; // 1-9
+        answer = a + b;
+        if (answer >= 11 && answer <= 18) break;
+      }
+      const larger = Math.max(a!, b!);
+      const smaller = Math.min(a!, b!);
+      return { operation, tierId, a: larger, b: smaller, answer: answer! };
+    }
+  }
+
+  // For subtraction facts, pick strategy-appropriate examples
+  if (kind === "sub") {
+    // S1, S2: minuend ≥ 6, subtrahend 2–4, answer ≥ 1
+    const minuend = Math.floor(Math.random() * 14) + 6; // 6-19
+    const subtrahend = Math.floor(Math.random() * 3) + 2; // 2-4
+    // Ensure result is at least 1
+    const actualSubtrahend = Math.min(subtrahend, minuend - 1);
+    const answer = minuend - actualSubtrahend;
+    return { operation, tierId, a: minuend, b: actualSubtrahend, answer };
+  }
+
   if (kind === "mulFacts") {
     // Pick a non-trivial factor (not 0 or 1)
     const factors = (tier.gen as any).factors.filter((f: number) => f !== 0 && f !== 1);
