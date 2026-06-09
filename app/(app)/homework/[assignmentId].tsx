@@ -118,17 +118,23 @@ export default function HomeworkScreen() {
     try {
       const topic = assignment.focus as Operation;
       const tierId = question.tier || "";
-      const { a, b } = getOperands(question);
+
+      // USE STRUCTURED FIELDS - they are always set by createMathAssignment
+      const a = question.operandA;
+      const b = question.operandB;
+      const op = question.operator;
+
+      let plan: string | null = null;
 
       console.log(
         "[hw-hint]",
         JSON.stringify({
           a,
           b,
-          op: question.operator,
+          op,
           topic,
           tier: tierId,
-          hasPlan: false,
+          hasStructured: a !== undefined && b !== undefined,
         })
       );
 
@@ -150,26 +156,55 @@ export default function HomeworkScreen() {
         }
 
         console.log(
-          "[hw-hint-strategy]",
+          "[hw-hint]",
           JSON.stringify({
             a,
             b,
+            op,
             topic,
-            hasPlan: strategy !== null,
-            planSteps: strategy?.steps?.length || 0,
+            tier: tierId,
+            plan: strategy ? "strategy" : "none",
+            stepCount: strategy?.steps?.length || 0,
           })
         );
 
         if (strategy) {
           setMulStrategy(strategy);
           setCurrentHintLevel(currentHintLevel + 1);
+          plan = "strategy";
         }
       } else if (a !== undefined && b !== undefined) {
         // For procedural tiers, show computed example steps
         const steps = computeExampleSteps(topic, a, b, undefined);
-        console.log("[hw-hint-steps]", JSON.stringify({ a, b, topic, steps: steps.length }));
+
+        console.log(
+          "[hw-hint]",
+          JSON.stringify({
+            a,
+            b,
+            op,
+            topic,
+            tier: tierId,
+            plan: "steps",
+            stepCount: steps.length,
+          })
+        );
+
         setCurrentHint(`Here's how to solve it:\n${steps.map((s, i) => `${i + 1}. ${s}`).join("\n")}`);
         setCurrentHintLevel(currentHintLevel + 1);
+        plan = "steps";
+      } else {
+        console.log(
+          "[hw-hint]",
+          JSON.stringify({
+            a,
+            b,
+            op,
+            topic,
+            tier: tierId,
+            plan: "none - missing operands",
+          })
+        );
       }
 
       setHintUsedPerQuestion((prev) => {
