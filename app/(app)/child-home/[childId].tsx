@@ -190,7 +190,7 @@ export default function ChildHomeScreen() {
               <Text style={styles.subjectLabel}>{subject.label}</Text>
               <Text style={styles.subjectDescription}>{subject.description}</Text>
               {operationStatus && (
-                <Text style={styles.statusText}>{operationStatus.statusText}</Text>
+                <Text style={styles.statusText}>{operationStatus.childHomeText}</Text>
               )}
               {!subject.isActive && <Text style={styles.comingSoonLabel}>Coming soon</Text>}
             </TouchableOpacity>

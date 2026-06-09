@@ -43,8 +43,25 @@ export function currentTierAndBand(
 ): TierAndBand {
   const stats = tierStats(attempts);
   const ladder = LADDERS[operation];
+  const { minAttemptsToAdvance, accuracyToAdvance, strugglingFloor } = GATE;
 
-  // If no attempts, start at the designated tier.
+  // Find the highest tier the child is SOLID at (8+ attempts, ≥85% accuracy, coverage met)
+  let highestSolidTierIndex = -1;
+  for (let i = ladder.length - 1; i >= 0; i--) {
+    const tier = ladder[i];
+    const tierStat = stats[tier.id];
+    if (
+      tierStat &&
+      tierStat.attempts >= minAttemptsToAdvance &&
+      tierStat.accuracy >= accuracyToAdvance &&
+      tierStat.coverageMet
+    ) {
+      highestSolidTierIndex = i;
+      break;
+    }
+  }
+
+  // If no attempts at all, working tier is the starting tier
   if (attempts.length === 0) {
     const startTier = startingTier(operation, child);
     return {
@@ -54,31 +71,64 @@ export function currentTierAndBand(
     };
   }
 
-  // Find the highest tier with attempts.
-  const attemptedTiers = Object.keys(stats).sort(
-    (a, b) => ladder.findIndex((t) => t.id === a) - ladder.findIndex((t) => t.id === b)
-  );
-  const currentTierId = attemptedTiers[attemptedTiers.length - 1];
-  const currentStats = stats[currentTierId];
+  // If no solid tier, find the highest tier with attempts
+  if (highestSolidTierIndex === -1) {
+    // Find highest tier with attempts
+    const attemptedTiers = Object.keys(stats).sort(
+      (a, b) => ladder.findIndex((t) => t.id === a) - ladder.findIndex((t) => t.id === b)
+    );
+    const workingTierId = attemptedTiers[attemptedTiers.length - 1];
+    const workingStats = stats[workingTierId];
 
-  const { minAttemptsToAdvance, accuracyToAdvance, strugglingFloor } = GATE;
+    let band: "solid" | "developing" | "struggling" = "developing";
+    if (workingStats.accuracy < strugglingFloor && workingStats.attempts >= 3) {
+      band = "struggling";
+    }
 
-  let band: "solid" | "developing" | "struggling" = "developing";
+    return {
+      tierId: workingTierId,
+      band,
+      advanceReady: false,
+    };
+  }
+
+  // Working tier is the next tier after the highest solid tier
+  const workingTierIndex = highestSolidTierIndex + 1;
+
+  // If at the end of the ladder, they're done (shouldn't happen often)
+  if (workingTierIndex >= ladder.length) {
+    const lastTierId = ladder[highestSolidTierIndex].id;
+    return {
+      tierId: lastTierId,
+      band: "solid",
+      advanceReady: true,
+    };
+  }
+
+  const workingTierId = ladder[workingTierIndex].id;
+  const workingStats = stats[workingTierId];
+
+  let band: "solid" | "developing" | "struggling" | "needs-teach" = "needs-teach";
   let advanceReady = false;
 
-  if (
-    currentStats.attempts >= minAttemptsToAdvance &&
-    currentStats.accuracy >= accuracyToAdvance &&
-    currentStats.coverageMet
-  ) {
-    band = "solid";
-    advanceReady = true;
-  } else if (currentStats.accuracy < strugglingFloor && currentStats.attempts >= 3) {
-    band = "struggling";
+  if (workingStats) {
+    // Has attempts at the working tier
+    if (
+      workingStats.attempts >= minAttemptsToAdvance &&
+      workingStats.accuracy >= accuracyToAdvance &&
+      workingStats.coverageMet
+    ) {
+      band = "solid";
+      advanceReady = true;
+    } else if (workingStats.accuracy < strugglingFloor && workingStats.attempts >= 3) {
+      band = "struggling";
+    } else {
+      band = "developing";
+    }
   }
 
   return {
-    tierId: currentTierId,
+    tierId: workingTierId,
     band,
     advanceReady,
   };

@@ -138,14 +138,15 @@ for (const [op, tiers] of Object.entries(LADDERS)) {
 
 console.log("\n====== ABILITY & SELECTOR TESTS ======\n");
 
-// Test 1: 8/8 at A1 → solid, ready to advance
-console.log("Test 1: 8/8 correct at A1 → solid, advance ready");
+// Test 1: 8/8 at A1 → solid at A1, so working tier is A2 (needs-teach)
+console.log("Test 1: 8/8 correct at A1 → solid at A1, working on A2");
 const attempts1: Attempt[] = Array(8)
   .fill(null)
   .map(() => ({ tierId: "A1", correct: true }));
 const band1 = currentTierAndBand(attempts1, "addition", {});
-assert(band1.band === "solid", `Band should be solid, got ${band1.band}`);
-assert(band1.advanceReady === true, `Should be ready to advance`);
+assert(band1.tierId === "A2", `Working tier should be A2, got ${band1.tierId}`);
+assert(band1.band === "needs-teach", `Band should be needs-teach, got ${band1.band}`);
+assert(band1.advanceReady === false, `Should not be ready to advance at A2 yet`);
 console.log(`  ✅ ${band1.tierId} band=${band1.band} advanceReady=${band1.advanceReady}`);
 
 // Test 2: 5/8 at A3 → developing, not ready

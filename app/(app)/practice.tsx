@@ -294,7 +294,7 @@ export default function PracticeScreen() {
         correct: row.was_correct,
       }));
 
-      const { band, advanceReady } = currentTierAndBand(
+      const { tierId: nextTierId, band, advanceReady } = currentTierAndBand(
         attempts,
         topic as Operation,
         childData || {}
@@ -303,7 +303,11 @@ export default function PracticeScreen() {
       setOutcomeBand(band);
 
       if (advanceReady) {
-        setOutcomeMessage(`Solid at ${tierLabel} — moving up!`);
+        // Find the next tier's label
+        const ladder = LADDERS[topic as Operation];
+        const nextTierObj = ladder.find((t) => t.id === nextTierId);
+        const nextTierLabel = nextTierObj?.label || nextTierId;
+        setOutcomeMessage(`Solid at ${tierLabel} — moving up to ${nextTierLabel}!`);
       } else if (band === "struggling") {
         setOutcomeMessage(`Let's keep working on ${tierLabel}.`);
       } else {

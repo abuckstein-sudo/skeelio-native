@@ -392,7 +392,7 @@ export default function ChildHomeScreen() {
                 <View key={op} style={styles.operationRow}>
                   <View style={styles.operationInfo}>
                     <Text style={styles.topicName}>{op}</Text>
-                    <Text style={styles.operationStatus}>{status.statusText}</Text>
+                    <Text style={styles.operationStatus}>{status.parentDashboardText}</Text>
                   </View>
                 </View>
               );

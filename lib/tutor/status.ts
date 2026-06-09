@@ -1,16 +1,17 @@
 import { supabase } from "@/lib/supabase";
-import { Operation, LADDERS, startingTier } from "@/lib/tutorConfig";
+import { Operation, LADDERS, GATE, startingTier } from "@/lib/tutorConfig";
 import { currentTierAndBand, tierStats, Attempt } from "./ability";
 
 export interface OperationStatus {
   operation: Operation;
   hasAttempts: boolean;
-  currentTier: string;
-  currentTierLabel: string;
+  workingTierId: string;
+  workingTierLabel: string;
   band: "solid" | "developing" | "struggling" | "needs-teach";
-  highestSolidTier: string | null;
+  highestSolidTierId: string | null;
   highestSolidTierLabel: string | null;
-  statusText: string;
+  parentDashboardText: string;
+  childHomeText: string;
 }
 
 export async function getOperationStatus(
@@ -35,7 +36,7 @@ export async function getOperationStatus(
     const hasAttempts = attempts.length > 0;
 
     // Get ability assessment
-    const { tierId: currentTierId, band } = currentTierAndBand(
+    const { tierId: workingTierId, band } = currentTierAndBand(
       attempts,
       operation,
       child || {}
@@ -43,11 +44,11 @@ export async function getOperationStatus(
 
     // Find tier labels
     const ladder = LADDERS[operation];
-    const currentTierObj = ladder.find((t) => t.id === currentTierId);
-    const currentTierLabel = currentTierObj?.label || currentTierId;
+    const workingTierObj = ladder.find((t) => t.id === workingTierId);
+    const workingTierLabel = workingTierObj?.label || workingTierId;
 
     // Find highest solid tier
-    let highestSolidTier: string | null = null;
+    let highestSolidTierId: string | null = null;
     let highestSolidTierLabel: string | null = null;
 
     if (hasAttempts) {
@@ -58,40 +59,42 @@ export async function getOperationStatus(
         const tierStat = stats[tier.id];
         if (
           tierStat &&
-          tierStat.attempts >= 8 &&
-          tierStat.accuracy >= 0.85 &&
+          tierStat.attempts >= GATE.minAttemptsToAdvance &&
+          tierStat.accuracy >= GATE.accuracyToAdvance &&
           tierStat.coverageMet
         ) {
-          highestSolidTier = tier.id;
+          highestSolidTierId = tier.id;
           highestSolidTierLabel = tier.label;
           break;
         }
       }
     }
 
-    // Build status text
-    let statusText: string;
+    // Build parent dashboard text (fuller info)
+    let parentDashboardText: string;
     if (hasAttempts) {
       const solidText =
-        highestSolidTier && highestSolidTierLabel
+        highestSolidTierId && highestSolidTierLabel
           ? `solid through ${highestSolidTierLabel}`
           : "—";
-      statusText = `Working on ${currentTierLabel} (${band}) — ${solidText}`;
+      parentDashboardText = `Working on ${workingTierLabel} (${band}) — ${solidText}`;
     } else {
-      const startingTierLabel =
-        ladder.find((t) => t.id === currentTierId)?.label || currentTierId;
-      statusText = `Not practiced yet — starting around ${startingTierLabel}`;
+      parentDashboardText = `Not practiced yet — starting around ${workingTierLabel}`;
     }
+
+    // Build child home text (kid-friendly, simpler)
+    const childHomeText = `Up next: ${workingTierLabel}`;
 
     return {
       operation,
       hasAttempts,
-      currentTier: currentTierId,
-      currentTierLabel,
+      workingTierId,
+      workingTierLabel,
       band,
-      highestSolidTier,
+      highestSolidTierId,
       highestSolidTierLabel,
-      statusText,
+      parentDashboardText,
+      childHomeText,
     };
   } catch (error) {
     console.error(`[status] error fetching ${operation}:`, error);
@@ -99,15 +102,17 @@ export async function getOperationStatus(
     const ladder = LADDERS[operation];
     const startingId = startingTier(operation, child || {});
     const startingTierObj = ladder.find((t) => t.id === startingId);
+    const label = startingTierObj?.label || startingId;
     return {
       operation,
       hasAttempts: false,
-      currentTier: startingId,
-      currentTierLabel: startingTierObj?.label || startingId,
+      workingTierId: startingId,
+      workingTierLabel: label,
       band: "needs-teach",
-      highestSolidTier: null,
+      highestSolidTierId: null,
       highestSolidTierLabel: null,
-      statusText: `Not practiced yet — starting around ${startingTierObj?.label || startingId}`,
+      parentDashboardText: `Not practiced yet — starting around ${label}`,
+      childHomeText: `Up next: ${label}`,
     };
   }
 }
