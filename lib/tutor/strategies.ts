@@ -1,7 +1,7 @@
 // Deterministic teaching strategies (no AI). Each picker returns text AND numbers
 // that drive its visual, so text and picture can't diverge.
 
-export type VisualType = "groups" | "array" | "number_line" | "none";
+export type VisualType = "groups" | "array" | "number_line" | "doubling_chain" | "none";
 
 export interface StrategyPlan {
   strategy: string;
@@ -12,7 +12,9 @@ export interface StrategyPlan {
   value: number;
   visual_a: number;
   visual_b: number; // groups: a groups of b dots | array: a×b | number_line: b hops of size a
-  extraGroups?: number; // for ×11/×12: number of groups to highlight in accent color
+  extraGroups?: number; // for ×11/×12, build_from_five: groups to highlight
+  removeGroups?: number; // for ×9 (near_ten): groups to strike-through
+  chainSteps?: number[]; // for doubling (×2,×4,×8): sequence of values to show
 }
 
 export function pickMultiplicationStrategy(
@@ -88,8 +90,8 @@ export function pickMultiplicationStrategy(
       step_1: `to multiply by 10, put a 0 on the end of ${o}`,
       step_2: `so ${o} × 10 = ${product}`,
       value: product,
-      visual_a: 10,
-      visual_b: o,
+      visual_a: o, // step size
+      visual_b: 10, // number of hops
     };
   }
 
@@ -103,8 +105,8 @@ export function pickMultiplicationStrategy(
       step_1: `count by 5s, ${o} times: 5, 10, 15…`,
       step_2: `you land on ${product}`,
       value: product,
-      visual_a: 5,
-      visual_b: o,
+      visual_a: 5, // step size
+      visual_b: o, // number of hops
     };
   }
 
@@ -114,12 +116,13 @@ export function pickMultiplicationStrategy(
     return {
       strategy: "doubling",
       label: "doubling",
-      visual_type: "groups",
+      visual_type: "doubling_chain",
       step_1: `doubling means adding the number to itself: ${o} + ${o}`,
       step_2: `that's ${product}`,
       value: product,
       visual_a: 2,
       visual_b: o,
+      chainSteps: [o, product],
     };
   }
 
@@ -130,12 +133,13 @@ export function pickMultiplicationStrategy(
     return {
       strategy: "double_double",
       label: "double-double",
-      visual_type: "groups",
+      visual_type: "doubling_chain",
       step_1: `double ${o} to get ${once}`,
       step_2: `then double ${once} to get ${product}`,
       value: product,
       visual_a: 4,
       visual_b: o,
+      chainSteps: [o, once, product],
     };
   }
 
@@ -147,12 +151,13 @@ export function pickMultiplicationStrategy(
     return {
       strategy: "repeated_doubling",
       label: "double three times",
-      visual_type: "groups",
+      visual_type: "doubling_chain",
       step_1: `double ${o} to ${once}, then to ${twice}`,
       step_2: `double once more: ${twice} + ${twice} = ${product}`,
       value: product,
       visual_a: 8,
       visual_b: o,
+      chainSteps: [o, once, twice, product],
     };
   }
 
@@ -181,8 +186,9 @@ export function pickMultiplicationStrategy(
       step_1: `start with ${o} × 10 = ${tenPart}`,
       step_2: `take away one group of ${o}: ${tenPart} − ${o} = ${product}`,
       value: product,
-      visual_a: 9,
+      visual_a: 10, // show 10 groups
       visual_b: o,
+      removeGroups: 1, // last 1 group struck-through
     };
   }
 
@@ -202,5 +208,6 @@ export function pickMultiplicationStrategy(
     value: product,
     visual_a: mult,
     visual_b: anchor,
+    extraGroups: extra, // last 'extra' groups highlighted
   };
 }

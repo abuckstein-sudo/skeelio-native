@@ -19,7 +19,7 @@ import { currentTierAndBand, Attempt } from "@/lib/tutor/ability";
 import { LADDERS, GATE, Operation, TEACH_NOTES } from "@/lib/tutorConfig";
 import { computeExampleSteps } from "@/lib/tutor/steps";
 import { pickMultiplicationStrategy, StrategyPlan } from "@/lib/tutor/strategies";
-import { DotGroups, DotArray, NumberLine } from "@/lib/tutor/visuals";
+import { DotGroups, DotArray, NumberLine, DoublingChain } from "@/lib/tutor/visuals";
 import { useAuth } from "../_layout";
 
 interface Answer {
@@ -627,6 +627,7 @@ export default function PracticeScreen() {
                       groups={mulStrategy.visual_a}
                       dotsPerGroup={mulStrategy.visual_b}
                       extraGroups={mulStrategy.extraGroups}
+                      removeGroups={mulStrategy.removeGroups}
                     />
                   </View>
                 )}
@@ -638,6 +639,11 @@ export default function PracticeScreen() {
                 {mulStrategy.visual_type === "number_line" && (
                   <View style={styles.visual}>
                     <NumberLine step={mulStrategy.visual_a} hops={mulStrategy.visual_b} />
+                  </View>
+                )}
+                {mulStrategy.visual_type === "doubling_chain" && mulStrategy.chainSteps && (
+                  <View style={styles.visual}>
+                    <DoublingChain steps={mulStrategy.chainSteps} />
                   </View>
                 )}
                 {currentHintLevel >= 2 && (

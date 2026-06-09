@@ -28,6 +28,9 @@ const styles = StyleSheet.create({
   groupAccent: {
     borderColor: "#FF9800",
   },
+  groupRemoved: {
+    opacity: 0.4,
+  },
   dot: {
     width: 8,
     height: 8,
@@ -36,6 +39,9 @@ const styles = StyleSheet.create({
   },
   dotAccent: {
     backgroundColor: "#FF9800",
+  },
+  dotRemoved: {
+    backgroundColor: "#ccc",
   },
   dotRow: {
     flexDirection: "row",
@@ -63,6 +69,40 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#4CAF50",
     borderRadius: 2,
+  },
+  chainContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+  },
+  chainStep: {
+    alignItems: "center",
+    gap: 4,
+    minWidth: 50,
+    flexShrink: 0,
+  },
+  chainDots: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 2,
+    width: 40,
+    height: 40,
+    alignContent: "flex-start",
+  },
+  chainDot: {
+    backgroundColor: "#4CAF50",
+  },
+  chainLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#1a1a1a",
+  },
+  chainArrow: {
+    fontSize: 16,
+    color: "#999",
+    marginHorizontal: 2,
   },
   numberLineContainer: {
     maxHeight: screenHeight * 0.25,
@@ -120,9 +160,10 @@ export interface DotGroupsProps {
   groups: number;
   dotsPerGroup: number;
   extraGroups?: number; // number of groups (from the end) to highlight in accent color
+  removeGroups?: number; // number of groups (from the end) to strike-through/fade
 }
 
-export function DotGroups({ groups, dotsPerGroup, extraGroups = 0 }: DotGroupsProps) {
+export function DotGroups({ groups, dotsPerGroup, extraGroups = 0, removeGroups = 0 }: DotGroupsProps) {
   const groupsArray = Array.from({ length: groups });
   const dotsPerRow = 5;
 
@@ -136,13 +177,22 @@ export function DotGroups({ groups, dotsPerGroup, extraGroups = 0 }: DotGroupsPr
         {groupsArray.map((_, groupIndex) => {
           // Determine if this group is in the "extra" set (accent color)
           const isExtra = extraGroups > 0 && groupIndex >= groups - extraGroups;
+          // Determine if this group should be removed/faded
+          const isRemoved = removeGroups > 0 && groupIndex >= groups - removeGroups;
 
           // Arrange dots in a grid within each group (max 5 per row)
           const dotRows = Math.ceil(dotsPerGroup / dotsPerRow);
           const dotRows_Array = Array.from({ length: dotRows });
 
           return (
-            <View key={groupIndex} style={[styles.group, isExtra && styles.groupAccent]}>
+            <View
+              key={groupIndex}
+              style={[
+                styles.group,
+                isExtra && styles.groupAccent,
+                isRemoved && styles.groupRemoved,
+              ]}
+            >
               {dotRows_Array.map((_, rowIndex) => {
                 const startIdx = rowIndex * dotsPerRow;
                 const endIdx = Math.min(startIdx + dotsPerRow, dotsPerGroup);
@@ -153,7 +203,11 @@ export function DotGroups({ groups, dotsPerGroup, extraGroups = 0 }: DotGroupsPr
                     {Array.from({ length: dotsInRow }).map((_, dotIndex) => (
                       <View
                         key={dotIndex}
-                        style={[styles.dot, isExtra && styles.dotAccent]}
+                        style={[
+                          styles.dot,
+                          isExtra && styles.dotAccent,
+                          isRemoved && styles.dotRemoved,
+                        ]}
                       />
                     ))}
                   </View>
@@ -185,6 +239,50 @@ export function DotArray({ rows, cols }: DotArrayProps) {
             {Array.from({ length: cols }).map((_, colIndex) => (
               <View key={colIndex} style={styles.arraySquare} />
             ))}
+          </View>
+        ))}
+      </View>
+    </ScrollView>
+  );
+}
+
+export interface DoublingChainProps {
+  steps: number[]; // e.g. [7, 14, 28, 56]
+}
+
+export function DoublingChain({ steps }: DoublingChainProps) {
+  const maxDots = Math.max(...steps, 12);
+  const scale = Math.max(1, Math.floor(maxDots / 10));
+  const dotSize = scale > 1 ? 4 : 6;
+
+  return (
+    <ScrollView
+      style={styles.numberLineContainer}
+      horizontal
+      scrollEnabled={steps.length > 4}
+      contentContainerStyle={{ flexGrow: 1 }}
+    >
+      <View style={styles.chainContainer}>
+        {steps.map((value, i) => (
+          <View key={i} style={styles.chainStep}>
+            {/* Compact dot grid showing the value */}
+            <View style={styles.chainDots}>
+              {Array.from({ length: Math.min(value, 16) }).map((_, dotIdx) => (
+                <View
+                  key={dotIdx}
+                  style={[
+                    styles.chainDot,
+                    { width: dotSize, height: dotSize, borderRadius: dotSize / 2 },
+                  ]}
+                />
+              ))}
+            </View>
+            {/* Value label */}
+            <Text style={styles.chainLabel}>{value}</Text>
+            {/* Arrow (except on last step) */}
+            {i < steps.length - 1 && (
+              <Text style={styles.chainArrow}>→</Text>
+            )}
           </View>
         ))}
       </View>
