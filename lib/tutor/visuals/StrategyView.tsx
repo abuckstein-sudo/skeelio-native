@@ -1,7 +1,8 @@
 import React from "react";
 import { View, Text, StyleSheet } from "react-native";
 import { StrategyPlan } from "../strategies";
-import { DotGroups, DotArray, NumberLine, DoublingChain, PartBar, RemoveBar } from "../visuals";
+// Import from parent visuals.tsx directly (not the ambiguous "../visuals" which could be .tsx or /index.ts)
+import { DotGroups, DotArray, NumberLine, DoublingChain, PartBar, RemoveBar } from "../visuals.tsx";
 
 export interface StrategyViewProps {
   plan: StrategyPlan;
@@ -41,13 +42,6 @@ const styles = StyleSheet.create({
 });
 
 export function StrategyView({ plan, showStep2 = false }: StrategyViewProps) {
-  // Diagnostic: log if a component is undefined
-  if (!PartBar) console.warn("[StrategyView] PartBar is undefined");
-  if (!RemoveBar) console.warn("[StrategyView] RemoveBar is undefined");
-  if (!DotGroups) console.warn("[StrategyView] DotGroups is undefined");
-  if (!DotArray) console.warn("[StrategyView] DotArray is undefined");
-  if (!NumberLine) console.warn("[StrategyView] NumberLine is undefined");
-  if (!DoublingChain) console.warn("[StrategyView] DoublingChain is undefined");
 
   return (
     <View style={styles.container}>
@@ -55,17 +49,17 @@ export function StrategyView({ plan, showStep2 = false }: StrategyViewProps) {
       <Text style={styles.stepText}>{plan.step_1}</Text>
 
       {/* Render the appropriate visual based on visual_type */}
-      {plan.visual_type === "parts" && plan.partA != null && plan.partB != null && PartBar && (
+      {plan.visual_type === "parts" && plan.partA != null && plan.partB != null && (
         <View style={styles.visual}>
           <PartBar partA={plan.partA} partB={plan.partB} />
         </View>
       )}
-      {plan.visual_type === "remove" && plan.total != null && plan.removeCount != null && RemoveBar && (
+      {plan.visual_type === "remove" && plan.total != null && plan.removeCount != null && (
         <View style={styles.visual}>
           <RemoveBar total={plan.total} removeCount={plan.removeCount} />
         </View>
       )}
-      {plan.visual_type === "groups" && plan.visual_a != null && plan.visual_b != null && DotGroups && (
+      {plan.visual_type === "groups" && plan.visual_a != null && plan.visual_b != null && (
         <View style={styles.visual}>
           <DotGroups
             groups={plan.visual_a}
@@ -75,22 +69,22 @@ export function StrategyView({ plan, showStep2 = false }: StrategyViewProps) {
           />
         </View>
       )}
-      {plan.visual_type === "array" && plan.visual_a != null && plan.visual_b != null && DotArray && (
+      {plan.visual_type === "array" && plan.visual_a != null && plan.visual_b != null && (
         <View style={styles.visual}>
           <DotArray rows={plan.visual_a} cols={plan.visual_b} />
         </View>
       )}
-      {plan.visual_type === "number_line" && plan.visual_a != null && plan.visual_b != null && NumberLine && (
+      {plan.visual_type === "number_line" && plan.visual_a != null && plan.visual_b != null && (
         <View style={styles.visual}>
           <NumberLine step={plan.visual_a} hops={plan.visual_b} />
         </View>
       )}
-      {plan.visual_type === "chain" && plan.chainSteps && DoublingChain && (
+      {plan.visual_type === "chain" && plan.chainSteps && (
         <View style={styles.visual}>
           <DoublingChain steps={plan.chainSteps} />
         </View>
       )}
-      {plan.visual_type === "doubling_chain" && plan.chainSteps && DoublingChain && (
+      {plan.visual_type === "doubling_chain" && plan.chainSteps && (
         <View style={styles.visual}>
           <DoublingChain steps={plan.chainSteps} />
         </View>
