@@ -21,6 +21,36 @@ interface Answer {
   isCorrect: boolean;
 }
 
+// Parser for question text with all operator variants
+const OP_TO_TOPIC: Record<string, Operation> = {
+  "+": "addition",
+  "-": "subtraction",
+  "−": "subtraction", // U+2212
+  "×": "multiplication", // U+00D7
+  "x": "multiplication",
+  "*": "multiplication",
+  "÷": "division", // U+00F7
+  "/": "division",
+};
+
+function parseQuestion(text: string): { a: number; op: string; topic: Operation; b: number } | null {
+  // Matches: digits, operator (including Unicode), digits, "= ?"
+  // Handles: +, -, −(U+2212), ×(U+00D7), x, *, ÷(U+00F7), /
+  const m = text.match(/(\d+)\s*([+\-−×x*÷/])\s*(\d+)/);
+  if (!m) return null;
+
+  const op = m[2];
+  const topic = OP_TO_TOPIC[op];
+  if (!topic) return null;
+
+  return {
+    a: parseInt(m[1], 10),
+    op,
+    topic,
+    b: parseInt(m[3], 10),
+  };
+}
+
 export default function HomeworkScreen() {
   const router = useRouter();
   const { assignmentId, childId } = useLocalSearchParams<{ assignmentId: string; childId: string }>();
@@ -116,15 +146,24 @@ export default function HomeworkScreen() {
 
     setHintLoading(true);
     try {
-      const topic = assignment.focus as Operation;
       const tierId = question.tier || "";
 
-      // USE STRUCTURED FIELDS - they are always set by createMathAssignment
-      const a = question.operandA;
-      const b = question.operandB;
-      const op = question.operator;
+      // Get operands: first from structured fields, then parse from question_text
+      let a = question.operandA;
+      let b = question.operandB;
+      let op = question.operator;
+      let topic = assignment.focus as Operation;
 
-      let plan: string | null = null;
+      // If structured fields missing, parse from question_text
+      if (a === undefined || b === undefined) {
+        const parsed = parseQuestion(question.question_text);
+        if (parsed) {
+          a = parsed.a;
+          b = parsed.b;
+          op = parsed.op;
+          topic = parsed.topic;
+        }
+      }
 
       console.log(
         "[hw-hint]",
@@ -134,7 +173,7 @@ export default function HomeworkScreen() {
           op,
           topic,
           tier: tierId,
-          hasStructured: a !== undefined && b !== undefined,
+          hasStructured: question.operandA !== undefined && question.operandB !== undefined,
         })
       );
 
@@ -171,7 +210,6 @@ export default function HomeworkScreen() {
         if (strategy) {
           setMulStrategy(strategy);
           setCurrentHintLevel(currentHintLevel + 1);
-          plan = "strategy";
         }
       } else if (a !== undefined && b !== undefined) {
         // For procedural tiers, show computed example steps
@@ -192,19 +230,6 @@ export default function HomeworkScreen() {
 
         setCurrentHint(`Here's how to solve it:\n${steps.map((s, i) => `${i + 1}. ${s}`).join("\n")}`);
         setCurrentHintLevel(currentHintLevel + 1);
-        plan = "steps";
-      } else {
-        console.log(
-          "[hw-hint]",
-          JSON.stringify({
-            a,
-            b,
-            op,
-            topic,
-            tier: tierId,
-            plan: "none - missing operands",
-          })
-        );
       }
 
       setHintUsedPerQuestion((prev) => {
