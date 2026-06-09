@@ -26,6 +26,7 @@ import {
   StrategyPlan,
 } from "@/lib/tutor/strategies";
 import { DotGroups, DotArray, NumberLine, DoublingChain, PartBar, RemoveBar } from "@/lib/tutor/visuals";
+import { StrategyView } from "@/lib/tutor/visuals/StrategyView";
 import { useAuth } from "../_layout";
 
 interface Answer {
@@ -144,6 +145,18 @@ export default function PracticeScreen() {
 
         setTierId(workingTierId);
         setTierLabel(label);
+
+        // Check attempt count for this tier
+        const tierAttempts = attemptData?.filter((a: any) => a.tier === workingTierId) || [];
+
+        // If this is first time at this tier, route to lesson
+        if (tierAttempts.length === 0 && band !== "needs-teach") {
+          router.replace({
+            pathname: "/lesson/[childId]",
+            params: { childId, tierId: workingTierId, tierLabel: label, operation: topic },
+          });
+          return;
+        }
 
         // If needs-teach, fetch teach content
         if (band === "needs-teach") {
@@ -633,59 +646,10 @@ export default function PracticeScreen() {
               )}
             </TouchableOpacity>
 
-            {/* Multiplication fact strategy display */}
+            {/* Strategy hint display (fact tiers) */}
             {mulStrategy && (
               <View style={styles.hintContainer}>
-                <Text style={styles.strategyLabel}>{mulStrategy.label}</Text>
-                {currentHintLevel >= 1 && (
-                  <Text style={styles.hintText}>{mulStrategy.step_1}</Text>
-                )}
-                {mulStrategy.visual_type === "parts" && mulStrategy.partA != null && mulStrategy.partB != null && (
-                  <View style={styles.visual}>
-                    <PartBar partA={mulStrategy.partA} partB={mulStrategy.partB} />
-                  </View>
-                )}
-                {mulStrategy.visual_type === "remove" && mulStrategy.total != null && mulStrategy.removeCount != null && (
-                  <View style={styles.visual}>
-                    <RemoveBar total={mulStrategy.total} removeCount={mulStrategy.removeCount} />
-                  </View>
-                )}
-                {mulStrategy.visual_type === "groups" && mulStrategy.visual_a != null && mulStrategy.visual_b != null && (
-                  <View style={styles.visual}>
-                    <DotGroups
-                      groups={mulStrategy.visual_a}
-                      dotsPerGroup={mulStrategy.visual_b}
-                      extraGroups={mulStrategy.extraGroups}
-                      removeGroups={mulStrategy.removeGroups}
-                    />
-                  </View>
-                )}
-                {mulStrategy.visual_type === "array" && mulStrategy.visual_a != null && mulStrategy.visual_b != null && (
-                  <View style={styles.visual}>
-                    <DotArray rows={mulStrategy.visual_a} cols={mulStrategy.visual_b} />
-                  </View>
-                )}
-                {mulStrategy.visual_type === "number_line" && mulStrategy.visual_a != null && mulStrategy.visual_b != null && (
-                  <View style={styles.visual}>
-                    <NumberLine step={mulStrategy.visual_a} hops={mulStrategy.visual_b} />
-                  </View>
-                )}
-                {mulStrategy.visual_type === "chain" && mulStrategy.chainSteps && (
-                  <View style={styles.visual}>
-                    <DoublingChain steps={mulStrategy.chainSteps} />
-                  </View>
-                )}
-                {mulStrategy.visual_type === "doubling_chain" && mulStrategy.chainSteps && (
-                  <View style={styles.visual}>
-                    <DoublingChain steps={mulStrategy.chainSteps} />
-                  </View>
-                )}
-                {currentHintLevel >= 2 && (
-                  <>
-                    <Text style={styles.hintText}>{mulStrategy.step_2}</Text>
-                    <Text style={styles.encouragement}>Ready to try?</Text>
-                  </>
-                )}
+                <StrategyView plan={mulStrategy} showStep2={currentHintLevel >= 2} />
               </View>
             )}
 
