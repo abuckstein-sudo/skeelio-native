@@ -565,15 +565,16 @@ export default function PracticeScreen() {
   const showingFeedback = feedback !== null;
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-      style={styles.container}
-    >
-      <ScrollView contentContainerStyle={styles.contentContainer} keyboardShouldPersistTaps="handled">
-        <Text style={styles.progress}>
-          Question {questionNumber} of {questions.length}
-        </Text>
-        <Text style={styles.tierLabel}>{tierLabel}</Text>
+    <SafeAreaView style={styles.container} edges={["top"]}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={{ flex: 1 }}
+      >
+        <ScrollView contentContainerStyle={styles.contentContainer} keyboardShouldPersistTaps="handled">
+          <Text style={styles.progress}>
+            Question {questionNumber} of {questions.length}
+          </Text>
+          <Text style={styles.tierLabel}>{tierLabel}</Text>
 
         <View style={styles.questionBox}>
           <Text style={styles.question}>
@@ -684,7 +685,8 @@ export default function PracticeScreen() {
           <Text style={styles.buttonText}>{showingFeedback ? "Next" : "Submit"}</Text>
         </TouchableOpacity>
       </ScrollView>
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
