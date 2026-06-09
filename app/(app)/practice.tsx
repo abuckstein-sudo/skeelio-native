@@ -18,6 +18,8 @@ import { generateQuestion, pickTeachExample } from "@/lib/tutor/generate";
 import { currentTierAndBand, Attempt } from "@/lib/tutor/ability";
 import { LADDERS, GATE, Operation, TEACH_NOTES } from "@/lib/tutorConfig";
 import { computeExampleSteps } from "@/lib/tutor/steps";
+import { pickMultiplicationStrategy, StrategyPlan } from "@/lib/tutor/strategies";
+import { DotGroups, DotArray, NumberLine } from "@/lib/tutor/visuals";
 import { useAuth } from "../_layout";
 
 interface Answer {
@@ -70,6 +72,9 @@ export default function PracticeScreen() {
     multiplication: null,
     division: null,
   });
+
+  // Multiplication strategy state
+  const [mulStrategy, setMulStrategy] = useState<StrategyPlan | null>(null);
 
   // Outcome state
   const [sessionComplete, setSessionComplete] = useState(false);
@@ -261,47 +266,59 @@ export default function PracticeScreen() {
 
     setHintLoading(true);
     try {
-      const steps = computeExampleSteps(
-        topic as Operation,
-        question.a,
-        question.b,
-        question.remainder
-      );
+      // For multiplication facts (M1-M5), use deterministic strategy
+      const isMulFact = topic === "multiplication" && tierId && /^M[1-5]$/.test(tierId);
 
-      const method = operationMethods[topic as Operation]?.method_name;
+      if (isMulFact) {
+        // Use deterministic strategy
+        const strategy = pickMultiplicationStrategy(question.a, question.b);
+        setMulStrategy(strategy);
+        setCurrentHintLevel(currentHintLevel + 1);
+      } else {
+        // For other operations, use AI practice-hint
+        const steps = computeExampleSteps(
+          topic as Operation,
+          question.a,
+          question.b,
+          question.remainder
+        );
 
-      const baseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
-      const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
-      const res = await fetch(`${baseUrl}/functions/v1/practice-hint`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${anonKey}`,
-        },
-        body: JSON.stringify({
-          operation: topic,
-          problem: {
-            a: question.a,
-            b: question.b,
-            answer: question.answer,
-            remainder: question.remainder,
+        const method = operationMethods[topic as Operation]?.method_name;
+
+        const baseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+        const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+        const res = await fetch(`${baseUrl}/functions/v1/practice-hint`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${anonKey}`,
           },
-          steps,
-          hintLevel: currentHintLevel + 1,
-          method,
-          language: childLanguage,
-        }),
-      });
+          body: JSON.stringify({
+            operation: topic,
+            problem: {
+              a: question.a,
+              b: question.b,
+              answer: question.answer,
+              remainder: question.remainder,
+            },
+            steps,
+            hintLevel: currentHintLevel + 1,
+            method,
+            language: childLanguage,
+          }),
+        });
 
-      if (!res.ok) {
-        const errorText = await res.text();
-        console.error("[hint] error", res.status, errorText);
-        return;
+        if (!res.ok) {
+          const errorText = await res.text();
+          console.error("[hint] error", res.status, errorText);
+          return;
+        }
+
+        const hintData = (await res.json()) as PracticeHintResponse;
+        setCurrentHint(hintData.hint);
+        setCurrentHintLevel(currentHintLevel + 1);
       }
 
-      const hintData = (await res.json()) as PracticeHintResponse;
-      setCurrentHint(hintData.hint);
-      setCurrentHintLevel(currentHintLevel + 1);
       setHintUsedPerQuestion((prev) => {
         const updated = [...prev];
         updated[currentQuestionIndex] = true;
@@ -388,6 +405,7 @@ export default function PracticeScreen() {
     setFeedback(null);
     setCurrentHintLevel(0);
     setCurrentHint("");
+    setMulStrategy(null);
     if (currentQuestionIndex < questions.length - 1) {
       setCurrentQuestionIndex(currentQuestionIndex + 1);
     }
@@ -568,26 +586,73 @@ export default function PracticeScreen() {
           </Text>
         </View>
 
-        {/* Hint button for all operations */}
-        <TouchableOpacity
-          style={[styles.hintButton, hintLoading && styles.hintButtonDisabled]}
-          onPress={handleRequestHint}
-          disabled={hintLoading || showingFeedback}
-        >
-          {hintLoading ? (
-            <ActivityIndicator size="small" color="#666" />
-          ) : (
-            <Text style={styles.hintButtonText}>
-              {currentHintLevel === 0 ? "Need a hint?" : "Another hint?"}
-            </Text>
-          )}
-        </TouchableOpacity>
+        {/* Hint button and display (hidden if answer correct) */}
+        {!showingFeedback && (
+          <>
+            {/* Button */}
+            <TouchableOpacity
+              style={[
+                styles.hintButton,
+                hintLoading && styles.hintButtonDisabled,
+                currentHintLevel >= 2 && styles.hintButtonDisabled,
+              ]}
+              onPress={handleRequestHint}
+              disabled={hintLoading || currentHintLevel >= 2}
+            >
+              {hintLoading ? (
+                <ActivityIndicator size="small" color="#666" />
+              ) : (
+                <Text style={styles.hintButtonText}>
+                  {currentHintLevel === 0
+                    ? "Need a hint?"
+                    : currentHintLevel === 1
+                    ? "More help"
+                    : "Hint shown"}
+                </Text>
+              )}
+            </TouchableOpacity>
 
-        {/* Hint display for all operations */}
-        {currentHint && (
-          <View style={styles.hintContainer}>
-            <Text style={styles.hintText}>{currentHint}</Text>
-          </View>
+            {/* Multiplication fact strategy display */}
+            {mulStrategy && (
+              <View style={styles.hintContainer}>
+                <Text style={styles.strategyLabel}>{mulStrategy.label}</Text>
+                {currentHintLevel >= 1 && (
+                  <Text style={styles.hintText}>{mulStrategy.step_1}</Text>
+                )}
+                {mulStrategy.visual_type === "groups" && (
+                  <View style={styles.visual}>
+                    <DotGroups
+                      groups={mulStrategy.visual_a}
+                      dotsPerGroup={mulStrategy.visual_b}
+                    />
+                  </View>
+                )}
+                {mulStrategy.visual_type === "array" && (
+                  <View style={styles.visual}>
+                    <DotArray rows={mulStrategy.visual_a} cols={mulStrategy.visual_b} />
+                  </View>
+                )}
+                {mulStrategy.visual_type === "number_line" && (
+                  <View style={styles.visual}>
+                    <NumberLine step={mulStrategy.visual_a} hops={mulStrategy.visual_b} />
+                  </View>
+                )}
+                {currentHintLevel >= 2 && (
+                  <>
+                    <Text style={styles.hintText}>{mulStrategy.step_2}</Text>
+                    <Text style={styles.encouragement}>Ready to try?</Text>
+                  </>
+                )}
+              </View>
+            )}
+
+            {/* AI hint display for other operations */}
+            {currentHint && !mulStrategy && (
+              <View style={styles.hintContainer}>
+                <Text style={styles.hintText}>{currentHint}</Text>
+              </View>
+            )}
+          </>
         )}
 
         <TextInput
@@ -855,6 +920,26 @@ const styles = StyleSheet.create({
   hintEncouragement: {
     fontSize: 14,
     color: "#ff9800",
+    fontStyle: "italic",
+    marginTop: 8,
+  },
+  strategyLabel: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#2196f3",
+    marginBottom: 12,
+    textTransform: "capitalize",
+  },
+  visual: {
+    marginVertical: 16,
+    padding: 12,
+    backgroundColor: "#f5f5f5",
+    borderRadius: 8,
+    alignItems: "flex-start",
+  },
+  encouragement: {
+    fontSize: 14,
+    color: "#666",
     fontStyle: "italic",
     marginTop: 8,
   },
