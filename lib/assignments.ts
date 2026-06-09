@@ -59,13 +59,24 @@ function questionToCustom(
   const symbol = getOperationSymbol(topic);
   const question_text = `${generatedQ.a} ${symbol} ${generatedQ.b} = ?`;
 
+  let skill: string | undefined;
+  if (topic === "addition") {
+    skill = `+${Math.max(generatedQ.a, generatedQ.b)}`;
+  } else if (topic === "subtraction") {
+    skill = `-${generatedQ.b}`;
+  } else if (topic === "multiplication") {
+    skill = `×${Math.max(generatedQ.a, generatedQ.b)}`;
+  } else if (topic === "division") {
+    skill = `÷${generatedQ.b}`;
+  }
+
   return {
     question_text,
     correct_answer: String(generatedQ.answer),
     question_type: "numeric",
     subject: "math",
     topic: topic,
-    skill: undefined,
+    skill,
     tier: generatedQ.tierId,
   };
 }
