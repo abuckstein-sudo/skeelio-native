@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, ScrollView, SafeAreaView } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, ScrollView, SafeAreaView, Modal, TextInput } from "react-native";
 import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "../../_layout";
@@ -7,6 +7,7 @@ import { getSubjectMastery, TopicMastery } from "@/lib/mastery";
 import { getWhatsNext, NextStep } from "@/lib/whatsNext";
 import { getOperationStatus, OperationStatus } from "@/lib/tutor/status";
 import { Operation } from "@/lib/tutorConfig";
+import { listAssignmentsForChild, createMathAssignment, Assignment } from "@/lib/assignments";
 
 const KNOWN_SUBJECTS = [
   "multiplication",
@@ -52,6 +53,14 @@ export default function ChildHomeScreen() {
   const [isMasteryLoading, setIsMasteryLoading] = useState(false);
   const [error, setError] = useState("");
 
+  // Homework assignment state
+  const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const [showAssignmentForm, setShowAssignmentForm] = useState(false);
+  const [selectedTopic, setSelectedTopic] = useState<Operation>("addition");
+  const [questionCount, setQuestionCount] = useState(8);
+  const [dueDate, setDueDate] = useState("");
+  const [isCreatingAssignment, setIsCreatingAssignment] = useState(false);
+
   const fetchStars = useCallback(async () => {
     if (!id) return;
 
@@ -66,17 +75,52 @@ export default function ChildHomeScreen() {
     setStars(rewardsData?.stars ?? 0);
   }, [id]);
 
+  const fetchAssignments = useCallback(async () => {
+    if (!id) return;
+    const assns = await listAssignmentsForChild(id);
+    setAssignments(assns);
+  }, [id]);
+
+  const handleCreateAssignment = async () => {
+    if (!id || !session?.user?.id) return;
+
+    setIsCreatingAssignment(true);
+    try {
+      await createMathAssignment({
+        childId: id,
+        parentId: session.user.id,
+        topic: selectedTopic,
+        count: questionCount,
+        dueDate: dueDate || undefined,
+      });
+
+      // Refresh assignments
+      await fetchAssignments();
+
+      // Reset form
+      setShowAssignmentForm(false);
+      setSelectedTopic("addition");
+      setQuestionCount(8);
+      setDueDate("");
+    } catch (err) {
+      console.error("[assignments] error creating:", err);
+    } finally {
+      setIsCreatingAssignment(false);
+    }
+  };
+
   useEffect(() => {
     if (id && session?.user?.id) {
       fetchChild();
     }
   }, [id, session?.user?.id]);
 
-  // Re-fetch stars when screen gains focus
+  // Re-fetch stars and assignments when screen gains focus
   useFocusEffect(
     useCallback(() => {
       fetchStars();
-    }, [fetchStars])
+      fetchAssignments();
+    }, [fetchStars, fetchAssignments])
   );
 
   const fetchChild = async () => {
@@ -137,6 +181,10 @@ export default function ChildHomeScreen() {
       .maybeSingle();
 
     setStars(rewardsData?.stars ?? 0);
+
+    // Fetch assignments
+    const assns = await listAssignmentsForChild(id);
+    setAssignments(assns);
 
     setIsLoading(false);
 
@@ -382,6 +430,64 @@ export default function ChildHomeScreen() {
         </View>
       ) : (
         <>
+          {/* Homework Section */}
+          <View style={styles.section}>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={styles.sectionTitle}>Homework</Text>
+              <TouchableOpacity
+                style={styles.addButton}
+                onPress={() => setShowAssignmentForm(true)}
+              >
+                <Text style={styles.addButtonText}>+ Assign</Text>
+              </TouchableOpacity>
+            </View>
+            {assignments.length === 0 ? (
+              <Text style={styles.emptyItemText}>No assignments yet</Text>
+            ) : (
+              assignments.map((asn) => (
+                <View
+                  key={asn.id}
+                  style={[
+                    styles.homeworkRow,
+                    asn.status === "completed" && styles.homeworkRowCompleted,
+                  ]}
+                >
+                  <View style={styles.homeworkInfo}>
+                    <Text style={styles.homeworkTopic}>
+                      {asn.focus.charAt(0).toUpperCase() + asn.focus.slice(1)}
+                    </Text>
+                    <Text style={styles.homeworkDetails}>
+                      {asn.question_count} questions
+                      {asn.due_date && ` • Due: ${new Date(asn.due_date).toLocaleDateString()}`}
+                    </Text>
+                    {asn.status === "completed" && asn.completed_at && (
+                      <Text style={styles.completedDate}>
+                        Completed: {new Date(asn.completed_at).toLocaleDateString()}
+                      </Text>
+                    )}
+                  </View>
+                  <View
+                    style={[
+                      styles.statusBadge,
+                      asn.status === "completed"
+                        ? styles.statusCompleted
+                        : styles.statusActive,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.statusBadgeText,
+                        asn.status === "completed" && styles.statusBadgeTextCompleted,
+                      ]}
+                    >
+                      {asn.status === "completed" ? "✓" : "→"}
+                    </Text>
+                  </View>
+                </View>
+              ))
+            )}
+          </View>
+
           {/* Math Operations Section */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Math Progress</Text>
@@ -479,6 +585,94 @@ export default function ChildHomeScreen() {
         <Text style={styles.buttonText}>Back to Hub</Text>
       </TouchableOpacity>
       </ScrollView>
+
+      {/* Assignment Form Modal */}
+      <Modal
+        visible={showAssignmentForm}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => !isCreatingAssignment && setShowAssignmentForm(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Assign Homework</Text>
+
+            {/* Topic Picker */}
+            <Text style={styles.formLabel}>Topic</Text>
+            <View style={styles.topicPickerRow}>
+              {["addition", "subtraction", "multiplication", "division"].map((topic) => (
+                <TouchableOpacity
+                  key={topic}
+                  style={[
+                    styles.topicButton,
+                    selectedTopic === topic && styles.topicButtonActive,
+                  ]}
+                  onPress={() => setSelectedTopic(topic as Operation)}
+                >
+                  <Text
+                    style={[
+                      styles.topicButtonText,
+                      selectedTopic === topic && styles.topicButtonTextActive,
+                    ]}
+                  >
+                    {topic.charAt(0).toUpperCase() + topic.slice(1)}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* Question Count */}
+            <Text style={styles.formLabel}>Number of Questions</Text>
+            <View style={styles.counterRow}>
+              <TouchableOpacity
+                style={styles.counterButton}
+                onPress={() => setQuestionCount(Math.max(1, questionCount - 1))}
+              >
+                <Text style={styles.counterButtonText}>−</Text>
+              </TouchableOpacity>
+              <Text style={styles.counterValue}>{questionCount}</Text>
+              <TouchableOpacity
+                style={styles.counterButton}
+                onPress={() => setQuestionCount(Math.min(20, questionCount + 1))}
+              >
+                <Text style={styles.counterButtonText}>+</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Due Date (optional) */}
+            <Text style={styles.formLabel}>Due Date (optional)</Text>
+            <TextInput
+              style={styles.dateInput}
+              placeholder="YYYY-MM-DD"
+              value={dueDate}
+              onChangeText={setDueDate}
+              editable={!isCreatingAssignment}
+            />
+
+            {/* Action Buttons */}
+            <View style={styles.modalButtonsRow}>
+              <TouchableOpacity
+                style={[styles.button, !isCreatingAssignment && styles.buttonSecondary]}
+                onPress={() => !isCreatingAssignment && setShowAssignmentForm(false)}
+                disabled={isCreatingAssignment}
+              >
+                <Text style={[styles.buttonText, styles.buttonSecondaryText]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.button, styles.buttonPrimary]}
+                onPress={handleCreateAssignment}
+                disabled={isCreatingAssignment}
+              >
+                {isCreatingAssignment ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.buttonText}>Create Assignment</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -768,5 +962,192 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
     color: "#fff",
+  },
+  sectionHeaderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  addButton: {
+    backgroundColor: "#2196f3",
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+  },
+  addButtonText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  homeworkRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    backgroundColor: "#f5f5f5",
+    borderLeftWidth: 4,
+    borderLeftColor: "#2196f3",
+    borderRadius: 6,
+    marginBottom: 10,
+  },
+  homeworkRowCompleted: {
+    backgroundColor: "#f0f9f0",
+    borderLeftColor: "#4caf50",
+    opacity: 0.7,
+  },
+  homeworkInfo: {
+    flex: 1,
+  },
+  homeworkTopic: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#333",
+    marginBottom: 4,
+  },
+  homeworkDetails: {
+    fontSize: 12,
+    color: "#666",
+  },
+  completedDate: {
+    fontSize: 11,
+    color: "#4caf50",
+    fontWeight: "600",
+    marginTop: 4,
+  },
+  statusBadge: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: "center",
+    alignItems: "center",
+    marginLeft: 12,
+  },
+  statusActive: {
+    backgroundColor: "#e3f2fd",
+  },
+  statusCompleted: {
+    backgroundColor: "#e8f5e9",
+  },
+  statusBadgeText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#2196f3",
+  },
+  statusBadgeTextCompleted: {
+    color: "#4caf50",
+  },
+  emptyItemText: {
+    fontSize: 13,
+    color: "#999",
+    fontStyle: "italic",
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "flex-end",
+  },
+  modalContent: {
+    backgroundColor: "#fff",
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    paddingHorizontal: 20,
+    paddingVertical: 24,
+    paddingBottom: 40,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#1a1a1a",
+    marginBottom: 20,
+    textAlign: "center",
+  },
+  formLabel: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#333",
+    marginBottom: 8,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  topicPickerRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 20,
+  },
+  topicButton: {
+    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: "#ddd",
+    backgroundColor: "#fff",
+    alignItems: "center",
+  },
+  topicButtonActive: {
+    borderColor: "#2196f3",
+    backgroundColor: "#e3f2fd",
+  },
+  topicButtonText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#666",
+  },
+  topicButtonTextActive: {
+    color: "#2196f3",
+  },
+  counterRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 16,
+    marginBottom: 20,
+    justifyContent: "center",
+  },
+  counterButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 8,
+    backgroundColor: "#e3f2fd",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  counterButtonText: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#2196f3",
+  },
+  counterValue: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#333",
+    minWidth: 40,
+    textAlign: "center",
+  },
+  dateInput: {
+    borderWidth: 1,
+    borderColor: "#ddd",
+    borderRadius: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    fontSize: 14,
+    marginBottom: 20,
+    color: "#333",
+  },
+  modalButtonsRow: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  buttonSecondary: {
+    backgroundColor: "#f0f0f0",
+    flex: 1,
+  },
+  buttonSecondaryText: {
+    color: "#666",
+  },
+  buttonPrimary: {
+    backgroundColor: "#2196f3",
+    flex: 1,
   },
 });
