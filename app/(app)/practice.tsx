@@ -626,6 +626,7 @@ export default function PracticeScreen() {
                     <DotGroups
                       groups={mulStrategy.visual_a}
                       dotsPerGroup={mulStrategy.visual_b}
+                      extraGroups={mulStrategy.extraGroups}
                     />
                   </View>
                 )}

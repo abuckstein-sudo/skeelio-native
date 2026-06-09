@@ -25,11 +25,17 @@ const styles = StyleSheet.create({
     padding: 6,
     gap: 3,
   },
+  groupAccent: {
+    borderColor: "#FF9800",
+  },
   dot: {
     width: 8,
     height: 8,
     borderRadius: 4,
     backgroundColor: "#4CAF50",
+  },
+  dotAccent: {
+    backgroundColor: "#FF9800",
   },
   dotRow: {
     flexDirection: "row",
@@ -113,9 +119,10 @@ const styles = StyleSheet.create({
 export interface DotGroupsProps {
   groups: number;
   dotsPerGroup: number;
+  extraGroups?: number; // number of groups (from the end) to highlight in accent color
 }
 
-export function DotGroups({ groups, dotsPerGroup }: DotGroupsProps) {
+export function DotGroups({ groups, dotsPerGroup, extraGroups = 0 }: DotGroupsProps) {
   const groupsArray = Array.from({ length: groups });
   const dotsPerRow = 5;
 
@@ -127,12 +134,15 @@ export function DotGroups({ groups, dotsPerGroup }: DotGroupsProps) {
     >
       <View style={styles.dotGroups}>
         {groupsArray.map((_, groupIndex) => {
+          // Determine if this group is in the "extra" set (accent color)
+          const isExtra = extraGroups > 0 && groupIndex >= groups - extraGroups;
+
           // Arrange dots in a grid within each group (max 5 per row)
           const dotRows = Math.ceil(dotsPerGroup / dotsPerRow);
           const dotRows_Array = Array.from({ length: dotRows });
 
           return (
-            <View key={groupIndex} style={styles.group}>
+            <View key={groupIndex} style={[styles.group, isExtra && styles.groupAccent]}>
               {dotRows_Array.map((_, rowIndex) => {
                 const startIdx = rowIndex * dotsPerRow;
                 const endIdx = Math.min(startIdx + dotsPerRow, dotsPerGroup);
@@ -141,7 +151,10 @@ export function DotGroups({ groups, dotsPerGroup }: DotGroupsProps) {
                 return (
                   <View key={rowIndex} style={styles.dotRow}>
                     {Array.from({ length: dotsInRow }).map((_, dotIndex) => (
-                      <View key={dotIndex} style={styles.dot} />
+                      <View
+                        key={dotIndex}
+                        style={[styles.dot, isExtra && styles.dotAccent]}
+                      />
                     ))}
                   </View>
                 );

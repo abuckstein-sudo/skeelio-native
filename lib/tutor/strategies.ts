@@ -12,6 +12,7 @@ export interface StrategyPlan {
   value: number;
   visual_a: number;
   visual_b: number; // groups: a groups of b dots | array: a×b | number_line: b hops of size a
+  extraGroups?: number; // for ×11/×12: number of groups to highlight in accent color
 }
 
 export function pickMultiplicationStrategy(
@@ -26,6 +27,41 @@ export function pickMultiplicationStrategy(
 
   const product = a * b;
   const other = (x: number) => (a === x ? b : a);
+
+  // Times eleven: 10 plus one more
+  if (a === 11 || b === 11) {
+    const o = other(11);
+    const tenPart = o * 10;
+    return {
+      strategy: "ten_plus_one",
+      label: "ten, plus one more",
+      visual_type: "groups",
+      step_1: `${o} × 10 = ${tenPart}`,
+      step_2: `then one more group of ${o}: ${tenPart} + ${o} = ${product}`,
+      value: product,
+      visual_a: 11,
+      visual_b: o,
+      extraGroups: 1,
+    };
+  }
+
+  // Times twelve: 10 plus two more
+  if (a === 12 || b === 12) {
+    const o = other(12);
+    const tenPart = o * 10;
+    const twoMore = 2 * o;
+    return {
+      strategy: "ten_plus_two",
+      label: "ten, plus two more",
+      visual_type: "groups",
+      step_1: `${o} × 10 = ${tenPart}`,
+      step_2: `then two more groups of ${o}: ${tenPart} + ${twoMore} = ${product}`,
+      value: product,
+      visual_a: 12,
+      visual_b: o,
+      extraGroups: 2,
+    };
+  }
 
   // Times one: identity
   if (a === 1 || b === 1) {
