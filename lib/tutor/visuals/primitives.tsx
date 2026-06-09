@@ -206,8 +206,8 @@ const styles = StyleSheet.create({
 export interface DotGroupsProps {
   groups: number;
   dotsPerGroup: number;
-  extraGroups?: number; // number of groups (from the end) to highlight in accent color
-  removeGroups?: number; // number of groups (from the end) to strike-through/fade
+  extraGroups?: number;
+  removeGroups?: number;
 }
 
 export function DotGroups({ groups, dotsPerGroup, extraGroups = 0, removeGroups = 0 }: DotGroupsProps) {
@@ -222,12 +222,9 @@ export function DotGroups({ groups, dotsPerGroup, extraGroups = 0, removeGroups 
     >
       <View style={styles.dotGroups}>
         {groupsArray.map((_, groupIndex) => {
-          // Determine if this group is in the "extra" set (accent color)
           const isExtra = extraGroups > 0 && groupIndex >= groups - extraGroups;
-          // Determine if this group should be removed/faded
           const isRemoved = removeGroups > 0 && groupIndex >= groups - removeGroups;
 
-          // Arrange dots in a grid within each group (max 5 per row)
           const dotRows = Math.ceil(dotsPerGroup / dotsPerRow);
           const dotRows_Array = Array.from({ length: dotRows });
 
@@ -340,7 +337,7 @@ export function RemoveBar({ total, removeCount }: RemoveBarProps) {
 }
 
 export interface DoublingChainProps {
-  steps: number[]; // e.g. [7, 14, 28, 56]
+  steps: number[];
 }
 
 export function DoublingChain({ steps }: DoublingChainProps) {
@@ -358,7 +355,6 @@ export function DoublingChain({ steps }: DoublingChainProps) {
       <View style={styles.chainContainer}>
         {steps.map((value, i) => (
           <View key={i} style={styles.chainStep}>
-            {/* Compact dot grid showing the value */}
             <View style={styles.chainDots}>
               {Array.from({ length: Math.min(value, 16) }).map((_, dotIdx) => (
                 <View
@@ -370,9 +366,7 @@ export function DoublingChain({ steps }: DoublingChainProps) {
                 />
               ))}
             </View>
-            {/* Value label */}
             <Text style={styles.chainLabel}>{value}</Text>
-            {/* Arrow (except on last step) */}
             {i < steps.length - 1 && (
               <Text style={styles.chainArrow}>→</Text>
             )}

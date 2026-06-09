@@ -1,8 +1,7 @@
 import React from "react";
 import { View, Text, StyleSheet } from "react-native";
 import { StrategyPlan } from "../strategies";
-// Import from parent visuals.tsx directly (not the ambiguous "../visuals" which could be .tsx or /index.ts)
-import { DotGroups, DotArray, NumberLine, DoublingChain, PartBar, RemoveBar } from "../visuals.tsx";
+import { DotGroups, DotArray, NumberLine, DoublingChain, PartBar, RemoveBar } from "./primitives";
 
 export interface StrategyViewProps {
   plan: StrategyPlan;
@@ -42,6 +41,7 @@ const styles = StyleSheet.create({
 });
 
 export function StrategyView({ plan, showStep2 = false }: StrategyViewProps) {
+  console.log('[undef-check] visuals =', JSON.stringify({ DotGroups: typeof DotGroups, DotArray: typeof DotArray, NumberLine: typeof NumberLine, DoublingChain: typeof DoublingChain, PartBar: typeof PartBar, RemoveBar: typeof RemoveBar }));
 
   return (
     <View style={styles.container}>

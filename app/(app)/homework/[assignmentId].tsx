@@ -422,6 +422,7 @@ export default function HomeworkScreen() {
             {/* Strategy View (for fact tiers in practice mode) */}
             {showingStrategy && mulStrategy && (
               <View style={styles.strategyContainer}>
+                {console.log('[undef-check] StrategyView =', typeof StrategyView)}
                 <StrategyView strategy={mulStrategy} />
               </View>
             )}
