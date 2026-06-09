@@ -217,29 +217,31 @@ export default function ChildHomeScreen() {
         </View>
       )}
 
-      {/* Subject Grid */}
-      <View style={styles.subjectsContainer}>
-        {SUBJECTS.map((subject) => {
-          const isMathSubject = ["addition", "subtraction", "multiplication", "division"].includes(subject.topic);
-          const operationStatus = isMathSubject ? operationStatuses[subject.topic as Operation] : null;
+      {/* Show practice tiles only if no pending homework */}
+      {pendingAssignments.length === 0 && (
+        <View style={styles.subjectsContainer}>
+          {SUBJECTS.map((subject) => {
+            const isMathSubject = ["addition", "subtraction", "multiplication", "division"].includes(subject.topic);
+            const operationStatus = isMathSubject ? operationStatuses[subject.topic as Operation] : null;
 
-          return (
-            <TouchableOpacity
-              key={subject.topic}
-              style={[styles.subjectTile, !subject.isActive && styles.subjectTileInactive]}
-              onPress={() => subject.isActive && handleSubjectTap(subject.topic)}
-              disabled={!subject.isActive}
-            >
-              <Text style={styles.subjectLabel}>{subject.label}</Text>
-              <Text style={styles.subjectDescription}>{subject.description}</Text>
-              {operationStatus && (
-                <Text style={styles.statusText}>{operationStatus.childHomeText}</Text>
-              )}
-              {!subject.isActive && <Text style={styles.comingSoonLabel}>Coming soon</Text>}
-            </TouchableOpacity>
-          );
-        })}
-      </View>
+            return (
+              <TouchableOpacity
+                key={subject.topic}
+                style={[styles.subjectTile, !subject.isActive && styles.subjectTileInactive]}
+                onPress={() => subject.isActive && handleSubjectTap(subject.topic)}
+                disabled={!subject.isActive}
+              >
+                <Text style={styles.subjectLabel}>{subject.label}</Text>
+                <Text style={styles.subjectDescription}>{subject.description}</Text>
+                {operationStatus && (
+                  <Text style={styles.statusText}>{operationStatus.childHomeText}</Text>
+                )}
+                {!subject.isActive && <Text style={styles.comingSoonLabel}>Coming soon</Text>}
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      )}
       </ScrollView>
     </SafeAreaView>
   );

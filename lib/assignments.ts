@@ -86,8 +86,9 @@ export async function createMathAssignment(params: {
   topic: Operation;
   count: number;
   dueDate?: string | null;
+  mode?: "practice" | "quiz";
 }): Promise<Assignment> {
-  const { childId, topic, count, dueDate } = params;
+  const { childId, topic, count, dueDate, mode = "practice" } = params;
 
   // Get the current authenticated user to ensure parent_id is set correctly
   const { data: authData, error: authError } = await supabase.auth.getUser();
@@ -137,7 +138,7 @@ export async function createMathAssignment(params: {
       child_id: childId,
       subject: "math",
       focus: topic,
-      mode: "practice",
+      mode,
       question_count: count,
       due_date: dueDate || null,
       status: "pending",
@@ -167,13 +168,38 @@ export async function markAssignmentComplete(assignmentId: string): Promise<void
   const { error } = await supabase
     .from("assignments")
     .update({
-      status: "completed",
+      status: "complete",
       completed_at: now,
     })
     .eq("id", assignmentId);
 
   if (error) {
-    console.error("[assignments] error marking complete:", error);
+    console.error(
+      "[assignments] error marking complete:",
+      JSON.stringify({
+        message: error?.message,
+        code: error?.code,
+        details: error?.details,
+        hint: error?.hint,
+      })
+    );
+    throw error;
+  }
+}
+
+export async function deleteAssignment(assignmentId: string): Promise<void> {
+  const { error } = await supabase.from("assignments").delete().eq("id", assignmentId);
+
+  if (error) {
+    console.error(
+      "[assignments] error deleting:",
+      JSON.stringify({
+        message: error?.message,
+        code: error?.code,
+        details: error?.details,
+        hint: error?.hint,
+      })
+    );
     throw error;
   }
 }

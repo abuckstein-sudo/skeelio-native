@@ -27,6 +27,7 @@ export default function HomeworkScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [sessionUserId, setSessionUserId] = useState<string>("");
+  const [isQuizMode, setIsQuizMode] = useState(false);
 
   useEffect(() => {
     const getSession = async () => {
@@ -64,6 +65,7 @@ export default function HomeworkScreen() {
     const assignment = data as Assignment;
     setAssignment(assignment);
     setQuestions(assignment.custom_questions || []);
+    setIsQuizMode(assignment.mode === "quiz");
     setIsLoading(false);
   };
 
@@ -193,11 +195,14 @@ export default function HomeworkScreen() {
         <View style={styles.header}>
           <Text style={styles.headerTitle}>
             {assignment.focus ? assignment.focus.charAt(0).toUpperCase() + assignment.focus.slice(1) : "Practice"}{" "}
-            Assignment
+            {isQuizMode ? "Quiz" : "Practice"}
           </Text>
           <Text style={styles.progressText}>
             {currentQuestionIndex + 1} of {questions.length}
           </Text>
+          {isQuizMode && (
+            <Text style={styles.quizModeText}>Quiz mode — no hints available</Text>
+          )}
         </View>
 
         {/* Question */}
@@ -265,6 +270,13 @@ const styles = StyleSheet.create({
   progressText: {
     fontSize: 14,
     color: "#666",
+  },
+  quizModeText: {
+    fontSize: 12,
+    color: "#ff9800",
+    fontStyle: "italic",
+    marginTop: 8,
+    fontWeight: "600",
   },
   questionContainer: {
     marginBottom: 24,

@@ -9,6 +9,7 @@ import {
   SafeAreaView,
   Modal,
   TextInput,
+  Alert,
 } from "react-native";
 import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
 import { supabase } from "@/lib/supabase";
@@ -20,6 +21,7 @@ import { Operation } from "@/lib/tutorConfig";
 import {
   listAssignmentsForChild,
   createMathAssignment,
+  deleteAssignment,
   Assignment,
 } from "@/lib/assignments";
 
@@ -75,6 +77,7 @@ export default function ChildHomeScreen() {
   const [selectedTopic, setSelectedTopic] = useState<Operation>("addition");
   const [questionCount, setQuestionCount] = useState(8);
   const [dueDate, setDueDate] = useState("");
+  const [assignmentMode, setAssignmentMode] = useState<"practice" | "quiz">("practice");
   const [isCreatingAssignment, setIsCreatingAssignment] = useState(false);
 
   const fetchStars = useCallback(async () => {
@@ -107,6 +110,7 @@ export default function ChildHomeScreen() {
         topic: selectedTopic,
         count: questionCount,
         dueDate: dueDate || undefined,
+        mode: assignmentMode,
       });
 
       // Refresh assignments
@@ -117,11 +121,35 @@ export default function ChildHomeScreen() {
       setSelectedTopic("addition");
       setQuestionCount(8);
       setDueDate("");
+      setAssignmentMode("practice");
     } catch (err) {
       console.error("[assignments] error creating:", err);
     } finally {
       setIsCreatingAssignment(false);
     }
+  };
+
+  const handleDeleteAssignment = (assignmentId: string) => {
+    Alert.alert(
+      "Delete Assignment",
+      "Are you sure? This cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await deleteAssignment(assignmentId);
+              await fetchAssignments();
+            } catch (err) {
+              console.error("[assignments] error deleting:", err);
+              Alert.alert("Error", "Failed to delete assignment");
+            }
+          },
+        },
+      ]
+    );
   };
 
   useEffect(() => {
@@ -489,7 +517,7 @@ export default function ChildHomeScreen() {
                       key={asn.id}
                       style={[
                         styles.homeworkRow,
-                        asn.status === "completed" &&
+                        asn.status === "complete" &&
                           styles.homeworkRowCompleted,
                       ]}
                     >
@@ -502,30 +530,40 @@ export default function ChildHomeScreen() {
                           {asn.due_date &&
                             ` • Due: ${new Date(asn.due_date).toLocaleDateString()}`}
                         </Text>
-                        {asn.status === "completed" && asn.completed_at && (
+                        {asn.status === "complete" && asn.completed_at && (
                           <Text style={styles.completedDate}>
                             Completed:{" "}
                             {new Date(asn.completed_at).toLocaleDateString()}
                           </Text>
                         )}
                       </View>
-                      <View
-                        style={[
-                          styles.statusBadge,
-                          asn.status === "completed"
-                            ? styles.statusCompleted
-                            : styles.statusActive,
-                        ]}
-                      >
-                        <Text
+                      <View style={styles.actionButtons}>
+                        {asn.status !== "complete" && (
+                          <TouchableOpacity
+                            style={styles.deleteButton}
+                            onPress={() => handleDeleteAssignment(asn.id)}
+                          >
+                            <Text style={styles.deleteButtonText}>✕</Text>
+                          </TouchableOpacity>
+                        )}
+                        <View
                           style={[
-                            styles.statusBadgeText,
-                            asn.status === "completed" &&
-                              styles.statusBadgeTextCompleted,
+                            styles.statusBadge,
+                            asn.status === "complete"
+                              ? styles.statusCompleted
+                              : styles.statusActive,
                           ]}
                         >
-                          {asn.status === "completed" ? "✓" : "→"}
-                        </Text>
+                          <Text
+                            style={[
+                              styles.statusBadgeText,
+                              asn.status === "complete" &&
+                                styles.statusBadgeTextCompleted,
+                            ]}
+                          >
+                            {asn.status === "complete" ? "✓" : "→"}
+                          </Text>
+                        </View>
                       </View>
                     </View>
                   ));
@@ -743,6 +781,43 @@ export default function ChildHomeScreen() {
                 }
               >
                 <Text style={styles.counterButtonText}>+</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Assignment Mode */}
+            <Text style={styles.formLabel}>Mode</Text>
+            <View style={styles.modeToggleRow}>
+              <TouchableOpacity
+                style={[
+                  styles.modeButton,
+                  assignmentMode === "practice" && styles.modeButtonActive,
+                ]}
+                onPress={() => setAssignmentMode("practice")}
+              >
+                <Text
+                  style={[
+                    styles.modeButtonText,
+                    assignmentMode === "practice" && styles.modeButtonTextActive,
+                  ]}
+                >
+                  Practice
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.modeButton,
+                  assignmentMode === "quiz" && styles.modeButtonActive,
+                ]}
+                onPress={() => setAssignmentMode("quiz")}
+              >
+                <Text
+                  style={[
+                    styles.modeButtonText,
+                    assignmentMode === "quiz" && styles.modeButtonTextActive,
+                  ]}
+                >
+                  Quiz
+                </Text>
               </TouchableOpacity>
             </View>
 
@@ -1152,6 +1227,26 @@ const styles = StyleSheet.create({
   statusBadgeTextCompleted: {
     color: "#4caf50",
   },
+  actionButtons: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  deleteButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "#ffebee",
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#f44336",
+  },
+  deleteButtonText: {
+    fontSize: 16,
+    color: "#f44336",
+    fontWeight: "700",
+  },
   emptyItemText: {
     fontSize: 13,
     color: "#999",
@@ -1238,6 +1333,34 @@ const styles = StyleSheet.create({
     color: "#333",
     minWidth: 40,
     textAlign: "center",
+  },
+  modeToggleRow: {
+    flexDirection: "row",
+    gap: 12,
+    marginBottom: 20,
+  },
+  modeButton: {
+    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: "#ddd",
+    backgroundColor: "#f5f5f5",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  modeButtonActive: {
+    borderColor: "#2196f3",
+    backgroundColor: "#e3f2fd",
+  },
+  modeButtonText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#666",
+  },
+  modeButtonTextActive: {
+    color: "#2196f3",
   },
   dateInput: {
     borderWidth: 1,
