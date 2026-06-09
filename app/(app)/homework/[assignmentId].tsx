@@ -212,24 +212,57 @@ export default function HomeworkScreen() {
           setCurrentHintLevel(currentHintLevel + 1);
         }
       } else if (a !== undefined && b !== undefined) {
-        // For procedural tiers, show computed example steps
+        // For procedural tiers, try computed example steps first
         const steps = computeExampleSteps(topic, a, b, undefined);
 
-        console.log(
-          "[hw-hint]",
-          JSON.stringify({
-            a,
-            b,
-            op,
-            topic,
-            tier: tierId,
-            plan: "steps",
-            stepCount: steps.length,
-          })
-        );
+        // If steps are empty, fallback to strategy picker for a visual
+        if (steps.length === 0) {
+          let strategy: StrategyPlan | null = null;
+          if (topic === "addition") {
+            strategy = pickAdditionStrategy(a, b);
+          } else if (topic === "subtraction") {
+            strategy = pickSubtractionStrategy(a, b);
+          } else if (topic === "multiplication") {
+            strategy = pickMultiplicationStrategy(a, b);
+          } else if (topic === "division") {
+            strategy = pickDivisionStrategy(a, b);
+          }
 
-        setCurrentHint(`Here's how to solve it:\n${steps.map((s, i) => `${i + 1}. ${s}`).join("\n")}`);
-        setCurrentHintLevel(currentHintLevel + 1);
+          console.log(
+            "[hw-hint]",
+            JSON.stringify({
+              a,
+              b,
+              op,
+              topic,
+              tier: tierId,
+              plan: strategy ? "strategy-fallback" : "none",
+              stepCount: strategy?.steps?.length || 0,
+            })
+          );
+
+          if (strategy) {
+            setMulStrategy(strategy);
+            setCurrentHintLevel(currentHintLevel + 1);
+          }
+        } else {
+          // Has steps, show them
+          console.log(
+            "[hw-hint]",
+            JSON.stringify({
+              a,
+              b,
+              op,
+              topic,
+              tier: tierId,
+              plan: "steps",
+              stepCount: steps.length,
+            })
+          );
+
+          setCurrentHint(`Here's how to solve it:\n${steps.map((s, i) => `${i + 1}. ${s}`).join("\n")}`);
+          setCurrentHintLevel(currentHintLevel + 1);
+        }
       }
 
       setHintUsedPerQuestion((prev) => {
