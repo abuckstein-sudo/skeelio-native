@@ -126,10 +126,10 @@ export async function createMathAssignment(params: {
       child_id: childId,
       subject: "math",
       focus: topic,
-      mode: "regular",
+      mode: "practice",
       question_count: count,
       due_date: dueDate || null,
-      status: "active",
+      status: "pending",
       custom_questions: customQuestions,
     })
     .select()
