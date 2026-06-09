@@ -16,10 +16,16 @@ import { supabase } from "@/lib/supabase";
 import { addStars } from "@/lib/addStars";
 import { generateQuestion, pickTeachExample } from "@/lib/tutor/generate";
 import { currentTierAndBand, Attempt } from "@/lib/tutor/ability";
-import { LADDERS, GATE, Operation, TEACH_NOTES } from "@/lib/tutorConfig";
+import { LADDERS, GATE, Operation, TEACH_NOTES, FACT_TIERS } from "@/lib/tutorConfig";
 import { computeExampleSteps } from "@/lib/tutor/steps";
-import { pickMultiplicationStrategy, StrategyPlan } from "@/lib/tutor/strategies";
-import { DotGroups, DotArray, NumberLine, DoublingChain } from "@/lib/tutor/visuals";
+import {
+  pickMultiplicationStrategy,
+  pickAdditionStrategy,
+  pickSubtractionStrategy,
+  pickDivisionStrategy,
+  StrategyPlan,
+} from "@/lib/tutor/strategies";
+import { DotGroups, DotArray, NumberLine, DoublingChain, PartBar, RemoveBar } from "@/lib/tutor/visuals";
 import { useAuth } from "../_layout";
 
 interface Answer {
@@ -261,22 +267,35 @@ export default function PracticeScreen() {
 
   const handleRequestHint = async () => {
     const question = questions[currentQuestionIndex];
-    if (!question.a || !question.b || !topic) {
+    if (!question.a || !question.b || !topic || !tierId) {
       return;
     }
 
     setHintLoading(true);
     try {
-      // For multiplication facts (M1-M5), use deterministic strategy
-      const isMulFact = topic === "multiplication" && tierId && /^M[1-5]$/.test(tierId);
+      // Check if this is a fact tier
+      const isFactTier = FACT_TIERS.has(tierId);
 
-      if (isMulFact) {
-        // Use deterministic strategy
-        const strategy = pickMultiplicationStrategy(question.a, question.b);
-        setMulStrategy(strategy);
-        setCurrentHintLevel(currentHintLevel + 1);
+      if (isFactTier) {
+        // Use deterministic strategy picker based on operation
+        let strategy: StrategyPlan | null = null;
+
+        if (topic === "addition") {
+          strategy = pickAdditionStrategy(question.a, question.b);
+        } else if (topic === "subtraction") {
+          strategy = pickSubtractionStrategy(question.a, question.b);
+        } else if (topic === "multiplication") {
+          strategy = pickMultiplicationStrategy(question.a, question.b);
+        } else if (topic === "division") {
+          strategy = pickDivisionStrategy(question.a, question.b);
+        }
+
+        if (strategy) {
+          setMulStrategy(strategy);
+          setCurrentHintLevel(currentHintLevel + 1);
+        }
       } else {
-        // For other operations, use AI practice-hint
+        // For procedural / multi-digit tiers, use AI practice-hint
         const steps = computeExampleSteps(
           topic as Operation,
           question.a,
@@ -621,7 +640,17 @@ export default function PracticeScreen() {
                 {currentHintLevel >= 1 && (
                   <Text style={styles.hintText}>{mulStrategy.step_1}</Text>
                 )}
-                {mulStrategy.visual_type === "groups" && (
+                {mulStrategy.visual_type === "parts" && mulStrategy.partA != null && mulStrategy.partB != null && (
+                  <View style={styles.visual}>
+                    <PartBar partA={mulStrategy.partA} partB={mulStrategy.partB} />
+                  </View>
+                )}
+                {mulStrategy.visual_type === "remove" && mulStrategy.total != null && mulStrategy.removeCount != null && (
+                  <View style={styles.visual}>
+                    <RemoveBar total={mulStrategy.total} removeCount={mulStrategy.removeCount} />
+                  </View>
+                )}
+                {mulStrategy.visual_type === "groups" && mulStrategy.visual_a != null && mulStrategy.visual_b != null && (
                   <View style={styles.visual}>
                     <DotGroups
                       groups={mulStrategy.visual_a}
@@ -631,14 +660,19 @@ export default function PracticeScreen() {
                     />
                   </View>
                 )}
-                {mulStrategy.visual_type === "array" && (
+                {mulStrategy.visual_type === "array" && mulStrategy.visual_a != null && mulStrategy.visual_b != null && (
                   <View style={styles.visual}>
                     <DotArray rows={mulStrategy.visual_a} cols={mulStrategy.visual_b} />
                   </View>
                 )}
-                {mulStrategy.visual_type === "number_line" && (
+                {mulStrategy.visual_type === "number_line" && mulStrategy.visual_a != null && mulStrategy.visual_b != null && (
                   <View style={styles.visual}>
                     <NumberLine step={mulStrategy.visual_a} hops={mulStrategy.visual_b} />
+                  </View>
+                )}
+                {mulStrategy.visual_type === "chain" && mulStrategy.chainSteps && (
+                  <View style={styles.visual}>
+                    <DoublingChain steps={mulStrategy.chainSteps} />
                   </View>
                 )}
                 {mulStrategy.visual_type === "doubling_chain" && mulStrategy.chainSteps && (

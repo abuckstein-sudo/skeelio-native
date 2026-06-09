@@ -67,6 +67,9 @@ export const GATE = {
   rangeHardHalfMinAttempts: 2, // for range tiers, min attempts landing in the harder half
 };
 
+// Fact tiers (small numbers, single-digit operations) with visual hint support
+export const FACT_TIERS = new Set(["A1", "A2", "S1", "S2", "M1", "M2", "M3", "M4", "M5", "D1", "D2", "D3", "D4"]);
+
 // What to actually TEACH for each tier (the strategy/method), keyed by tier id.
 // Tunable: edit a line to change how a tier is taught.
 export const TEACH_NOTES: Record<string, string> = {

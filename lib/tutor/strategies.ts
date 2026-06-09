@@ -1,7 +1,7 @@
 // Deterministic teaching strategies (no AI). Each picker returns text AND numbers
 // that drive its visual, so text and picture can't diverge.
 
-export type VisualType = "groups" | "array" | "number_line" | "doubling_chain" | "none";
+export type VisualType = "groups" | "array" | "number_line" | "doubling_chain" | "parts" | "remove" | "chain" | "none";
 
 export interface StrategyPlan {
   strategy: string;
@@ -10,11 +10,15 @@ export interface StrategyPlan {
   step_1: string;
   step_2: string;
   value: number;
-  visual_a: number;
-  visual_b: number; // groups: a groups of b dots | array: a×b | number_line: b hops of size a
+  visual_a?: number;
+  visual_b?: number; // groups: a groups of b dots | array: a×b | number_line: b hops of size a
   extraGroups?: number; // for ×11/×12, build_from_five: groups to highlight
   removeGroups?: number; // for ×9 (near_ten): groups to strike-through
   chainSteps?: number[]; // for doubling (×2,×4,×8): sequence of values to show
+  partA?: number; // for addition: first part
+  partB?: number; // for addition: second part
+  total?: number; // for subtraction: total before removal
+  removeCount?: number; // for subtraction: how many to remove
 }
 
 export function pickMultiplicationStrategy(
@@ -209,5 +213,157 @@ export function pickMultiplicationStrategy(
     visual_a: mult,
     visual_b: anchor,
     extraGroups: extra, // last 'extra' groups highlighted
+  };
+}
+
+// Addition (fact tiers A1–A2)
+export function pickAdditionStrategy(a: number, b: number): StrategyPlan {
+  const result = a + b;
+  const larger = Math.max(a, b);
+  const smaller = Math.min(a, b);
+
+  if (a === b) {
+    return {
+      strategy: "doubles",
+      label: "doubles",
+      visual_type: "parts",
+      step_1: `this is a doubles fact: ${a} + ${a}`,
+      step_2: `= ${result}`,
+      value: result,
+      partA: a,
+      partB: b,
+    };
+  }
+
+  if (result > 10) {
+    const bridge = 10 - larger;
+    const leftover = smaller - bridge;
+    return {
+      strategy: "make_ten",
+      label: "make ten",
+      visual_type: "parts",
+      step_1: `take ${bridge} from ${smaller} to make ${larger} into 10`,
+      step_2: `then add the leftover ${leftover}: 10 + ${leftover} = ${result}`,
+      value: result,
+      partA: larger,
+      partB: smaller,
+    };
+  }
+
+  return {
+    strategy: "count_on",
+    label: "count on",
+    visual_type: "parts",
+    step_1: `start at ${larger} and count on ${smaller}`,
+    step_2: `= ${result}`,
+    value: result,
+    partA: larger,
+    partB: smaller,
+  };
+}
+
+// Subtraction (fact tiers S1–S2)
+export function pickSubtractionStrategy(a: number, b: number): StrategyPlan {
+  const result = a - b;
+  const label = b <= 3 ? "count back" : "take away";
+  const strategy = b <= 3 ? "count_back" : "take_away";
+
+  return {
+    strategy,
+    label,
+    visual_type: "remove",
+    step_1: `start at ${a}, ${b <= 3 ? "count back" : "take away"} ${b}`,
+    step_2: `= ${result}`,
+    value: result,
+    total: a,
+    removeCount: b,
+  };
+}
+
+// Division (fact tiers D1–D4)
+export function pickDivisionStrategy(dividend: number, divisor: number): StrategyPlan {
+  const quotient = Math.round(dividend / divisor);
+
+  if (divisor === 1) {
+    return {
+      strategy: "identity",
+      label: "divide by one",
+      visual_type: "none",
+      step_1: `anything ÷ 1 stays the same`,
+      step_2: `${dividend} ÷ 1 = ${quotient}`,
+      value: quotient,
+    };
+  }
+
+  if (divisor === 2) {
+    return {
+      strategy: "halving",
+      label: "halving",
+      visual_type: "groups",
+      step_1: `split ${dividend} into 2 equal parts`,
+      step_2: `each part is ${quotient}`,
+      value: quotient,
+      visual_a: 2,
+      visual_b: quotient,
+    };
+  }
+
+  if (divisor === 10) {
+    return {
+      strategy: "remove_zero",
+      label: "remove the zero",
+      visual_type: "none",
+      step_1: `dividing by 10 — take the zero off ${dividend}`,
+      step_2: `= ${quotient}`,
+      value: quotient,
+    };
+  }
+
+  if (divisor === 5) {
+    return {
+      strategy: "skip_count_back",
+      label: "skip-count by 5",
+      visual_type: "number_line",
+      step_1: `count by 5s up to ${dividend}`,
+      step_2: `that's ${quotient} fives, so the answer is ${quotient}`,
+      value: quotient,
+      visual_a: 5,
+      visual_b: quotient,
+    };
+  }
+
+  if (divisor === 4) {
+    return {
+      strategy: "halve_twice",
+      label: "halve twice",
+      visual_type: "chain",
+      step_1: `halve ${dividend} to ${dividend / 2}`,
+      step_2: `halve again to get ${quotient}`,
+      value: quotient,
+      chainSteps: [dividend, dividend / 2, quotient],
+    };
+  }
+
+  if (divisor === 8) {
+    return {
+      strategy: "halve_three_times",
+      label: "halve three times",
+      visual_type: "chain",
+      step_1: `halve ${dividend} → ${dividend / 2} → ${dividend / 4}`,
+      step_2: `halve once more to get ${quotient}`,
+      value: quotient,
+      chainSteps: [dividend, dividend / 2, dividend / 4, quotient],
+    };
+  }
+
+  return {
+    strategy: "times_table_link",
+    label: "times-table link",
+    visual_type: "groups",
+    step_1: `${divisor} × ${quotient} = ${dividend}`,
+    step_2: `so ${dividend} ÷ ${divisor} = ${quotient}`,
+    value: quotient,
+    visual_a: quotient,
+    visual_b: divisor,
   };
 }

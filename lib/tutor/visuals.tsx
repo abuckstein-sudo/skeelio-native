@@ -47,6 +47,53 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 3,
   },
+  partBarContainer: {
+    maxHeight: screenHeight * 0.15,
+    borderRadius: 8,
+    backgroundColor: "#fafafa",
+    padding: 8,
+    marginVertical: 4,
+  },
+  partBar: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 3,
+    alignItems: "flex-start",
+  },
+  partDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  partDotA: {
+    backgroundColor: "#2196F3",
+  },
+  partDotB: {
+    backgroundColor: "#FF9800",
+  },
+  removeBarContainer: {
+    maxHeight: screenHeight * 0.15,
+    borderRadius: 8,
+    backgroundColor: "#fafafa",
+    padding: 8,
+    marginVertical: 4,
+  },
+  removeBar: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 3,
+    alignItems: "flex-start",
+  },
+  removeDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#4CAF50",
+  },
+  removeDotRemoved: {
+    backgroundColor: "#ccc",
+    opacity: 0.4,
+  },
   arrayContainer: {
     maxHeight: screenHeight * 0.35,
     borderRadius: 8,
@@ -243,6 +290,52 @@ export function DotArray({ rows, cols }: DotArrayProps) {
         ))}
       </View>
     </ScrollView>
+  );
+}
+
+export interface PartBarProps {
+  partA: number;
+  partB: number;
+}
+
+export function PartBar({ partA, partB }: PartBarProps) {
+  return (
+    <View style={styles.partBarContainer}>
+      <View style={styles.partBar}>
+        {Array.from({ length: partA }).map((_, i) => (
+          <View key={`a${i}`} style={[styles.partDot, styles.partDotA]} />
+        ))}
+        {Array.from({ length: partB }).map((_, i) => (
+          <View key={`b${i}`} style={[styles.partDot, styles.partDotB]} />
+        ))}
+      </View>
+    </View>
+  );
+}
+
+export interface RemoveBarProps {
+  total: number;
+  removeCount: number;
+}
+
+export function RemoveBar({ total, removeCount }: RemoveBarProps) {
+  return (
+    <View style={styles.removeBarContainer}>
+      <View style={styles.removeBar}>
+        {Array.from({ length: total }).map((_, i) => {
+          const isRemoved = i >= total - removeCount;
+          return (
+            <View
+              key={i}
+              style={[
+                styles.removeDot,
+                isRemoved && styles.removeDotRemoved,
+              ]}
+            />
+          );
+        })}
+      </View>
+    </View>
   );
 }
 
