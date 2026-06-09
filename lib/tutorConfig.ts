@@ -63,6 +63,39 @@ export const GATE = {
   rangeHardHalfMinAttempts: 2, // for range tiers, min attempts landing in the harder half
 };
 
+// What to actually TEACH for each tier (the strategy/method), keyed by tier id.
+// Tunable: edit a line to change how a tier is taught.
+export const TEACH_NOTES: Record<string, string> = {
+  A1: "Start from the bigger number and count on by the smaller one.",
+  A2: "Make ten first: split the second number so one part reaches 10, then add what's left.",
+  A3: "Add the ones to the ones; the tens stay the same.",
+  A4: "Add the ones, then add the tens — no carrying needed here.",
+  A5: "Add the ones first; if they pass 9, carry 1 into the tens, then add the tens.",
+  A6: "Work right to left: ones, tens, hundreds, carrying whenever a column passes 9.",
+  A7: "Same method, more columns: right to left, carry each time a column passes 9.",
+  S1: "Count back from the bigger number by the smaller one.",
+  S2: "If the ones are too small to take away, use ten from the front to help.",
+  S3: "Subtract the ones from the ones; the tens stay the same.",
+  S4: "Subtract the ones, then the tens — no borrowing needed here.",
+  S5: "If the top ones are smaller, borrow 1 ten (it becomes 10 ones), then subtract.",
+  S6: "Go right to left; borrow from the next column whenever the top digit is too small.",
+  S7: "To borrow across a zero, borrow from further left first, then come back.",
+  M1: "×1 keeps the number, ×2 is doubling, ×10 adds a zero, ×0 is always 0.",
+  M2: "×5 is half of ×10 — or count up by fives.",
+  M3: "×3 is double then one more group; ×4 is doubling twice.",
+  M4: "Build on facts you know — e.g. 6×7 = 5×7 + 7.",
+  M5: "×11 of a single digit writes the digit twice (11×7 = 77); ×12 = ×10 then add the number twice more.",
+  M6: "Multiply the ones, then the tens, and add the parts together.",
+  M7: "Multiply by the ones, then by the tens, then add the two partial answers.",
+  D1: "Division undoes multiplication — ask how many of the divisor fit in.",
+  D2: "Use the times table: how many 3s (or 4s) make this number?",
+  D3: "Use the matching times-table fact you know to find how many fit.",
+  D4: "Find the biggest multiple that fits; what's left over is the remainder.",
+  D5: "Share the tens first, then the ones — how many groups fit?",
+  D6: "Divide as usual; whatever can't be shared evenly is the remainder.",
+  D7: "Divide the front digits, multiply, subtract, bring down the next digit, repeat.",
+};
+
 // Where a child STARTS on each ladder before we've measured them (from parent-set ceilings).
 // After real attempts exist, measured ability overrides this.
 export function startingTier(op: Operation, child: any): string {
