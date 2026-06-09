@@ -165,12 +165,13 @@ export default function PracticeScreen() {
             };
 
             // Invoke teach-tier function
-            const baseUrl = "https://aalqeqjlspxqhxohubfi.supabase.co";
+            const baseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+            const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
             const res = await fetch(`${baseUrl}/functions/v1/teach-tier`, {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
-                Authorization: `Bearer ${session.user.id}`,
+                Authorization: `Bearer ${anonKey}`,
               },
               body: JSON.stringify({
                 operation: topic,
