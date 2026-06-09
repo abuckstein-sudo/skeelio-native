@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   View,
   Text,
@@ -8,6 +8,10 @@ import {
   ScrollView,
   SafeAreaView,
   ActivityIndicator,
+  KeyboardAvoidingView,
+  TouchableWithoutFeedback,
+  Keyboard,
+  Platform,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { LADDERS, TEACH_NOTES, Operation, FACT_TIERS } from "@/lib/tutorConfig";
@@ -120,6 +124,15 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     fontSize: 14,
   },
+  yourTurnContent: {
+    flex: 1,
+  },
+  hintContent: {
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: "#eee",
+  },
 });
 
 interface TierInfo {
@@ -142,6 +155,12 @@ export default function LessonScreen() {
   const [showAnswer, setShowAnswer] = useState(false);
   const [isCorrect, setIsCorrect] = useState(false);
 
+  // Keep your-turn example stable across re-renders (only compute once per tier)
+  const yourTurnQRef = useRef<any>(null);
+  if (!yourTurnQRef.current) {
+    yourTurnQRef.current = pickTeachExample(operation as Operation, tierId);
+  }
+
   if (!childId || !tierId || !tierLabel || !operation) {
     return (
       <SafeAreaView style={styles.container} edges={["top"]}>
@@ -161,9 +180,9 @@ export default function LessonScreen() {
     return null;
   };
 
-  // Generate examples
+  // Generate worked example (for page 1 only)
   const exampleQ = pickTeachExample(operation as Operation, tierId);
-  const yourTurnQ = pickTeachExample(operation as Operation, tierId);
+  const yourTurnQ = yourTurnQRef.current;
 
   const opSymbol =
     operation === "addition"
@@ -211,7 +230,11 @@ export default function LessonScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
-      <ScrollView contentContainerStyle={styles.contentScroll} keyboardShouldPersistTaps="handled">
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={styles.container}
+      >
+        <ScrollView contentContainerStyle={styles.contentScroll} keyboardShouldPersistTaps="handled">
         {page === 0 && (
           <>
             <Text style={styles.header}>Let's learn: {tierLabel}</Text>
@@ -257,75 +280,71 @@ export default function LessonScreen() {
         )}
 
         {page === 2 && (
-          <>
-            <Text style={styles.header}>Your turn</Text>
-            <View style={styles.exampleBox}>
-              <Text style={styles.exampleText}>
-                {yourTurnQ.a} {opSymbol} {yourTurnQ.b} = ?
-              </Text>
-            </View>
+          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+            <View style={styles.yourTurnContent}>
+              <Text style={styles.header}>Your turn</Text>
+              <View style={styles.exampleBox}>
+                <Text style={styles.exampleText}>
+                  {yourTurnQ.a} {opSymbol} {yourTurnQ.b} = ?
+                </Text>
+              </View>
 
-            <TextInput
-              style={styles.inputBox}
-              placeholder="Enter your answer"
-              keyboardType="number-pad"
-              value={userAnswer}
-              onChangeText={setUserAnswer}
-              editable={!isCorrect}
-            />
+              <TextInput
+                style={styles.inputBox}
+                placeholder="Enter your answer"
+                keyboardType="number-pad"
+                value={userAnswer}
+                onChangeText={setUserAnswer}
+                editable={!isCorrect}
+              />
 
-            {showAnswer && !isCorrect && (
-              <>
+              {isCorrect && <Text style={styles.feedbackText}>Nice! ✓</Text>}
+
+              <View style={styles.buttonRow}>
                 <TouchableOpacity
                   style={[styles.button, styles.buttonSecondary]}
-                  onPress={() => setShowAnswer(false)}
+                  onPress={() => setShowAnswer(!showAnswer)}
                 >
-                  <Text style={[styles.buttonText, styles.buttonTextSecondary]}>Hide</Text>
+                  <Text style={[styles.buttonText, styles.buttonTextSecondary]}>
+                    {showAnswer ? "Hide" : "Show me how"}
+                  </Text>
                 </TouchableOpacity>
-                {isFactTier ? (
-                  (() => {
-                    const picker = getStrategyPicker();
-                    if (!picker) return null;
-                    const plan =
-                      operation === "addition"
-                        ? picker(yourTurnQ.a, yourTurnQ.b)
-                        : operation === "subtraction"
-                        ? picker(yourTurnQ.a, yourTurnQ.b)
-                        : operation === "multiplication"
-                        ? picker(yourTurnQ.a, yourTurnQ.b)
-                        : picker(yourTurnQ.a, yourTurnQ.b);
-                    return <StrategyView plan={plan} showStep2={true} />;
-                  })()
-                ) : (
-                  <View>
-                    {computeExampleSteps(operation as Operation, yourTurnQ.a, yourTurnQ.b, yourTurnQ.remainder).map(
-                      (step, i) => (
-                        <Text key={i} style={styles.stepText}>
-                          {step}
-                        </Text>
-                      )
-                    )}
-                  </View>
-                )}
-              </>
-            )}
+                <TouchableOpacity style={styles.button} onPress={handleCheck} disabled={!userAnswer.trim() || isCorrect}>
+                  <Text style={styles.buttonText}>Check</Text>
+                </TouchableOpacity>
+              </View>
 
-            {isCorrect && <Text style={styles.feedbackText}>Nice! ✓</Text>}
-
-            <View style={styles.buttonRow}>
-              <TouchableOpacity
-                style={[styles.button, styles.buttonSecondary]}
-                onPress={() => setShowAnswer(!showAnswer)}
-              >
-                <Text style={[styles.buttonText, styles.buttonTextSecondary]}>
-                  {showAnswer ? "Hide" : "Show me how"}
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.button} onPress={handleCheck} disabled={!userAnswer.trim() || isCorrect}>
-                <Text style={styles.buttonText}>Check</Text>
-              </TouchableOpacity>
+              {showAnswer && !isCorrect && (
+                <View style={styles.hintContent}>
+                  {isFactTier ? (
+                    (() => {
+                      const picker = getStrategyPicker();
+                      if (!picker) return null;
+                      const plan =
+                        operation === "addition"
+                          ? picker(yourTurnQ.a, yourTurnQ.b)
+                          : operation === "subtraction"
+                          ? picker(yourTurnQ.a, yourTurnQ.b)
+                          : operation === "multiplication"
+                          ? picker(yourTurnQ.a, yourTurnQ.b)
+                          : picker(yourTurnQ.a, yourTurnQ.b);
+                      return <StrategyView plan={plan} showStep2={false} />;
+                    })()
+                  ) : (
+                    <View>
+                      {computeExampleSteps(operation as Operation, yourTurnQ.a, yourTurnQ.b, yourTurnQ.remainder).map(
+                        (step, i) => (
+                          <Text key={i} style={styles.stepText}>
+                            {step}
+                          </Text>
+                        )
+                      )}
+                    </View>
+                  )}
+                </View>
+              )}
             </View>
-          </>
+          </TouchableWithoutFeedback>
         )}
 
         {page === 3 && (
@@ -363,6 +382,7 @@ export default function LessonScreen() {
           )}
         </View>
       </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
