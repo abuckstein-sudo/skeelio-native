@@ -16,6 +16,7 @@ import { addStars } from "@/lib/addStars";
 import { generateQuestion } from "@/lib/tutor/generate";
 import { currentTierAndBand, Attempt } from "@/lib/tutor/ability";
 import { LADDERS, GATE, Operation } from "@/lib/tutorConfig";
+import { computeExampleSteps } from "@/lib/tutor/steps";
 import { useAuth } from "../_layout";
 
 interface Answer {
@@ -36,6 +37,12 @@ interface HintData {
 interface TeachingMethod {
   method_name: string;
   method_description: string;
+}
+
+interface TeachData {
+  intro: string;
+  example_walkthrough: string[];
+  encouragement: string;
 }
 
 export default function PracticeScreen() {
@@ -65,6 +72,11 @@ export default function PracticeScreen() {
   const [sessionComplete, setSessionComplete] = useState(false);
   const [outcomeMessage, setOutcomeMessage] = useState<string>("");
   const [outcomeBand, setOutcomeBand] = useState<"solid" | "developing" | "struggling">("developing");
+
+  // Teach state
+  const [teachData, setTeachData] = useState<TeachData | null>(null);
+  const [teachLoading, setTeachLoading] = useState(false);
+  const [teachAcknowledged, setTeachAcknowledged] = useState(false);
 
   useEffect(() => {
     if (!topic || !childId || !session?.user?.id) {
@@ -114,7 +126,81 @@ export default function PracticeScreen() {
         setTierId(workingTierId);
         setTierLabel(label);
 
-        // Fetch division method if needed
+        // If needs-teach, fetch teach content
+        if (band === "needs-teach") {
+          setTeachLoading(true);
+          try {
+            // Generate an example question
+            const exampleQuestion = generateQuestion(topic as Operation, workingTierId, childData?.max_times_table);
+            const steps = computeExampleSteps(
+              topic as Operation,
+              exampleQuestion.a,
+              exampleQuestion.b,
+              exampleQuestion.remainder
+            );
+
+            // Fetch teaching method if applicable
+            let method = null;
+            if (topic === "division") {
+              const { data: methodData } = await supabase
+                .from("child_teaching_methods")
+                .select("method_name, method_description")
+                .eq("child_id", childId)
+                .eq("subject", "division")
+                .eq("confirmed", true)
+                .maybeSingle();
+              if (methodData) {
+                method = methodData.method_name;
+              }
+            }
+
+            // Build child context
+            const childContext = {
+              name: childData?.name,
+              gradeLabel: childData?.grade_level
+                ? `${childData.grade_level}${childData.school_system ? ` (${childData.school_system})` : ""}`
+                : undefined,
+              language: childData?.preferred_language || childData?.languages?.[0] || "English",
+              interests: childData?.child_context?.interests,
+            };
+
+            // Invoke teach-tier function
+            const baseUrl = "https://aalqeqjlspxqhxohubfi.supabase.co";
+            const res = await fetch(`${baseUrl}/functions/v1/teach-tier`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${session.user.id}`,
+              },
+              body: JSON.stringify({
+                operation: topic,
+                tierLabel: label,
+                example: {
+                  a: exampleQuestion.a,
+                  b: exampleQuestion.b,
+                  answer: exampleQuestion.answer,
+                  remainder: exampleQuestion.remainder,
+                },
+                steps,
+                method,
+                child: childContext,
+              }),
+            });
+
+            if (res.ok) {
+              const teach = (await res.json()) as TeachData;
+              setTeachData(teach);
+            } else {
+              console.error("[practice] teach-tier error", res.status);
+            }
+          } catch (err) {
+            console.error("[practice] teach error:", err);
+          } finally {
+            setTeachLoading(false);
+          }
+        }
+
+        // Fetch division method if needed (for hints during practice)
         if (topic === "division") {
           const { data: method } = await supabase
             .from("child_teaching_methods")
@@ -251,6 +337,10 @@ export default function PracticeScreen() {
     }
   };
 
+  const handleTeachAcknowledged = () => {
+    setTeachAcknowledged(true);
+  };
+
   const handleNext = () => {
     setUserAnswer("");
     setFeedback(null);
@@ -320,6 +410,37 @@ export default function PracticeScreen() {
       setSessionComplete(true);
     }
   };
+
+  // Show teach screen if we have teach data and it hasn't been acknowledged yet
+  if (teachData && !teachAcknowledged) {
+    return (
+      <View style={styles.container}>
+        <ScrollView contentContainerStyle={styles.contentContainer}>
+          <Text style={styles.title}>Let's Learn!</Text>
+
+          <View style={styles.introBox}>
+            <Text style={styles.introText}>{teachData.intro}</Text>
+          </View>
+
+          <Text style={styles.stepTitle}>Worked Example:</Text>
+          {teachData.example_walkthrough.map((step, i) => (
+            <View key={i} style={styles.stepBox}>
+              <Text style={styles.stepNumber}>{i + 1}.</Text>
+              <Text style={styles.stepText}>{step}</Text>
+            </View>
+          ))}
+
+          <View style={styles.encouragementBox}>
+            <Text style={styles.encouragementText}>{teachData.encouragement}</Text>
+          </View>
+
+          <TouchableOpacity style={styles.button} onPress={handleTeachAcknowledged}>
+            <Text style={styles.buttonText}>Got it — let's practice!</Text>
+          </TouchableOpacity>
+        </ScrollView>
+      </View>
+    );
+  }
 
   if (isLoading || questions.length === 0) {
     return (
@@ -574,6 +695,64 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 16,
     fontWeight: "bold",
+  },
+  introBox: {
+    backgroundColor: "#f0f8ff",
+    padding: 16,
+    borderRadius: 8,
+    marginBottom: 24,
+    borderLeftWidth: 4,
+    borderLeftColor: "#2196f3",
+  },
+  introText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#1a1a1a",
+    lineHeight: 24,
+  },
+  stepTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#1a1a1a",
+    marginBottom: 12,
+  },
+  stepBox: {
+    flexDirection: "row",
+    marginBottom: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: "#fef9f0",
+    borderLeftWidth: 4,
+    borderLeftColor: "#ff9800",
+    borderRadius: 6,
+  },
+  stepNumber: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#ff9800",
+    marginRight: 12,
+    minWidth: 24,
+  },
+  stepText: {
+    fontSize: 14,
+    color: "#1a1a1a",
+    lineHeight: 20,
+    flex: 1,
+  },
+  encouragementBox: {
+    backgroundColor: "#e8f5e9",
+    padding: 16,
+    borderRadius: 8,
+    marginVertical: 24,
+    borderLeftWidth: 4,
+    borderLeftColor: "#4caf50",
+  },
+  encouragementText: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#1a1a1a",
+    textAlign: "center",
+    lineHeight: 22,
   },
   scoreBox: {
     backgroundColor: "#f0f8ff",

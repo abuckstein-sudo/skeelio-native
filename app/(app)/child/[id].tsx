@@ -388,11 +388,18 @@ export default function ChildHomeScreen() {
             {(["addition", "subtraction", "multiplication", "division"] as Operation[]).map((op) => {
               const status = operationStatuses[op];
               if (!status) return null;
+
+              // Override text for needs-teach band
+              let displayText = status.parentDashboardText;
+              if (status.band === "needs-teach") {
+                displayText = `Ready to learn ${status.workingTierLabel}`;
+              }
+
               return (
                 <View key={op} style={styles.operationRow}>
                   <View style={styles.operationInfo}>
                     <Text style={styles.topicName}>{op}</Text>
-                    <Text style={styles.operationStatus}>{status.parentDashboardText}</Text>
+                    <Text style={styles.operationStatus}>{displayText}</Text>
                   </View>
                 </View>
               );
