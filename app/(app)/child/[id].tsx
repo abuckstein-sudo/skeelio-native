@@ -526,7 +526,7 @@ export default function ChildHomeScreen() {
                           {cap(asn.focus) || cap(asn.subject) || "Practice"}
                         </Text>
                         <Text style={styles.homeworkDetails}>
-                          {asn.question_count} questions
+                          {asn.question_count} questions • {asn.mode === "quiz" ? "Quiz" : "Practice"}
                           {asn.due_date &&
                             ` • Due: ${new Date(asn.due_date).toLocaleDateString()}`}
                         </Text>

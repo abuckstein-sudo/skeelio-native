@@ -6,6 +6,14 @@ import { markAssignmentComplete, Assignment, CustomQuestion } from "@/lib/assign
 import { addStars } from "@/lib/addStars";
 import { FACT_TIERS, LADDERS, Operation } from "@/lib/tutorConfig";
 import { computeExampleSteps } from "@/lib/tutor/steps";
+import {
+  pickAdditionStrategy,
+  pickSubtractionStrategy,
+  pickMultiplicationStrategy,
+  pickDivisionStrategy,
+  StrategyPlan,
+} from "@/lib/tutor/strategies";
+import { StrategyView } from "@/lib/tutor/visuals/StrategyView";
 
 interface Answer {
   questionIndex: number;
@@ -28,6 +36,13 @@ export default function HomeworkScreen() {
   const [error, setError] = useState("");
   const [sessionUserId, setSessionUserId] = useState<string>("");
   const [isQuizMode, setIsQuizMode] = useState(false);
+
+  // Hint state
+  const [currentHintLevel, setCurrentHintLevel] = useState(0);
+  const [currentHint, setCurrentHint] = useState<string>("");
+  const [hintLoading, setHintLoading] = useState(false);
+  const [hintUsedPerQuestion, setHintUsedPerQuestion] = useState<boolean[]>([]);
+  const [mulStrategy, setMulStrategy] = useState<StrategyPlan | null>(null);
 
   useEffect(() => {
     const getSession = async () => {
@@ -66,7 +81,76 @@ export default function HomeworkScreen() {
     setAssignment(assignment);
     setQuestions(assignment.custom_questions || []);
     setIsQuizMode(assignment.mode === "quiz");
+    setHintUsedPerQuestion(new Array(assignment.custom_questions?.length || 0).fill(false));
     setIsLoading(false);
+  };
+
+  const handleRequestHint = async () => {
+    if (isQuizMode) return; // No hints in quiz mode
+
+    const question = questions[currentQuestionIndex];
+    if (!question || !assignment) {
+      return;
+    }
+
+    // Cap hints at 2
+    if (currentHintLevel >= 2) {
+      return;
+    }
+
+    setHintLoading(true);
+    try {
+      const topic = assignment.focus as Operation;
+      const tierId = question.tier || "";
+
+      // Check if this is a fact tier
+      const isFactTier = FACT_TIERS.has(tierId);
+
+      if (isFactTier) {
+        // Use deterministic strategy picker based on operation
+        let strategy: StrategyPlan | null = null;
+
+        // Parse question_text to extract a and b
+        // Format: "a operation b = ?"
+        const parts = question.question_text.split(/[\+\−×÷]/);
+        const a = parseInt(parts[0].trim());
+        const b = parseInt(parts[1].trim());
+
+        if (topic === "addition") {
+          strategy = pickAdditionStrategy(a, b);
+        } else if (topic === "subtraction") {
+          strategy = pickSubtractionStrategy(a, b);
+        } else if (topic === "multiplication") {
+          strategy = pickMultiplicationStrategy(a, b);
+        } else if (topic === "division") {
+          strategy = pickDivisionStrategy(a, b);
+        }
+
+        if (strategy) {
+          setMulStrategy(strategy);
+          setCurrentHintLevel(currentHintLevel + 1);
+        }
+      } else {
+        // For procedural tiers, show computed example steps
+        const parts = question.question_text.split(/[\+\−×÷]/);
+        const a = parseInt(parts[0].trim());
+        const b = parseInt(parts[1].trim());
+
+        const steps = computeExampleSteps(topic, a, b, undefined);
+        setCurrentHint(
+          `Here's how to solve it:\n${steps.map((s, i) => `${i + 1}. ${s}`).join("\n")}`
+        );
+        setCurrentHintLevel(currentHintLevel + 1);
+      }
+
+      setHintUsedPerQuestion((prev) => {
+        const updated = [...prev];
+        updated[currentQuestionIndex] = true;
+        return updated;
+      });
+    } finally {
+      setHintLoading(false);
+    }
   };
 
   const handleSubmit = async () => {
@@ -91,7 +175,7 @@ export default function HomeworkScreen() {
           correct_answer: question.correct_answer,
           user_answer: userAnswer.trim(),
           was_correct: isCorrect,
-          ai_hint_used: false,
+          ai_hint_used: hintUsedPerQuestion[currentQuestionIndex] || false,
         },
       ]);
 
@@ -128,6 +212,9 @@ export default function HomeworkScreen() {
   const handleNext = () => {
     setUserAnswer("");
     setFeedback(null);
+    setCurrentHintLevel(0);
+    setCurrentHint("");
+    setMulStrategy(null);
 
     if (currentQuestionIndex < questions.length - 1) {
       setCurrentQuestionIndex(currentQuestionIndex + 1);
@@ -187,6 +274,8 @@ export default function HomeworkScreen() {
   const question = questions[currentQuestionIndex];
   const isLastQuestion = currentQuestionIndex === questions.length - 1;
   const isAnswered = feedback !== null;
+  const canShowHint = !isQuizMode && currentHintLevel < 2 && !isAnswered;
+  const showingStrategy = mulStrategy !== null && !isAnswered;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -208,6 +297,21 @@ export default function HomeworkScreen() {
         {/* Question */}
         <View style={styles.questionContainer}>
           <Text style={styles.questionText}>{question.question_text}</Text>
+
+          {/* Strategy View (for fact tiers in practice mode) */}
+          {showingStrategy && mulStrategy && (
+            <View style={styles.strategyContainer}>
+              <StrategyView strategy={mulStrategy} />
+            </View>
+          )}
+
+          {/* Computed steps (for procedural tiers in practice mode) */}
+          {currentHint && !showingStrategy && (
+            <View style={styles.hintBox}>
+              <Text style={styles.hintText}>{currentHint}</Text>
+            </View>
+          )}
+
           <TextInput
             style={[styles.answerInput, isAnswered && styles.answerInputDisabled]}
             placeholder="Your answer"
@@ -217,6 +321,19 @@ export default function HomeworkScreen() {
             editable={!isAnswered}
           />
         </View>
+
+        {/* Hint Button (Practice Mode Only) */}
+        {!isQuizMode && !isAnswered && (
+          <TouchableOpacity
+            style={[styles.hintButton, !canShowHint && styles.hintButtonDisabled]}
+            onPress={handleRequestHint}
+            disabled={!canShowHint || hintLoading}
+          >
+            <Text style={styles.hintButtonText}>
+              {hintLoading ? "Loading..." : currentHintLevel === 0 ? "💡 Hint" : "💡 Hint " + currentHintLevel}
+            </Text>
+          </TouchableOpacity>
+        )}
 
         {/* Feedback */}
         {feedback && (
@@ -287,6 +404,27 @@ const styles = StyleSheet.create({
     color: "#1a1a1a",
     marginBottom: 16,
   },
+  strategyContainer: {
+    marginBottom: 16,
+    padding: 12,
+    backgroundColor: "#f5f5f5",
+    borderRadius: 8,
+    borderLeftWidth: 4,
+    borderLeftColor: "#ff9800",
+  },
+  hintBox: {
+    marginBottom: 16,
+    padding: 12,
+    backgroundColor: "#e8f5e9",
+    borderRadius: 8,
+    borderLeftWidth: 4,
+    borderLeftColor: "#4caf50",
+  },
+  hintText: {
+    fontSize: 13,
+    color: "#2e7d32",
+    lineHeight: 18,
+  },
   answerInput: {
     borderWidth: 2,
     borderColor: "#ccc",
@@ -298,6 +436,24 @@ const styles = StyleSheet.create({
   answerInputDisabled: {
     backgroundColor: "#f5f5f5",
     color: "#999",
+  },
+  hintButton: {
+    backgroundColor: "#fff3e0",
+    borderWidth: 2,
+    borderColor: "#ff9800",
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  hintButtonDisabled: {
+    opacity: 0.5,
+  },
+  hintButtonText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#ff9800",
   },
   feedbackBox: {
     padding: 12,
