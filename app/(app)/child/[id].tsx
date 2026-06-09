@@ -1,5 +1,15 @@
 import { useEffect, useState, useCallback } from "react";
-import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, ScrollView, SafeAreaView, Modal, TextInput } from "react-native";
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  ActivityIndicator,
+  ScrollView,
+  SafeAreaView,
+  Modal,
+  TextInput,
+} from "react-native";
 import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "../../_layout";
@@ -7,7 +17,11 @@ import { getSubjectMastery, TopicMastery } from "@/lib/mastery";
 import { getWhatsNext, NextStep } from "@/lib/whatsNext";
 import { getOperationStatus, OperationStatus } from "@/lib/tutor/status";
 import { Operation } from "@/lib/tutorConfig";
-import { listAssignmentsForChild, createMathAssignment, Assignment } from "@/lib/assignments";
+import {
+  listAssignmentsForChild,
+  createMathAssignment,
+  Assignment,
+} from "@/lib/assignments";
 
 const KNOWN_SUBJECTS = [
   "multiplication",
@@ -45,7 +59,9 @@ export default function ChildHomeScreen() {
   const [child, setChild] = useState<Child | null>(null);
   const [allChildren, setAllChildren] = useState<ChildOption[]>([]);
   const [mastery, setMastery] = useState<Record<string, TopicMastery>>({});
-  const [operationStatuses, setOperationStatuses] = useState<Record<Operation, OperationStatus>>({});
+  const [operationStatuses, setOperationStatuses] = useState<
+    Record<Operation, OperationStatus>
+  >({});
   const [nextStep, setNextStep] = useState<NextStep | null>(null);
   const [todayPracticeCount, setTodayPracticeCount] = useState(0);
   const [stars, setStars] = useState(0);
@@ -120,7 +136,7 @@ export default function ChildHomeScreen() {
     useCallback(() => {
       fetchStars();
       fetchAssignments();
-    }, [fetchStars, fetchAssignments])
+    }, [fetchStars, fetchAssignments]),
   );
 
   const fetchChild = async () => {
@@ -195,7 +211,12 @@ export default function ChildHomeScreen() {
     setMastery(masteryData);
 
     // Fetch tier-based operation statuses for math subjects
-    const mathOperations: Operation[] = ["addition", "subtraction", "multiplication", "division"];
+    const mathOperations: Operation[] = [
+      "addition",
+      "subtraction",
+      "multiplication",
+      "division",
+    ];
     const statuses: Record<Operation, OperationStatus> = {} as any;
     for (const op of mathOperations) {
       const status = await getOperationStatus(id, op, data || {});
@@ -381,7 +402,8 @@ export default function ChildHomeScreen() {
                   <Text
                     style={[
                       styles.childSwitcherButtonText,
-                      childOption.id === id && styles.childSwitcherButtonTextActive,
+                      childOption.id === id &&
+                        styles.childSwitcherButtonTextActive,
                     ]}
                   >
                     {childOption.name}
@@ -393,16 +415,26 @@ export default function ChildHomeScreen() {
 
           {/* Today's Practice & Stars */}
           <View style={styles.todayPractice}>
-            <Text style={styles.todayPracticeText}>Practiced today: {todayPracticeCount}</Text>
+            <Text style={styles.todayPracticeText}>
+              Practiced today: {todayPracticeCount}
+            </Text>
             <Text style={styles.starsText}>⭐ {stars}</Text>
           </View>
 
           {/* Action Buttons */}
           <View style={styles.actionButtonsTop}>
-            <TouchableOpacity style={styles.actionButton} onPress={handleEditSettings}>
-              <Text style={styles.actionButtonText}>Edit {child?.name}'s settings</Text>
+            <TouchableOpacity
+              style={styles.actionButton}
+              onPress={handleEditSettings}
+            >
+              <Text style={styles.actionButtonText}>
+                Edit {child?.name}'s settings
+              </Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.actionButton} onPress={handleSignOut}>
+            <TouchableOpacity
+              style={styles.actionButton}
+              onPress={handleSignOut}
+            >
               <Text style={styles.actionButtonText}>Sign Out</Text>
             </TouchableOpacity>
           </View>
@@ -413,177 +445,242 @@ export default function ChildHomeScreen() {
           <Text style={styles.headerName}>Parent dashboard</Text>
         </View>
 
-      {hasData && nextStep && (
-        <TouchableOpacity style={styles.whatsnextCard} onPress={handleWhatsNext}>
-          <Text style={styles.whatsnextHeadline}>{nextStep.headline}</Text>
-          <View style={styles.whatsnextCTAContainer}>
-            <Text style={styles.whatsnextCTA}>{nextStep.cta}</Text>
-          </View>
-        </TouchableOpacity>
-      )}
-
-      {!hasData && Object.keys(operationStatuses).every((op) => !operationStatuses[op as Operation]?.hasAttempts) ? (
-        <View style={styles.emptySection}>
-          <Text style={styles.emptyText}>
-            No practice data yet. Come back after your first practice session!
-          </Text>
-        </View>
-      ) : (
-        <>
-          {/* Homework Section */}
-          <View style={styles.section}>
-            <View style={styles.sectionHeaderRow}>
-              <Text style={styles.sectionTitle}>Homework</Text>
-              <TouchableOpacity
-                style={styles.addButton}
-                onPress={() => setShowAssignmentForm(true)}
-              >
-                <Text style={styles.addButtonText}>+ Assign</Text>
-              </TouchableOpacity>
+        {hasData && nextStep && (
+          <TouchableOpacity
+            style={styles.whatsnextCard}
+            onPress={handleWhatsNext}
+          >
+            <Text style={styles.whatsnextHeadline}>{nextStep.headline}</Text>
+            <View style={styles.whatsnextCTAContainer}>
+              <Text style={styles.whatsnextCTA}>{nextStep.cta}</Text>
             </View>
-            {assignments.length === 0 ? (
-              <Text style={styles.emptyItemText}>No assignments yet</Text>
-            ) : (
-              assignments.map((asn) => (
-                <View
-                  key={asn.id}
-                  style={[
-                    styles.homeworkRow,
-                    asn.status === "completed" && styles.homeworkRowCompleted,
-                  ]}
+          </TouchableOpacity>
+        )}
+
+        {!hasData &&
+        Object.keys(operationStatuses).every(
+          (op) => !operationStatuses[op as Operation]?.hasAttempts,
+        ) ? (
+          <View style={styles.emptySection}>
+            <Text style={styles.emptyText}>
+              No practice data yet. Come back after your first practice session!
+            </Text>
+          </View>
+        ) : (
+          <>
+            {/* Homework Section */}
+            <View style={styles.section}>
+              <View style={styles.sectionHeaderRow}>
+                <Text style={styles.sectionTitle}>Homework</Text>
+                <TouchableOpacity
+                  style={styles.addButton}
+                  onPress={() => setShowAssignmentForm(true)}
                 >
-                  <View style={styles.homeworkInfo}>
-                    <Text style={styles.homeworkTopic}>
-                      {asn.focus.charAt(0).toUpperCase() + asn.focus.slice(1)}
-                    </Text>
-                    <Text style={styles.homeworkDetails}>
-                      {asn.question_count} questions
-                      {asn.due_date && ` • Due: ${new Date(asn.due_date).toLocaleDateString()}`}
-                    </Text>
-                    {asn.status === "completed" && asn.completed_at && (
-                      <Text style={styles.completedDate}>
-                        Completed: {new Date(asn.completed_at).toLocaleDateString()}
-                      </Text>
-                    )}
-                  </View>
+                  <Text style={styles.addButtonText}>+ Assign</Text>
+                </TouchableOpacity>
+              </View>
+              {assignments.length === 0 ? (
+                <Text style={styles.emptyItemText}>No assignments yet</Text>
+              ) : (
+                assignments.map((asn) => (
                   <View
+                    key={asn.id}
                     style={[
-                      styles.statusBadge,
-                      asn.status === "completed"
-                        ? styles.statusCompleted
-                        : styles.statusActive,
+                      styles.homeworkRow,
+                      asn.status === "completed" && styles.homeworkRowCompleted,
                     ]}
                   >
-                    <Text
+                    <View style={styles.homeworkInfo}>
+                      <Text style={styles.homeworkTopic}>
+                        {asn.focus.charAt(0).toUpperCase() + asn.focus.slice(1)}
+                      </Text>
+                      <Text style={styles.homeworkDetails}>
+                        {asn.question_count} questions
+                        {asn.due_date &&
+                          ` • Due: ${new Date(asn.due_date).toLocaleDateString()}`}
+                      </Text>
+                      {asn.status === "completed" && asn.completed_at && (
+                        <Text style={styles.completedDate}>
+                          Completed:{" "}
+                          {new Date(asn.completed_at).toLocaleDateString()}
+                        </Text>
+                      )}
+                    </View>
+                    <View
                       style={[
-                        styles.statusBadgeText,
-                        asn.status === "completed" && styles.statusBadgeTextCompleted,
+                        styles.statusBadge,
+                        asn.status === "completed"
+                          ? styles.statusCompleted
+                          : styles.statusActive,
                       ]}
                     >
-                      {asn.status === "completed" ? "✓" : "→"}
-                    </Text>
+                      <Text
+                        style={[
+                          styles.statusBadgeText,
+                          asn.status === "completed" &&
+                            styles.statusBadgeTextCompleted,
+                        ]}
+                      >
+                        {asn.status === "completed" ? "✓" : "→"}
+                      </Text>
+                    </View>
                   </View>
-                </View>
-              ))
+                ))
+              )}
+            </View>
+
+            {/* Math Operations Section */}
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Math Progress</Text>
+              {(
+                [
+                  "addition",
+                  "subtraction",
+                  "multiplication",
+                  "division",
+                ] as Operation[]
+              ).map((op) => {
+                const status = operationStatuses[op];
+                if (!status) return null;
+
+                // Override text for needs-teach band
+                let displayText = status.parentDashboardText;
+                if (status.band === "needs-teach") {
+                  displayText = `Ready to learn ${status.workingTierLabel}`;
+                }
+
+                return (
+                  <View key={op} style={styles.operationRow}>
+                    <View style={styles.operationInfo}>
+                      <Text style={styles.topicName}>{op}</Text>
+                      <Text style={styles.operationStatus}>{displayText}</Text>
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+
+            {/* Other Subjects Section */}
+            {categories.strengths.length > 0 && (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Doing well</Text>
+                {categories.strengths
+                  .filter(
+                    ([topic]) =>
+                      ![
+                        "addition",
+                        "subtraction",
+                        "multiplication",
+                        "division",
+                      ].includes(topic),
+                  )
+                  .map(([topic, data]) => (
+                    <View key={topic} style={styles.strengthRow}>
+                      <Text style={styles.topicName}>{topic}</Text>
+                      <Text style={styles.strengthScore}>{data.score}%</Text>
+                    </View>
+                  ))}
+              </View>
             )}
-          </View>
 
-          {/* Math Operations Section */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Math Progress</Text>
-            {(["addition", "subtraction", "multiplication", "division"] as Operation[]).map((op) => {
-              const status = operationStatuses[op];
-              if (!status) return null;
+            {/* Building Section */}
+            {categories.building.length > 0 && (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Still building</Text>
+                {categories.building
+                  .filter(
+                    ([topic]) =>
+                      ![
+                        "addition",
+                        "subtraction",
+                        "multiplication",
+                        "division",
+                      ].includes(topic),
+                  )
+                  .map(([topic, data]) => (
+                    <View key={topic} style={styles.buildingRow}>
+                      <View style={styles.buildingInfo}>
+                        <Text style={styles.topicName}>{topic}</Text>
+                        {data.weakest && (
+                          <Text style={styles.weakestSkill}>
+                            working on {data.weakest}
+                          </Text>
+                        )}
+                      </View>
+                      <Text style={styles.buildingScore}>{data.score}%</Text>
+                    </View>
+                  ))}
+              </View>
+            )}
 
-              // Override text for needs-teach band
-              let displayText = status.parentDashboardText;
-              if (status.band === "needs-teach") {
-                displayText = `Ready to learn ${status.workingTierLabel}`;
-              }
+            {/* Not Started Section (combines never-tried + zero-attempt topics) */}
+            {(categories.notStarted.length > 0 ||
+              categories.neverTried.length > 0) && (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Ready to explore</Text>
+                {categories.neverTried
+                  .filter(
+                    (topic) =>
+                      ![
+                        "addition",
+                        "subtraction",
+                        "multiplication",
+                        "division",
+                      ].includes(topic),
+                  )
+                  .map((topic) => (
+                    <View key={topic} style={styles.notStartedRow}>
+                      <Text style={styles.topicName}>{topic}</Text>
+                      <Text style={styles.notStartedHint}>
+                        Ready when you are
+                      </Text>
+                    </View>
+                  ))}
+                {categories.notStarted
+                  .filter(
+                    (topic) =>
+                      ![
+                        "addition",
+                        "subtraction",
+                        "multiplication",
+                        "division",
+                      ].includes(topic),
+                  )
+                  .map((topic) => (
+                    <View key={topic} style={styles.notStartedRow}>
+                      <Text style={styles.topicName}>{topic}</Text>
+                      <Text style={styles.notStartedHint}>
+                        Ready when you are
+                      </Text>
+                    </View>
+                  ))}
+              </View>
+            )}
 
-              return (
-                <View key={op} style={styles.operationRow}>
-                  <View style={styles.operationInfo}>
-                    <Text style={styles.topicName}>{op}</Text>
-                    <Text style={styles.operationStatus}>{displayText}</Text>
-                  </View>
-                </View>
-              );
-            })}
-          </View>
-
-          {/* Other Subjects Section */}
-          {categories.strengths.length > 0 && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Doing well</Text>
-              {categories.strengths.filter(([topic]) => !["addition", "subtraction", "multiplication", "division"].includes(topic)).map(([topic, data]) => (
-                <View key={topic} style={styles.strengthRow}>
-                  <Text style={styles.topicName}>{topic}</Text>
-                  <Text style={styles.strengthScore}>{data.score}%</Text>
-                </View>
-              ))}
+            {/* Suggestion */}
+            <View style={styles.suggestionBox}>
+              <Text style={styles.suggestionText}>
+                {getSuggestion(categories)}
+              </Text>
             </View>
-          )}
 
-          {/* Building Section */}
-          {categories.building.length > 0 && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Still building</Text>
-              {categories.building.filter(([topic]) => !["addition", "subtraction", "multiplication", "division"].includes(topic)).map(([topic, data]) => (
-                <View key={topic} style={styles.buildingRow}>
-                  <View style={styles.buildingInfo}>
-                    <Text style={styles.topicName}>{topic}</Text>
-                    {data.weakest && (
-                      <Text style={styles.weakestSkill}>working on {data.weakest}</Text>
-                    )}
-                  </View>
-                  <Text style={styles.buildingScore}>{data.score}%</Text>
-                </View>
-              ))}
-            </View>
-          )}
+            {/* Caption */}
+            <Text style={styles.caption}>Based on practice so far</Text>
+          </>
+        )}
 
-          {/* Not Started Section (combines never-tried + zero-attempt topics) */}
-          {(categories.notStarted.length > 0 || categories.neverTried.length > 0) && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Ready to explore</Text>
-              {categories.neverTried.filter((topic) => !["addition", "subtraction", "multiplication", "division"].includes(topic)).map((topic) => (
-                <View key={topic} style={styles.notStartedRow}>
-                  <Text style={styles.topicName}>{topic}</Text>
-                  <Text style={styles.notStartedHint}>Ready when you are</Text>
-                </View>
-              ))}
-              {categories.notStarted.filter((topic) => !["addition", "subtraction", "multiplication", "division"].includes(topic)).map((topic) => (
-                <View key={topic} style={styles.notStartedRow}>
-                  <Text style={styles.topicName}>{topic}</Text>
-                  <Text style={styles.notStartedHint}>Ready when you are</Text>
-                </View>
-              ))}
-            </View>
-          )}
+        {/* Actions */}
+        <TouchableOpacity style={styles.button} onPress={handleScanWorksheet}>
+          <Text style={styles.buttonText}>Scan a worksheet</Text>
+        </TouchableOpacity>
 
-          {/* Suggestion */}
-          <View style={styles.suggestionBox}>
-            <Text style={styles.suggestionText}>{getSuggestion(categories)}</Text>
-          </View>
+        <TouchableOpacity style={styles.button} onPress={handleEditSettings}>
+          <Text style={styles.buttonText}>Edit {child?.name}'s settings</Text>
+        </TouchableOpacity>
 
-          {/* Caption */}
-          <Text style={styles.caption}>Based on practice so far</Text>
-        </>
-      )}
-
-      {/* Actions */}
-      <TouchableOpacity style={styles.button} onPress={handleScanWorksheet}>
-        <Text style={styles.buttonText}>Scan a worksheet</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity style={styles.button} onPress={handleEditSettings}>
-        <Text style={styles.buttonText}>Edit {child?.name}'s settings</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity style={styles.button} onPress={handleBack}>
-        <Text style={styles.buttonText}>Back to Hub</Text>
-      </TouchableOpacity>
+        <TouchableOpacity style={styles.button} onPress={handleBack}>
+          <Text style={styles.buttonText}>Back to Hub</Text>
+        </TouchableOpacity>
       </ScrollView>
 
       {/* Assignment Form Modal */}
@@ -591,7 +688,9 @@ export default function ChildHomeScreen() {
         visible={showAssignmentForm}
         transparent={true}
         animationType="slide"
-        onRequestClose={() => !isCreatingAssignment && setShowAssignmentForm(false)}
+        onRequestClose={() =>
+          !isCreatingAssignment && setShowAssignmentForm(false)
+        }
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -600,25 +699,27 @@ export default function ChildHomeScreen() {
             {/* Topic Picker */}
             <Text style={styles.formLabel}>Topic</Text>
             <View style={styles.topicPickerRow}>
-              {["addition", "subtraction", "multiplication", "division"].map((topic) => (
-                <TouchableOpacity
-                  key={topic}
-                  style={[
-                    styles.topicButton,
-                    selectedTopic === topic && styles.topicButtonActive,
-                  ]}
-                  onPress={() => setSelectedTopic(topic as Operation)}
-                >
-                  <Text
+              {["addition", "subtraction", "multiplication", "division"].map(
+                (topic) => (
+                  <TouchableOpacity
+                    key={topic}
                     style={[
-                      styles.topicButtonText,
-                      selectedTopic === topic && styles.topicButtonTextActive,
+                      styles.topicButton,
+                      selectedTopic === topic && styles.topicButtonActive,
                     ]}
+                    onPress={() => setSelectedTopic(topic as Operation)}
                   >
-                    {topic.charAt(0).toUpperCase() + topic.slice(1)}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+                    <Text
+                      style={[
+                        styles.topicButtonText,
+                        selectedTopic === topic && styles.topicButtonTextActive,
+                      ]}
+                    >
+                      {topic.charAt(0).toUpperCase() + topic.slice(1)}
+                    </Text>
+                  </TouchableOpacity>
+                ),
+              )}
             </View>
 
             {/* Question Count */}
@@ -633,7 +734,9 @@ export default function ChildHomeScreen() {
               <Text style={styles.counterValue}>{questionCount}</Text>
               <TouchableOpacity
                 style={styles.counterButton}
-                onPress={() => setQuestionCount(Math.min(20, questionCount + 1))}
+                onPress={() =>
+                  setQuestionCount(Math.min(20, questionCount + 1))
+                }
               >
                 <Text style={styles.counterButtonText}>+</Text>
               </TouchableOpacity>
@@ -652,11 +755,18 @@ export default function ChildHomeScreen() {
             {/* Action Buttons */}
             <View style={styles.modalButtonsRow}>
               <TouchableOpacity
-                style={[styles.button, !isCreatingAssignment && styles.buttonSecondary]}
-                onPress={() => !isCreatingAssignment && setShowAssignmentForm(false)}
+                style={[
+                  styles.button,
+                  !isCreatingAssignment && styles.buttonSecondary,
+                ]}
+                onPress={() =>
+                  !isCreatingAssignment && setShowAssignmentForm(false)
+                }
                 disabled={isCreatingAssignment}
               >
-                <Text style={[styles.buttonText, styles.buttonSecondaryText]}>Cancel</Text>
+                <Text style={[styles.buttonText, styles.buttonSecondaryText]}>
+                  Cancel
+                </Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.button, styles.buttonPrimary]}
