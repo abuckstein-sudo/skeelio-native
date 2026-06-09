@@ -13,18 +13,10 @@ import {
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { supabase } from "@/lib/supabase";
 import { addStars } from "@/lib/addStars";
+import { generateQuestion } from "@/lib/tutor/generate";
+import { currentTierAndBand, Attempt } from "@/lib/tutor/ability";
+import { LADDERS, GATE, Operation } from "@/lib/tutorConfig";
 import { useAuth } from "../_layout";
-
-interface Question {
-  topic: string;
-  skill: string;
-  question_text: string;
-  correct_answer: string;
-  a: number;
-  b: number;
-  dividend?: number;
-  divisor?: number;
-}
 
 interface Answer {
   questionIndex: number;
@@ -46,92 +38,33 @@ interface TeachingMethod {
   method_description: string;
 }
 
-function generateQuestion(topic: string, questionIndex: number): Question {
-  // Vary b across questions (0-7) -> b in range [1..8]
-  const bValues = [1, 2, 3, 4, 5, 6, 7, 8];
-  const b = bValues[questionIndex];
-
-  if (topic === "addition") {
-    // a + b, keep results small
-    const a = Math.floor(Math.random() * 10) + 1;
-    const result = a + b;
-    return {
-      topic,
-      skill: `+${b}`,
-      question_text: `${a} + ${b}`,
-      correct_answer: `${result}`,
-      a,
-      b,
-    };
-  } else if (topic === "subtraction") {
-    // a − b, with a >= b (never negative)
-    const a = Math.floor(Math.random() * 10) + b;
-    const result = a - b;
-    return {
-      topic,
-      skill: `−${b}`,
-      question_text: `${a} − ${b}`,
-      correct_answer: `${result}`,
-      a,
-      b,
-    };
-  } else if (topic === "multiplication") {
-    // a × b
-    const a = Math.floor(Math.random() * 10) + 1;
-    const result = a * b;
-    return {
-      topic,
-      skill: `×${b}`,
-      question_text: `${a} × ${b}`,
-      correct_answer: `${result}`,
-      a,
-      b,
-    };
-  } else if (topic === "division") {
-    // multi-digit exact divisions: divisor in 2..9, quotient in 11..50
-    const divisor = Math.floor(Math.random() * 8) + 2; // 2-9
-    const quotient = Math.floor(Math.random() * 40) + 11; // 11-50
-    const dividend = divisor * quotient; // 2-3 digits
-    return {
-      topic,
-      skill: `÷${divisor}`,
-      question_text: `${dividend} ÷ ${divisor}`,
-      correct_answer: `${quotient}`,
-      a: dividend,
-      b: divisor,
-      dividend,
-      divisor,
-    };
-  }
-
-  // Fallback (shouldn't reach here)
-  return {
-    topic,
-    skill: "?",
-    question_text: "?",
-    correct_answer: "0",
-    a: 0,
-    b: 0,
-  };
-}
-
 export default function PracticeScreen() {
   const router = useRouter();
   const { topic, childId } = useLocalSearchParams<{ topic: string; childId: string }>();
   const { session } = useAuth();
 
-  const [questions, setQuestions] = useState<Question[]>([]);
+  // Adaptive engine state
+  const [tierId, setTierId] = useState<string>("");
+  const [tierLabel, setTierLabel] = useState<string>("");
+  const [questions, setQuestions] = useState<any[]>([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [userAnswer, setUserAnswer] = useState("");
   const [answers, setAnswers] = useState<Answer[]>([]);
   const [feedback, setFeedback] = useState<{ isCorrect: boolean; message: string } | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+
+  // Division-specific state
   const [divisionMethod, setDivisionMethod] = useState<TeachingMethod | null>(null);
-  const [hintLevel, setHintLevel] = useState(0); // 0=no hint, 1=hint_1, 2=hint_2
+  const [hintLevel, setHintLevel] = useState(0);
   const [storedHint, setStoredHint] = useState<HintData | null>(null);
   const [hintLoading, setHintLoading] = useState(false);
   const [hintUsedPerQuestion, setHintUsedPerQuestion] = useState<boolean[]>([]);
+
+  // Outcome state
+  const [sessionComplete, setSessionComplete] = useState(false);
+  const [outcomeMessage, setOutcomeMessage] = useState<string>("");
+  const [outcomeBand, setOutcomeBand] = useState<"solid" | "developing" | "struggling">("developing");
 
   useEffect(() => {
     if (!topic || !childId || !session?.user?.id) {
@@ -140,43 +73,85 @@ export default function PracticeScreen() {
     }
 
     const initializePractice = async () => {
-      if (topic === "word_problems") {
-        // Word problems not implemented
-        setIsLoading(false);
-        return;
-      }
+      try {
+        // Fetch child data for starting tier calculation
+        const { data: childData } = await supabase
+          .from("children")
+          .select("max_addition_number, max_times_table, math_subtraction_level, math_division_level")
+          .eq("id", childId)
+          .single();
 
-      // Fetch division method if topic is division
-      if (topic === "division") {
-        const { data: method } = await supabase
-          .from("child_teaching_methods")
-          .select("method_name, method_description")
+        // Fetch attempt log for this operation
+        const { data: attemptData, error: attemptError } = await supabase
+          .from("learning_attempts")
+          .select("tier, was_correct")
           .eq("child_id", childId)
-          .eq("subject", "division")
-          .eq("confirmed", true)
-          .maybeSingle();
+          .eq("topic", topic)
+          .not("tier", "is", null); // Ignore old data without tier
 
-        if (method) {
-          setDivisionMethod(method as TeachingMethod);
+        if (attemptError) {
+          console.error("[practice] error fetching attempts:", attemptError);
         }
-      }
 
-      // Generate 8 questions for this session
-      const qs: Question[] = [];
-      for (let i = 0; i < 8; i++) {
-        qs.push(generateQuestion(topic, i));
+        // Convert to attempt format: [{tierId, correct}]
+        const attempts: Attempt[] = (attemptData || []).map((row: any) => ({
+          tierId: row.tier,
+          correct: row.was_correct,
+        }));
+
+        // Get current tier and band
+        const { tierId: workingTierId, band } = currentTierAndBand(
+          attempts,
+          topic as Operation,
+          childData || {}
+        );
+
+        // Find tier label
+        const ladder = LADDERS[topic as Operation];
+        const tierObj = ladder.find((t) => t.id === workingTierId);
+        const label = tierObj?.label || workingTierId;
+
+        setTierId(workingTierId);
+        setTierLabel(label);
+
+        // Fetch division method if needed
+        if (topic === "division") {
+          const { data: method } = await supabase
+            .from("child_teaching_methods")
+            .select("method_name, method_description")
+            .eq("child_id", childId)
+            .eq("subject", "division")
+            .eq("confirmed", true)
+            .maybeSingle();
+
+          if (method) {
+            setDivisionMethod(method as TeachingMethod);
+          }
+        }
+
+        // Generate set of questions
+        const numQuestions = GATE.minAttemptsToAdvance;
+        const qs = [];
+        for (let i = 0; i < numQuestions; i++) {
+          const q = generateQuestion(topic as Operation, workingTierId, childData?.max_times_table);
+          qs.push(q);
+        }
+        setQuestions(qs);
+        setHintUsedPerQuestion(new Array(numQuestions).fill(false));
+        setIsLoading(false);
+      } catch (err) {
+        console.error("[practice] initialization error:", err);
+        setIsLoading(false);
       }
-      setQuestions(qs);
-      setHintUsedPerQuestion(new Array(8).fill(false));
-      setIsLoading(false);
     };
 
+    setIsLoading(true);
     initializePractice();
   }, [topic, childId, session]);
 
   const handleRequestHint = async () => {
     const question = questions[currentQuestionIndex];
-    if (!question.dividend || !question.divisor || hintLevel !== 0) {
+    if (!question.a || !question.b || hintLevel !== 0 || topic !== "division") {
       return;
     }
 
@@ -184,15 +159,13 @@ export default function PracticeScreen() {
     try {
       const { data, error } = await supabase.functions.invoke("division-hint", {
         body: {
-          dividend: question.dividend,
-          divisor: question.divisor,
+          dividend: question.a,
+          divisor: question.b,
           methodName: divisionMethod?.method_name,
           methodDescription: divisionMethod?.method_description,
           attempt: 1,
         },
       });
-
-      console.log("[hint] error", error, "data", data);
 
       if (error) {
         console.error("[hint] error:", error);
@@ -212,25 +185,35 @@ export default function PracticeScreen() {
   };
 
   const handleSubmit = async () => {
-    if (!userAnswer.trim() || !session?.user?.id || !childId || !topic) {
+    if (!userAnswer.trim() || !session?.user?.id || !childId || !topic || !tierId) {
       return;
     }
 
     setIsSubmitting(true);
     const question = questions[currentQuestionIndex];
-    const isCorrect = userAnswer.trim() === question.correct_answer;
+    const isCorrect = userAnswer.trim() === String(question.answer);
 
     try {
-      // Insert into learning_attempts
+      // Insert into learning_attempts with tier
       const { error } = await supabase.from("learning_attempts").insert([
         {
           user_id: session.user.id,
           child_id: childId,
           subject: "math",
           topic: topic,
-          skill: question.skill,
-          question_text: question.question_text,
-          correct_answer: question.correct_answer,
+          tier: tierId,
+          question_text: question.operation
+            ? `${question.a} ${
+                question.operation === "addition"
+                  ? "+"
+                  : question.operation === "subtraction"
+                  ? "−"
+                  : question.operation === "multiplication"
+                  ? "×"
+                  : "÷"
+              } ${question.b}`
+            : "",
+          correct_answer: String(question.answer),
           user_answer: userAnswer.trim(),
           was_correct: isCorrect,
           ai_hint_used: hintUsedPerQuestion[currentQuestionIndex],
@@ -244,10 +227,10 @@ export default function PracticeScreen() {
           message: `Error saving attempt: ${error.message}`,
         });
       } else {
-        console.log("[practice-insert] ok", { skill: question.skill, was_correct: isCorrect });
+        console.log("[practice-insert] ok", { tier: tierId, was_correct: isCorrect });
         setFeedback({
           isCorrect,
-          message: isCorrect ? "✓ Correct!" : `✗ Not quite. The answer is ${question.correct_answer}.`,
+          message: isCorrect ? "✓ Correct!" : `✗ Not quite. The answer is ${question.answer}.`,
         });
 
         const newAnswer: Answer = {
@@ -279,43 +262,62 @@ export default function PracticeScreen() {
   };
 
   const handleDone = async () => {
-    console.log("[practice] session complete, awarding stars and returning to child home");
+    if (!childId || !topic || !tierId) return;
 
-    // Award stars for math topics
+    // Award stars
     if (answers.length === questions.length) {
       const correctCount = answers.filter((a) => a.isCorrect).length;
       const allCorrect = correctCount === questions.length;
-      const starsDelta = (correctCount * 2) + (allCorrect ? 5 : 0);
+      const starsDelta = correctCount * 2 + (allCorrect ? 5 : 0);
 
       console.log("[practice] awarding stars:", { correctCount, allCorrect, starsDelta });
       await addStars(childId, starsDelta);
-      console.log("[practice] stars awarded, navigating to child home");
     }
 
-    router.push({
-      pathname: "/child-home/[childId]",
-      params: { childId },
-    });
+    // Re-run ability assessment to show outcome
+    try {
+      const { data: childData } = await supabase
+        .from("children")
+        .select("max_addition_number, max_times_table, math_subtraction_level, math_division_level")
+        .eq("id", childId)
+        .single();
+
+      const { data: attemptData } = await supabase
+        .from("learning_attempts")
+        .select("tier, was_correct")
+        .eq("child_id", childId)
+        .eq("topic", topic)
+        .not("tier", "is", null);
+
+      const attempts: Attempt[] = (attemptData || []).map((row: any) => ({
+        tierId: row.tier,
+        correct: row.was_correct,
+      }));
+
+      const { band, advanceReady } = currentTierAndBand(
+        attempts,
+        topic as Operation,
+        childData || {}
+      );
+
+      setOutcomeBand(band);
+
+      if (advanceReady) {
+        setOutcomeMessage(`Solid at ${tierLabel} — moving up!`);
+      } else if (band === "struggling") {
+        setOutcomeMessage(`Let's keep working on ${tierLabel}.`);
+      } else {
+        setOutcomeMessage(`Nice progress on ${tierLabel}!`);
+      }
+
+      setSessionComplete(true);
+    } catch (err) {
+      console.error("[practice] outcome error:", err);
+      setSessionComplete(true);
+    }
   };
 
   if (isLoading || questions.length === 0) {
-    if (topic === "word_problems") {
-      return (
-        <View style={styles.container}>
-          <Text style={styles.title}>Word Problems</Text>
-          <View style={styles.placeholderBox}>
-            <Text style={styles.placeholderText}>Coming soon!</Text>
-            <Text style={styles.placeholderSubtext}>
-              Word problem generation requires AI and is not yet available.
-            </Text>
-          </View>
-          <TouchableOpacity style={styles.button} onPress={handleDone}>
-            <Text style={styles.buttonText}>Back to Home</Text>
-          </TouchableOpacity>
-        </View>
-      );
-    }
-
     return (
       <View style={styles.centerContainer}>
         <ActivityIndicator size="large" color="#0000ff" />
@@ -326,31 +328,47 @@ export default function PracticeScreen() {
   const isSessionComplete = answers.length === questions.length;
   const score = answers.filter((a) => a.isCorrect).length;
 
-  if (isSessionComplete) {
+  if (sessionComplete) {
     return (
       <View style={styles.container}>
         <ScrollView contentContainerStyle={styles.contentContainer}>
           <Text style={styles.title}>Session Complete!</Text>
 
           <View style={styles.scoreBox}>
-            <Text style={styles.scoreText}>{score} / 8</Text>
+            <Text style={styles.scoreText}>{score} / {questions.length}</Text>
             <Text style={styles.scoreLabel}>correct</Text>
           </View>
 
           <View style={styles.summary}>
-            <Text style={styles.summaryText}>
-              {score === 8
-                ? "Perfect! You nailed it! 🎉"
-                : score >= 6
-                ? "Great work! Keep practicing!"
-                : score >= 4
-                ? "Good effort. Practice makes perfect!"
-                : "Keep going! You've got this!"}
-            </Text>
+            <Text style={styles.summaryText}>{outcomeMessage}</Text>
+          </View>
+
+          <TouchableOpacity style={styles.button} onPress={() => {
+            router.push({
+              pathname: "/child-home/[childId]",
+              params: { childId },
+            });
+          }}>
+            <Text style={styles.buttonText}>Back to Home</Text>
+          </TouchableOpacity>
+        </ScrollView>
+      </View>
+    );
+  }
+
+  if (isSessionComplete) {
+    return (
+      <View style={styles.container}>
+        <ScrollView contentContainerStyle={styles.contentContainer}>
+          <Text style={styles.title}>All Done!</Text>
+
+          <View style={styles.scoreBox}>
+            <Text style={styles.scoreText}>{score} / {questions.length}</Text>
+            <Text style={styles.scoreLabel}>correct</Text>
           </View>
 
           <TouchableOpacity style={styles.button} onPress={handleDone}>
-            <Text style={styles.buttonText}>Back to Home</Text>
+            <Text style={styles.buttonText}>See Results</Text>
           </TouchableOpacity>
         </ScrollView>
       </View>
@@ -368,11 +386,19 @@ export default function PracticeScreen() {
     >
       <ScrollView contentContainerStyle={styles.contentContainer} keyboardShouldPersistTaps="handled">
         <Text style={styles.progress}>
-          Question {questionNumber} of 8
+          Question {questionNumber} of {questions.length}
         </Text>
+        <Text style={styles.tierLabel}>{tierLabel}</Text>
 
         <View style={styles.questionBox}>
-          <Text style={styles.question}>{question.question_text} = ?</Text>
+          <Text style={styles.question}>
+            {question.a} {
+              question.operation === "addition" ? "+" :
+              question.operation === "subtraction" ? "−" :
+              question.operation === "multiplication" ? "×" :
+              "÷"
+            } {question.b} = ?
+          </Text>
         </View>
 
         {topic === "division" && (
@@ -469,8 +495,17 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#999",
     textAlign: "center",
-    marginBottom: 32,
+    marginBottom: 8,
     fontWeight: "500",
+  },
+  tierLabel: {
+    fontSize: 12,
+    color: "#2196f3",
+    textAlign: "center",
+    marginBottom: 24,
+    fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
   },
   title: {
     fontSize: 28,
@@ -566,25 +601,6 @@ const styles = StyleSheet.create({
     color: "#1a1a1a",
     textAlign: "center",
     lineHeight: 24,
-  },
-  placeholderBox: {
-    backgroundColor: "#f9f9f9",
-    padding: 32,
-    borderRadius: 8,
-    marginBottom: 24,
-    alignItems: "center",
-  },
-  placeholderText: {
-    fontSize: 24,
-    fontWeight: "700",
-    color: "#1a1a1a",
-    marginBottom: 12,
-  },
-  placeholderSubtext: {
-    fontSize: 14,
-    color: "#666",
-    textAlign: "center",
-    lineHeight: 20,
   },
   hintButton: {
     borderWidth: 2,

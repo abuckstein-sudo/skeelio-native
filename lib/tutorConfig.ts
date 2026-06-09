@@ -74,7 +74,14 @@ export function startingTier(op: Operation, child: any): string {
     const m: Record<string, string> = { "10": "S1", "100": "S3", "1000_plus": "S6", not_started: "S1" };
     return m[String(child?.math_subtraction_level)] ?? "S1";
   }
-  if (op === "multiplication") return "M1"; // facts climb; max_times_table caps which facts appear
+  if (op === "multiplication") {
+    // Smart placement based on max_times_table
+    const maxTimes = Number(child?.max_times_table ?? 0);
+    if (maxTimes <= 2) return "M1"; // ×0, ×1, ×2, ×10
+    if (maxTimes <= 5) return "M3"; // ×3, ×4 (or ×5)
+    if (maxTimes <= 10) return "M4"; // ×6, ×7, ×8, ×9
+    return "M5"; // ×11, ×12 for strong kids
+  }
   const d: Record<string, string> = { simple: "D1", long: "D5", not_started: "D1" };
   return d[String(child?.math_division_level)] ?? "D1";
 }
