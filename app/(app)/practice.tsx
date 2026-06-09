@@ -11,10 +11,10 @@ import {
   Platform,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "@/lib/supabase";
 import { addStars } from "@/lib/addStars";
-import { generateQuestion } from "@/lib/tutor/generate";
+import { generateQuestion, pickTeachExample } from "@/lib/tutor/generate";
 import { currentTierAndBand, Attempt } from "@/lib/tutor/ability";
 import { LADDERS, GATE, Operation, TEACH_NOTES } from "@/lib/tutorConfig";
 import { computeExampleSteps } from "@/lib/tutor/steps";
@@ -48,7 +48,6 @@ interface TeachData {
 
 export default function PracticeScreen() {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
   const { topic, childId } = useLocalSearchParams<{ topic: string; childId: string }>();
   const { session } = useAuth();
 
@@ -132,8 +131,8 @@ export default function PracticeScreen() {
         if (band === "needs-teach") {
           setTeachLoading(true);
           try {
-            // Generate an example question
-            const exampleQuestion = generateQuestion(topic as Operation, workingTierId, childData?.max_times_table);
+            // Generate an illustrative teaching example (not trivial)
+            const exampleQuestion = pickTeachExample(topic as Operation, workingTierId);
             const steps = computeExampleSteps(
               topic as Operation,
               exampleQuestion.a,
@@ -419,7 +418,7 @@ export default function PracticeScreen() {
   // Show teach screen if we have teach data and it hasn't been acknowledged yet
   if (teachData && !teachAcknowledged) {
     return (
-      <View style={[styles.container, { paddingTop: insets.top }]}>
+      <SafeAreaView style={styles.container} edges={["top"]}>
         <ScrollView contentContainerStyle={styles.contentContainer}>
           <Text style={styles.title}>Let's Learn!</Text>
 
@@ -443,7 +442,7 @@ export default function PracticeScreen() {
             <Text style={styles.buttonText}>Got it — let's practice!</Text>
           </TouchableOpacity>
         </ScrollView>
-      </View>
+      </SafeAreaView>
     );
   }
 

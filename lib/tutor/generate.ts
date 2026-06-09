@@ -168,3 +168,85 @@ export function generateQuestion(operation: Operation, tierId: string, _maxTimes
     remainder: result.remainder,
   };
 }
+
+// Generate an ILLUSTRATIVE example for teaching (not trivial cases)
+export function pickTeachExample(operation: Operation, tierId: string): Question {
+  const tier = LADDERS[operation].find((t) => t.id === tierId);
+  if (!tier) throw new Error(`Unknown tier: ${tierId}`);
+
+  const { kind } = tier.gen;
+
+  if (kind === "mulFacts") {
+    // Pick a non-trivial factor (not 0 or 1)
+    const factors = (tier.gen as any).factors.filter((f: number) => f !== 0 && f !== 1);
+    if (factors.length === 0) {
+      // Fallback to generateQuestion if no non-trivial factors
+      return generateQuestion(operation, tierId);
+    }
+    const factor = factors[Math.floor(Math.random() * factors.length)];
+    const other = Math.floor(Math.random() * 7) + 3; // 3-9
+    const [a, b] = Math.random() < 0.5 ? [factor, other] : [other, factor];
+    const answer = a * b;
+    return { operation, tierId, a, b, answer };
+  }
+
+  if (kind === "divFacts") {
+    // Pick a divisor that's not 1
+    const divisors = (tier.gen as any).divisors.filter((d: number) => d !== 1);
+    if (divisors.length === 0) {
+      return generateQuestion(operation, tierId);
+    }
+    const divisor = divisors[Math.floor(Math.random() * divisors.length)];
+    const quotient = Math.floor(Math.random() * 7) + 3; // 3-9
+    const remainder = (tier.gen as any).remainder === "required" ? Math.floor(Math.random() * (divisor - 1)) + 1 : 0;
+    const dividend = divisor * quotient + remainder;
+    return { operation, tierId, a: dividend, b: divisor, answer: quotient, remainder: remainder > 0 ? remainder : undefined };
+  }
+
+  // For procedural tiers (add, sub, mulMulti, divMulti), generate and reject degenerate cases
+  for (let attempts = 0; attempts < 50; attempts++) {
+    const q = generateQuestion(operation, tierId);
+
+    // Reject if either operand is 0
+    if (q.a === 0 || q.b === 0) continue;
+
+    // For add/sub, ensure the constraint is actually exercised
+    if (kind === "add") {
+      const hasCarry = hasCarryInAdd(q.a, q.b);
+      const constraintRequired = (tier.gen as any).carry === "required";
+      if (constraintRequired && !hasCarry) continue; // Need carry but don't have it
+      if ((tier.gen as any).carry === "none" && hasCarry) continue; // Shouldn't have carry but do
+    }
+
+    if (kind === "sub") {
+      const hasBorrow = hasBorrowInSub(q.a, q.b);
+      const constraintRequired = (tier.gen as any).borrow === "required";
+      if (constraintRequired && !hasBorrow) continue;
+      if ((tier.gen as any).borrow === "none" && hasBorrow) continue;
+    }
+
+    // For mulMulti/divMulti, just ensure no 0 operands (which we already checked)
+    return q;
+  }
+
+  // Fallback if we can't find a good example
+  return generateQuestion(operation, tierId);
+}
+
+function hasCarryInAdd(a: number, b: number): boolean {
+  const aStr = String(a).padStart(String(Math.max(a, b)).length, "0");
+  const bStr = String(b).padStart(String(Math.max(a, b)).length, "0");
+  for (let i = aStr.length - 1; i >= 0; i--) {
+    if (Number(aStr[i]) + Number(bStr[i]) >= 10) return true;
+  }
+  return false;
+}
+
+function hasBorrowInSub(a: number, b: number): boolean {
+  const aStr = String(a).padStart(String(Math.max(a, b)).length, "0");
+  const bStr = String(b).padStart(String(Math.max(a, b)).length, "0");
+  for (let i = aStr.length - 1; i >= 0; i--) {
+    if (Number(aStr[i]) < Number(bStr[i])) return true;
+  }
+  return false;
+}
