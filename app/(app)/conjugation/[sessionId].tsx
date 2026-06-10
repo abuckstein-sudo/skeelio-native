@@ -167,6 +167,8 @@ export default function ConjugationPracticeScreen() {
 
   const loadVerbGroupsAndTenses = async (language: string) => {
     try {
+      console.log('[conj] selected language ->', selectedLanguage, 'resolved locale ->', language);
+
       // Fetch all questions for this language to find available groups and tenses
       const { data, error } = await supabase
         .from("conjugation_questions")
@@ -198,6 +200,8 @@ export default function ConjugationPracticeScreen() {
         }))
         .sort((a, b) => a.label.localeCompare(b.label));
 
+      console.log('[conj] distinct verb_groups', groups, 'distinct tenses', tenses);
+
       setAvailableGroups(groups);
       setAvailableTenses(tenses);
     } catch (err) {
@@ -219,9 +223,10 @@ export default function ConjugationPracticeScreen() {
       const gradeLevel = childData?.grade_level || "CE1";
 
       // Fetch pool with assignment filters
-      const pool = await fetchConjugationPool(childId, gradeLevel, tenses, groups);
+      const pool = await fetchConjugationPool(childId, gradeLevel, tenses, groups, language);
+      console.log('[conj] pool size (assignment)', pool.length);
       if (pool.length === 0) {
-        setError("No questions available");
+        setError("No questions available for this selection");
         setIsLoadingQuiz(false);
         return;
       }
@@ -285,8 +290,8 @@ export default function ConjugationPracticeScreen() {
       if (childErr) throw childErr;
       const gradeLevel = childData?.grade_level || "CE1";
 
-      // Fetch pool with filters
-      const pool = await fetchConjugationPool(childId, gradeLevel, selectedTense, selectedGroup);
+      // Fetch pool with filters - pass selectedLanguage
+      const pool = await fetchConjugationPool(childId, gradeLevel, selectedTense, selectedGroup, selectedLanguage);
 
       if (pool.length === 0) {
         setSelectionError(`No questions found for ${selectedTense} + ${selectedGroup} at your level. Try another combination.`);
@@ -319,10 +324,12 @@ export default function ConjugationPracticeScreen() {
       if (childErr) throw childErr;
       const gradeLevel = childData?.grade_level || "CE1";
 
-      // Fetch pool with filters
-      const pool = await fetchConjugationPool(childId, gradeLevel, selectedTense, selectedGroup);
+      // Fetch pool with filters - pass selectedLanguage
+      const pool = await fetchConjugationPool(childId, gradeLevel, selectedTense, selectedGroup, selectedLanguage);
+      console.log('[conj] pool size', pool.length);
+
       if (pool.length === 0) {
-        setError("No questions available");
+        setError("No questions available for this selection");
         setIsLoadingQuiz(false);
         return;
       }

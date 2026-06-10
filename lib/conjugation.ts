@@ -60,16 +60,17 @@ export async function fetchConjugationPool(
   childId: string,
   gradeLevel: string,
   tense?: string | string[],
-  verbGroup?: string | string[]
+  verbGroup?: string | string[],
+  language: string = "fr-FR"
 ): Promise<ConjugationQuestion[]> {
   try {
-    console.log("[fetchConjugationPool] fetching for grade:", gradeLevel, "tense:", tense, "group:", verbGroup);
+    console.log("[fetchConjugationPool] fetching for grade:", gradeLevel, "tense:", tense, "group:", verbGroup, "language:", language);
 
-    // Fetch all French conjugation questions
+    // Fetch conjugation questions for the specified language
     const { data, error } = await supabase
       .from("conjugation_questions")
       .select("*")
-      .eq("language", "fr-FR");
+      .eq("language", language);
 
     if (error) {
       console.error("[fetchConjugationPool] error:", error);
