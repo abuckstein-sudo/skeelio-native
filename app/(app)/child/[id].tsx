@@ -10,6 +10,9 @@ import {
   Modal,
   TextInput,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
+  Keyboard,
 } from "react-native";
 import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
 import { supabase } from "@/lib/supabase";
@@ -691,161 +694,161 @@ export default function ChildHomeScreen() {
             <ScrollView
               contentContainerStyle={styles.modalScrollContent}
               keyboardShouldPersistTaps="handled"
-              onPress={() => Keyboard.dismiss()}
             >
               <View style={styles.modalContent}>
                 <Text style={styles.modalTitle}>Assign Homework</Text>
 
-            {/* Topic Picker */}
-            <Text style={styles.formLabel}>Topic</Text>
-            <View style={styles.topicPickerRow}>
-              {["addition", "subtraction", "multiplication", "division", "word_problems"].map(
-                (topic) => (
-                  <TouchableOpacity
-                    key={topic}
-                    style={[
-                      styles.topicButton,
-                      selectedTopic === topic && styles.topicButtonActive,
-                    ]}
-                    onPress={() => setSelectedTopic(topic as Operation | "word_problems")}
-                  >
-                    <Text
-                      style={[
-                        styles.topicButtonText,
-                        selectedTopic === topic && styles.topicButtonTextActive,
-                      ]}
-                    >
-                      {topic === "word_problems" ? "Word Problems" : topic.charAt(0).toUpperCase() + topic.slice(1)}
-                    </Text>
-                  </TouchableOpacity>
-                ),
-              )}
-            </View>
-
-            {/* Word Problems Operation Picker (only if Word Problems selected) */}
-            {selectedTopic === "word_problems" && (
-              <>
-                <Text style={styles.formLabel}>Operation</Text>
+                {/* Topic Picker */}
+                <Text style={styles.formLabel}>Topic</Text>
                 <View style={styles.topicPickerRow}>
-                  {["addition", "subtraction", "multiplication", "division", "mixed"].map(
-                    (op) => (
+                  {["addition", "subtraction", "multiplication", "division", "word_problems"].map(
+                    (topic) => (
                       <TouchableOpacity
-                        key={op}
+                        key={topic}
                         style={[
                           styles.topicButton,
-                          selectedWordProblemOp === op && styles.topicButtonActive,
+                          selectedTopic === topic && styles.topicButtonActive,
                         ]}
-                        onPress={() => setSelectedWordProblemOp(op as Operation | "mixed")}
+                        onPress={() => setSelectedTopic(topic as Operation | "word_problems")}
                       >
                         <Text
                           style={[
                             styles.topicButtonText,
-                            selectedWordProblemOp === op && styles.topicButtonTextActive,
+                            selectedTopic === topic && styles.topicButtonTextActive,
                           ]}
                         >
-                          {op === "mixed" ? "Mixed" : op.charAt(0).toUpperCase() + op.slice(1)}
+                          {topic === "word_problems" ? "Word Problems" : topic.charAt(0).toUpperCase() + topic.slice(1)}
                         </Text>
                       </TouchableOpacity>
                     ),
                   )}
                 </View>
-              </>
-            )}
 
-            {/* Question Count */}
-            <Text style={styles.formLabel}>Number of Questions</Text>
-            <View style={styles.counterRow}>
-              <TouchableOpacity
-                style={styles.counterButton}
-                onPress={() => setQuestionCount(Math.max(1, questionCount - 1))}
-              >
-                <Text style={styles.counterButtonText}>−</Text>
-              </TouchableOpacity>
-              <Text style={styles.counterValue}>{questionCount}</Text>
-              <TouchableOpacity
-                style={styles.counterButton}
-                onPress={() =>
-                  setQuestionCount(Math.min(20, questionCount + 1))
-                }
-              >
-                <Text style={styles.counterButtonText}>+</Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Assignment Mode */}
-            <Text style={styles.formLabel}>Mode</Text>
-            <View style={styles.modeToggleRow}>
-              <TouchableOpacity
-                style={[
-                  styles.modeButton,
-                  assignmentMode === "practice" && styles.modeButtonActive,
-                ]}
-                onPress={() => setAssignmentMode("practice")}
-              >
-                <Text
-                  style={[
-                    styles.modeButtonText,
-                    assignmentMode === "practice" && styles.modeButtonTextActive,
-                  ]}
-                >
-                  Practice
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.modeButton,
-                  assignmentMode === "quiz" && styles.modeButtonActive,
-                ]}
-                onPress={() => setAssignmentMode("quiz")}
-              >
-                <Text
-                  style={[
-                    styles.modeButtonText,
-                    assignmentMode === "quiz" && styles.modeButtonTextActive,
-                  ]}
-                >
-                  Quiz
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Due Date (optional) */}
-            <Text style={styles.formLabel}>Due Date (optional)</Text>
-            <TextInput
-              style={styles.dateInput}
-              placeholder="YYYY-MM-DD"
-              value={dueDate}
-              onChangeText={setDueDate}
-              editable={!isCreatingAssignment}
-            />
-
-            {/* Action Buttons */}
-            <View style={styles.modalButtonsRow}>
-              <TouchableOpacity
-                style={[
-                  styles.button,
-                  !isCreatingAssignment && styles.buttonSecondary,
-                ]}
-                onPress={() =>
-                  !isCreatingAssignment && setShowAssignmentForm(false)
-                }
-                disabled={isCreatingAssignment}
-              >
-                <Text style={[styles.buttonText, styles.buttonSecondaryText]}>
-                  Cancel
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.button, styles.buttonPrimary]}
-                onPress={handleCreateAssignment}
-                disabled={isCreatingAssignment}
-              >
-                {isCreatingAssignment ? (
-                  <ActivityIndicator size="small" color="#fff" />
-                ) : (
-                  <Text style={styles.buttonText}>Create Assignment</Text>
+                {/* Word Problems Operation Picker (only if Word Problems selected) */}
+                {selectedTopic === "word_problems" && (
+                  <>
+                    <Text style={styles.formLabel}>Operation</Text>
+                    <View style={styles.topicPickerRow}>
+                      {["addition", "subtraction", "multiplication", "division", "mixed"].map(
+                        (op) => (
+                          <TouchableOpacity
+                            key={op}
+                            style={[
+                              styles.topicButton,
+                              selectedWordProblemOp === op && styles.topicButtonActive,
+                            ]}
+                            onPress={() => setSelectedWordProblemOp(op as Operation | "mixed")}
+                          >
+                            <Text
+                              style={[
+                                styles.topicButtonText,
+                                selectedWordProblemOp === op && styles.topicButtonTextActive,
+                              ]}
+                            >
+                              {op === "mixed" ? "Mixed" : op.charAt(0).toUpperCase() + op.slice(1)}
+                            </Text>
+                          </TouchableOpacity>
+                        ),
+                      )}
+                    </View>
+                  </>
                 )}
-              </TouchableOpacity>
+
+                {/* Question Count */}
+                <Text style={styles.formLabel}>Number of Questions</Text>
+                <View style={styles.counterRow}>
+                  <TouchableOpacity
+                    style={styles.counterButton}
+                    onPress={() => setQuestionCount(Math.max(1, questionCount - 1))}
+                  >
+                    <Text style={styles.counterButtonText}>−</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.counterValue}>{questionCount}</Text>
+                  <TouchableOpacity
+                    style={styles.counterButton}
+                    onPress={() =>
+                      setQuestionCount(Math.min(20, questionCount + 1))
+                    }
+                  >
+                    <Text style={styles.counterButtonText}>+</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* Assignment Mode */}
+                <Text style={styles.formLabel}>Mode</Text>
+                <View style={styles.modeToggleRow}>
+                  <TouchableOpacity
+                    style={[
+                      styles.modeButton,
+                      assignmentMode === "practice" && styles.modeButtonActive,
+                    ]}
+                    onPress={() => setAssignmentMode("practice")}
+                  >
+                    <Text
+                      style={[
+                        styles.modeButtonText,
+                        assignmentMode === "practice" && styles.modeButtonTextActive,
+                      ]}
+                    >
+                      Practice
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.modeButton,
+                      assignmentMode === "quiz" && styles.modeButtonActive,
+                    ]}
+                    onPress={() => setAssignmentMode("quiz")}
+                  >
+                    <Text
+                      style={[
+                        styles.modeButtonText,
+                        assignmentMode === "quiz" && styles.modeButtonTextActive,
+                      ]}
+                    >
+                      Quiz
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* Due Date (optional) */}
+                <Text style={styles.formLabel}>Due Date (optional)</Text>
+                <TextInput
+                  style={styles.dateInput}
+                  placeholder="YYYY-MM-DD"
+                  value={dueDate}
+                  onChangeText={setDueDate}
+                  editable={!isCreatingAssignment}
+                />
+
+                {/* Action Buttons */}
+                <View style={styles.modalButtonsRow}>
+                  <TouchableOpacity
+                    style={[
+                      styles.button,
+                      !isCreatingAssignment && styles.buttonSecondary,
+                    ]}
+                    onPress={() =>
+                      !isCreatingAssignment && setShowAssignmentForm(false)
+                    }
+                    disabled={isCreatingAssignment}
+                  >
+                    <Text style={[styles.buttonText, styles.buttonSecondaryText]}>
+                      Cancel
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.button, styles.buttonPrimary]}
+                    onPress={handleCreateAssignment}
+                    disabled={isCreatingAssignment}
+                  >
+                    {isCreatingAssignment ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <Text style={styles.buttonText}>Create Assignment</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
               </View>
             </ScrollView>
           </KeyboardAvoidingView>
@@ -869,7 +872,6 @@ export default function ChildHomeScreen() {
             <ScrollView
               contentContainerStyle={styles.modalScrollContent}
               keyboardShouldPersistTaps="handled"
-              onPress={() => Keyboard.dismiss()}
             >
               <View style={styles.modalContent}>
                 <Text style={styles.modalTitle}>Add Spelling List</Text>
