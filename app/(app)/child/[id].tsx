@@ -33,10 +33,10 @@ import {
   deleteSpellingList,
   parseManualWords,
   getListItemCount,
-  generateSpellingWords,
   type SpellingList,
   type SpellingLanguage,
 } from "@/lib/spelling";
+import { getWordsForLevel } from "@/lib/wordBank";
 
 const KNOWN_SUBJECTS = [
   "multiplication",
@@ -214,18 +214,17 @@ export default function ChildHomeScreen() {
 
     setIsCreatingAssignment(true);
     try {
-      console.log("[handleGenerateAndAssignList] generating", wordCount, "words in", generateLanguage);
+      console.log("[handleGenerateAndAssignList] selecting", wordCount, "words in", generateLanguage);
 
-      // Generate words using OpenAI
-      const words = await generateSpellingWords(
+      // Get words from curated word bank (instant, no network call)
+      const words = getWordsForLevel(
         generateLanguage,
-        wordCount,
         child.grade_level || "3", // Default to grade 3 if not set
-        [] // TODO: use child.context.interests if available
+        wordCount
       );
 
       if (words.length === 0) {
-        Alert.alert("Error", "Failed to generate words");
+        Alert.alert("Error", "No words available for this level");
         setIsCreatingAssignment(false);
         return;
       }

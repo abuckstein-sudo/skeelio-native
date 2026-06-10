@@ -275,42 +275,6 @@ export async function updateItemSentence(
   }
 }
 
-export async function generateSpellingWords(
-  language: SpellingLanguage,
-  count: number,
-  gradeLevel: string,
-  interests?: string[]
-): Promise<string[]> {
-  try {
-    console.log("[generateSpellingWords] calling function for language:", language, "count:", count, "gradeLevel:", gradeLevel);
-
-    const { data, error: invokeError } = await supabase.functions.invoke("spelling-generate-words", {
-      body: { language, count, gradeLevel, interests: interests || [] },
-    });
-
-    console.log("[generateSpellingWords] invoke error:", invokeError, "data:", data);
-
-    if (invokeError) {
-      console.error("[generateSpellingWords] function error:", invokeError);
-      throw invokeError;
-    }
-
-    let words = data?.words ?? [];
-    if (!Array.isArray(words)) {
-      throw new Error("Invalid response: words is not an array");
-    }
-
-    console.log("[generateSpellingWords] generated", words.length, "words");
-
-    // Sanitize with parseManualWords (dedupe/trim/cap 30)
-    words = parseManualWords(words.join("\n"));
-
-    return words;
-  } catch (error) {
-    console.error("[generateSpellingWords] failed:", error);
-    throw error;
-  }
-}
 
 // ── DB Queries ─────────────────────────────────────────────────
 
