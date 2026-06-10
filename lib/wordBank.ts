@@ -181,7 +181,7 @@ export function getWordsForLevel(
   }
 
   const result = shuffled.slice(0, maxCount);
-  console.log(`[getWordsForLevel] Selected ${result.length} words for ${language} grade ${gradeLevel}`);
+  console.log(`[getWordsForLevel] Selected ${result.length} words for ${language} grade ${gradeLevel}:`, result);
   return result;
 }
 
