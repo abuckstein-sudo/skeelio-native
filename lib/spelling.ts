@@ -208,6 +208,76 @@ export async function speakWord(
   }
 }
 
+export async function speakSentence(
+  sentence: string,
+  language: SpellingLanguage
+): Promise<void> {
+  try {
+    console.log("[speakSentence] starting - sentence:", sentence.substring(0, 50), "language:", language);
+    await Speech.stop();
+    await Speech.speak(sentence, {
+      language: speechLangCode(language),
+      rate: 0.85, // Slightly slower for sentence
+      onError: (error) => console.error("[speech] error:", error),
+    });
+  } catch (error) {
+    console.error("[speech] speak sentence failed:", error);
+  }
+}
+
+export async function generateSentence(
+  word: string,
+  language: SpellingLanguage
+): Promise<string> {
+  try {
+    // Use EXPO_PUBLIC_SUPABASE_URL environment variable
+    const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || "https://aalqeqjlspxqhxohubfi.supabase.co";
+    const response = await fetch(`${supabaseUrl}/functions/v1/spelling-sentence`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ word, language }),
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      console.error("[generateSentence] function error:", response.status, error);
+      throw new Error(`Failed to generate sentence: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const sentence = data?.sentence ?? "";
+    if (!sentence) {
+      throw new Error("No sentence returned from function");
+    }
+
+    console.log("[generateSentence] generated sentence for", word, ":", sentence.substring(0, 50));
+    return sentence;
+  } catch (error) {
+    console.error("[generateSentence] failed:", error);
+    throw error;
+  }
+}
+
+export async function updateItemSentence(
+  itemId: string,
+  sentence: string
+): Promise<void> {
+  try {
+    const { error } = await supabase
+      .from("spelling_list_items")
+      .update({ sentence })
+      .eq("id", itemId);
+
+    if (error) throw error;
+    console.log("[updateItemSentence] cached sentence for item:", itemId);
+  } catch (error) {
+    console.error("[updateItemSentence] failed:", error);
+    throw error;
+  }
+}
+
 // ── DB Queries ─────────────────────────────────────────────────
 
 export async function listSpellingListsForChild(

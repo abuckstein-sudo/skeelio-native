@@ -19,6 +19,9 @@ import { addStars } from "@/lib/addStars";
 import { markAssignmentComplete } from "@/lib/assignments";
 import {
   speakWord,
+  speakSentence,
+  generateSentence,
+  updateItemSentence,
   getListWithItems,
   createSpellingSession,
   recordSpellingAttempt,
@@ -66,6 +69,7 @@ export default function SpellingPracticeScreen() {
   const [answers, setAnswers] = useState<Answer[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [sessionComplete, setSessionComplete] = useState(false);
+  const [isSentenceLoading, setIsSentenceLoading] = useState(false);
 
   const inputRef = useRef<TextInput>(null);
 
@@ -139,6 +143,40 @@ export default function SpellingPracticeScreen() {
     if (currentItem) {
       console.log("[handleReplay] speaking word:", currentItem.item_text);
       await speakWord(currentItem.item_text, language);
+    }
+  };
+
+  const handleSentence = async () => {
+    if (!currentItem || isSentenceLoading) return;
+
+    try {
+      setIsSentenceLoading(true);
+
+      let sentence = currentItem.sentence;
+
+      // If sentence is cached, speak it directly
+      if (sentence) {
+        console.log("[handleSentence] speaking cached sentence");
+        await speakSentence(sentence, language);
+      } else {
+        // Generate sentence from OpenAI and cache it
+        console.log("[handleSentence] generating sentence for:", currentItem.item_text);
+        sentence = await generateSentence(currentItem.item_text, language);
+
+        // Cache it in the database
+        await updateItemSentence(currentItem.id, sentence);
+
+        // Update local state so next tap uses cache
+        items[currentIndex].sentence = sentence;
+
+        // Speak the generated sentence
+        await speakSentence(sentence, language);
+      }
+    } catch (error) {
+      console.error("[handleSentence] error:", error);
+      // Silently fail - don't interrupt the user's practice
+    } finally {
+      setIsSentenceLoading(false);
     }
   };
 
@@ -356,14 +394,26 @@ export default function SpellingPracticeScreen() {
           <View style={styles.questionBox}>
             <Text style={styles.instructionText}>Listen and spell</Text>
 
-            {/* Hear-it-again button */}
-            <TouchableOpacity
-              style={styles.speakButton}
-              onPress={handleReplay}
-              disabled={isSubmitting}
-            >
-              <Text style={styles.speakButtonText}>🔊 Hear it again</Text>
-            </TouchableOpacity>
+            {/* Hear-it-again and sentence buttons */}
+            <View style={styles.buttonRow}>
+              <TouchableOpacity
+                style={styles.speakButton}
+                onPress={handleReplay}
+                disabled={isSubmitting}
+              >
+                <Text style={styles.speakButtonText}>🔊 Hear it again</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.speakButton, isSentenceLoading && styles.speakButtonLoading]}
+                onPress={handleSentence}
+                disabled={isSubmitting || isSentenceLoading}
+              >
+                <Text style={styles.speakButtonText}>
+                  {isSentenceLoading ? "..." : "🔊 Sentence"}
+                </Text>
+              </TouchableOpacity>
+            </View>
 
             {/* Feedback display */}
             {feedback.type === "hint" && (
@@ -501,17 +551,26 @@ const styles = StyleSheet.create({
     color: "#666",
     marginBottom: 20,
   },
-  speakButton: {
-    backgroundColor: "#e3f2fd",
-    paddingVertical: 16,
-    paddingHorizontal: 24,
-    borderRadius: 8,
+  buttonRow: {
+    flexDirection: "row",
+    gap: 8,
     marginBottom: 16,
+    width: "100%",
+  },
+  speakButton: {
+    flex: 1,
+    backgroundColor: "#e3f2fd",
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 8,
     borderWidth: 2,
     borderColor: "#2196f3",
   },
+  speakButtonLoading: {
+    opacity: 0.6,
+  },
   speakButtonText: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: "600",
     color: "#2196f3",
     textAlign: "center",
