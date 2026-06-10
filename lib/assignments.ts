@@ -3,6 +3,7 @@ import { generateQuestion, Question } from "./tutor/generate";
 import { currentTierAndBand } from "./tutor/ability";
 import { Operation } from "./tutorConfig";
 import { generateWordProblem } from "./tutor/wordProblems";
+import { getListItems } from "./spelling";
 
 export type CustomQuestion = {
   question_text: string;
@@ -250,7 +251,7 @@ export async function createSpellingAssignment(
   childId: string,
   listId: string,
   listTitle: string,
-  wordCount: number,
+  _wordCount: number, // Ignored; we fetch the real count fresh
   mode: "practice" | "quiz",
   dueDate?: string | null
 ): Promise<Assignment> {
@@ -262,15 +263,20 @@ export async function createSpellingAssignment(
   }
   const parentId = authData.user.id;
 
-  console.log("[createSpellingAssignment] creating with:", {
-    childId,
-    listId,
-    listTitle,
-    wordCount,
-    mode,
-  });
+  console.log("[createSpellingAssignment] creating with listId:", listId, "listTitle:", listTitle);
 
-  // Insert spelling assignment
+  // Fetch the items fresh to get the real word count
+  const items = await getListItems(listId);
+  const realWordCount = items.length;
+
+  console.log("[createSpellingAssignment] fetched items count:", realWordCount);
+
+  // Only treat as empty if the fresh fetch returns 0 items
+  if (realWordCount === 0) {
+    throw new Error("This list has no words");
+  }
+
+  // Insert spelling assignment with the real word count
   const { data: newAssignment, error } = await supabase
     .from("assignments")
     .insert({
@@ -278,7 +284,7 @@ export async function createSpellingAssignment(
       child_id: childId,
       subject: "spelling",
       mode,
-      question_count: wordCount,
+      question_count: realWordCount,
       due_date: dueDate || null,
       status: "pending",
       custom_questions: {
@@ -303,7 +309,7 @@ export async function createSpellingAssignment(
     throw error;
   }
 
-  console.log("[createSpellingAssignment] created assignment:", newAssignment.id);
+  console.log("[createSpellingAssignment] created assignment:", newAssignment.id, "with question_count:", realWordCount);
   return newAssignment as Assignment;
 }
 

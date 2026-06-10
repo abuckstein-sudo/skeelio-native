@@ -223,6 +223,17 @@ export async function listSpellingListsForChild(
   return (data ?? []) as SpellingList[];
 }
 
+export async function getListItems(listId: string): Promise<SpellingItem[]> {
+  const { data: items, error } = await supabase
+    .from("spelling_list_items")
+    .select("*")
+    .eq("list_id", listId)
+    .order("item_order", { ascending: true });
+
+  if (error) throw error;
+  return (items ?? []) as SpellingItem[];
+}
+
 export async function getListWithItems(listId: string): Promise<{
   list: SpellingList;
   items: SpellingItem[];
@@ -236,17 +247,11 @@ export async function getListWithItems(listId: string): Promise<{
   if (listError) throw listError;
   if (!list) return null;
 
-  const { data: items, error: itemsError } = await supabase
-    .from("spelling_list_items")
-    .select("*")
-    .eq("list_id", listId)
-    .order("item_order", { ascending: true });
-
-  if (itemsError) throw itemsError;
+  const items = await getListItems(listId);
 
   return {
     list: list as SpellingList,
-    items: (items ?? []) as SpellingItem[],
+    items,
   };
 }
 

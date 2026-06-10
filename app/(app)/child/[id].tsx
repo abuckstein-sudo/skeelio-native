@@ -163,30 +163,14 @@ export default function ChildHomeScreen() {
 
       setIsCreatingAssignment(true);
       try {
-        // Get item count for the list
-        const { data, error: countError } = await supabase
-          .from("spelling_list_items")
-          .select("*", { count: "exact", head: true })
-          .eq("list_id", selectedSpellingList.id);
+        console.log("[handleCreateAssignment] creating spelling assignment for list:", selectedSpellingList.id, selectedSpellingList.title);
 
-        if (countError) {
-          throw countError;
-        }
-
-        const wordCount = data?.length || 0;
-        console.log("[handleCreateAssignment] spelling list:", selectedSpellingList.id, "word count:", wordCount);
-
-        if (wordCount === 0) {
-          Alert.alert("Error", "This list has no words");
-          setIsCreatingAssignment(false);
-          return;
-        }
-
+        // createSpellingAssignment will fetch items fresh and validate the count
         await createSpellingAssignment(
           id,
           selectedSpellingList.id,
           selectedSpellingList.title,
-          wordCount,
+          0, // Ignored; createSpellingAssignment fetches fresh items
           "practice", // Default to practice mode for spelling
           dueDate || undefined
         );
@@ -201,7 +185,7 @@ export default function ChildHomeScreen() {
         setAssignmentSubject("math");
       } catch (err) {
         console.error("[assignments] error creating spelling assignment:", err);
-        Alert.alert("Error", "Failed to create assignment");
+        Alert.alert("Error", err instanceof Error ? err.message : "Failed to create assignment");
       } finally {
         setIsCreatingAssignment(false);
       }
