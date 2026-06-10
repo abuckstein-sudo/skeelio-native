@@ -70,22 +70,12 @@ export type GradeResult = {
 
 // ── Normalization ──────────────────────────────────────────────
 
-function normalise(s: string): string {
-  // NFC normalization: ensures identical accents match regardless of encoding
-  // Preserves accents (élève ≠ eleve)
-  let out = s.normalize("NFC");
-
-  // Lowercase (preserves accents: "É" → "é")
-  out = out.toLowerCase();
-
-  // Canonicalize look-alike apostrophes to straight ASCII '
-  // U+2019 ' (right single quote), U+2018 ' (left single quote), U+02BC ʼ (modifier apostrophe)
-  out = out.replace(/[''ʼ]/g, "'");
-
-  // Trim and collapse internal whitespace
-  out = out.trim().replace(/\s+/g, " ");
-
-  return out;
+export function normalise(input: string): string {
+  let s = (input ?? ‘’).normalize(‘NFC’);
+  s = s.toLowerCase();
+  s = s.replace(/[''ʼ′]/g, "'");
+  s = s.replace(/\s+/g, ‘ ‘).trim();
+  return s;
 }
 
 // ── Error Detection ────────────────────────────────────────────
