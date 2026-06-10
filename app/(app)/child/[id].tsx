@@ -378,13 +378,13 @@ export default function ChildHomeScreen() {
       let result;
       if (useCamera) {
         result = await ImagePicker.launchCameraAsync({
-          mediaTypes: ImagePicker.MediaType.Images,
+          mediaTypes: ["images"],
           quality: 0.5,
           base64: true,
         });
       } else {
         result = await ImagePicker.launchImageLibraryAsync({
-          mediaTypes: ImagePicker.MediaType.Images,
+          mediaTypes: ["images"],
           quality: 0.5,
           base64: true,
         });
