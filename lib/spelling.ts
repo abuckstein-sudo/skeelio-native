@@ -77,7 +77,7 @@ export function normalise(input: string): string {
   s = s.split("").map(c => {
     const code = c.charCodeAt(0);
     if (code === 0x2018 || code === 0x2019 || code === 0x02BC || code === 0x2032) {
-      return "’";
+      return "\u0027";
     }
     return c;
   }).join("");

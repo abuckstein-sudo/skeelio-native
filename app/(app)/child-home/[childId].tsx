@@ -37,8 +37,8 @@ const SUBJECTS: SubjectTile[] = [
   { topic: "subtraction", label: "Subtraction", description: "Take numbers away", isActive: true },
   { topic: "word_problems", label: "Word Problems", description: "Solve real-world math", isActive: true },
   { topic: "spelling", label: "Spelling", description: "Spell words correctly", isActive: true },
+  { topic: "conjugation", label: "Conjugation", description: "Learn French verb forms", isActive: true },
   { topic: "reading", label: "Reading", description: "Read and understand", isActive: false },
-  { topic: "conjugation", label: "Conjugation", description: "Learn verb forms", isActive: false },
 ];
 
 export default function ChildHomeScreen() {
@@ -143,7 +143,7 @@ export default function ChildHomeScreen() {
     setIsLoading(false);
   };
 
-  const handleSubjectTap = (topic: string) => {
+  const handleSubjectTap = async (topic: string) => {
     if (childId) {
       console.log("[child-home] topic selected:", topic);
       if (topic === "word_problems") {
@@ -156,6 +156,33 @@ export default function ChildHomeScreen() {
           pathname: "/spelling-lists/[childId]",
           params: { childId },
         });
+      } else if (topic === "conjugation") {
+        // Create a new conjugation session
+        try {
+          const { data: authData } = await supabase.auth.getUser();
+          const userId = authData.user?.id;
+          if (!userId) return;
+
+          const { data: sessionData, error: sessionError } = await supabase
+            .from("conjugation_practice_sessions")
+            .insert({
+              student_id: childId,
+              user_id: userId,
+              started_at: new Date().toISOString(),
+              status: "in_progress",
+            })
+            .select()
+            .single();
+
+          if (sessionError) throw sessionError;
+
+          router.push({
+            pathname: "/conjugation/[sessionId]",
+            params: { sessionId: sessionData.id, childId },
+          });
+        } catch (err) {
+          console.error("[child-home] failed to create conjugation session:", err);
+        }
       } else {
         router.push({
           pathname: "/practice",
