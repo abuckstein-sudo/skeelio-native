@@ -64,6 +64,7 @@ export default function ChildHomeScreen() {
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [showAssignmentForm, setShowAssignmentForm] = useState(false);
   const [selectedTopic, setSelectedTopic] = useState<Operation | "word_problems">("addition");
+  const [selectedWordProblemOp, setSelectedWordProblemOp] = useState<Operation | "mixed">("mixed");
   const [questionCount, setQuestionCount] = useState(8);
   const [dueDate, setDueDate] = useState("");
   const [assignmentMode, setAssignmentMode] = useState<"practice" | "quiz">("practice");
@@ -101,6 +102,7 @@ export default function ChildHomeScreen() {
         count: questionCount,
         dueDate: dueDate || undefined,
         mode: assignmentMode,
+        wordProblemOp: selectedTopic === "word_problems" ? selectedWordProblemOp : undefined,
       });
 
       // Refresh assignments
@@ -578,6 +580,36 @@ export default function ChildHomeScreen() {
                 ),
               )}
             </View>
+
+            {/* Word Problems Operation Picker (only if Word Problems selected) */}
+            {selectedTopic === "word_problems" && (
+              <>
+                <Text style={styles.formLabel}>Operation</Text>
+                <View style={styles.topicPickerRow}>
+                  {["addition", "subtraction", "multiplication", "division", "mixed"].map(
+                    (op) => (
+                      <TouchableOpacity
+                        key={op}
+                        style={[
+                          styles.topicButton,
+                          selectedWordProblemOp === op && styles.topicButtonActive,
+                        ]}
+                        onPress={() => setSelectedWordProblemOp(op as Operation | "mixed")}
+                      >
+                        <Text
+                          style={[
+                            styles.topicButtonText,
+                            selectedWordProblemOp === op && styles.topicButtonTextActive,
+                          ]}
+                        >
+                          {op === "mixed" ? "Mixed" : op.charAt(0).toUpperCase() + op.slice(1)}
+                        </Text>
+                      </TouchableOpacity>
+                    ),
+                  )}
+                </View>
+              </>
+            )}
 
             {/* Question Count */}
             <Text style={styles.formLabel}>Number of Questions</Text>

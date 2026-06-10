@@ -140,16 +140,17 @@ export default function WordProblemsScreen() {
     }
   };
 
-  const generateNextProblem = async () => {
+  const generateNextProblem = async (operationOverride?: Operation | "mixed") => {
     if (!child) return;
 
+    const op = operationOverride ?? selectedOperation;
     let operation: Operation;
-    if (selectedOperation === "mixed") {
+    if (op === "mixed") {
       const ops: Operation[] = ["addition", "subtraction", "multiplication", "division"];
       const randomIndex = Math.floor(Math.random() * ops.length);
       operation = ops[randomIndex];
     } else {
-      operation = selectedOperation;
+      operation = op;
     }
 
     const newProblem = await generateWordProblem(childId, operation, attemptsByOp);
@@ -167,10 +168,11 @@ export default function WordProblemsScreen() {
     setCorrectCount(0);
     setProblem(null);
 
-    // Reset state before generating first problem (FIX #1: stale first question)
-    setTimeout(async () => {
-      await generateNextProblem();
-    }, 0);
+    // Generate first problem WITH the chosen operation (don't wait for state update)
+    // Pass operation directly so it's used immediately, not via stale selectedOperation state
+    const firstOp = op === "mixed" ? (["addition", "subtraction", "multiplication", "division"][Math.floor(Math.random() * 4)] as Operation) : op;
+    const wordProblem = await generateWordProblem(childId, firstOp, attemptsByOp);
+    setProblem(wordProblem);
   };
 
   const handleShowHint = () => {

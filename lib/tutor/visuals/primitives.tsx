@@ -135,7 +135,6 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     gap: 2,
     width: 40,
-    height: 40,
     alignContent: "flex-start",
   },
   chainDot: {
@@ -167,7 +166,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "flex-end",
     gap: 0,
-    minHeight: 60,
     paddingVertical: 8,
   },
   dotContainer: {

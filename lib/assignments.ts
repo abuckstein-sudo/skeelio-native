@@ -111,8 +111,9 @@ export async function createMathAssignment(params: {
   count: number;
   dueDate?: string | null;
   mode?: "practice" | "quiz";
+  wordProblemOp?: Operation | "mixed";
 }): Promise<Assignment> {
-  const { childId, topic, count, dueDate, mode = "practice" } = params;
+  const { childId, topic, count, dueDate, mode = "practice", wordProblemOp } = params;
 
   // Get the current authenticated user to ensure parent_id is set correctly
   const { data: authData, error: authError } = await supabase.auth.getUser();
@@ -155,9 +156,18 @@ export async function createMathAssignment(params: {
     }
 
     for (let i = 0; i < count; i++) {
-      // Rotate through operations
-      const opIndex = i % mathOps.length;
-      const op = mathOps[opIndex];
+      // Use selected operation or rotate if mixed
+      let op: Operation;
+      if (wordProblemOp === "mixed") {
+        const opIndex = i % mathOps.length;
+        op = mathOps[opIndex];
+      } else {
+        op = wordProblemOp || "mixed" as any; // fallback to mixed if not specified
+        if (op === "mixed" as any) {
+          const opIndex = i % mathOps.length;
+          op = mathOps[opIndex];
+        }
+      }
       const wordProblem = await generateWordProblem(childId, op, attemptsByOp);
       customQuestions.push(wordProblemToCustom(wordProblem));
     }
