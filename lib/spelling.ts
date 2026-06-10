@@ -142,6 +142,13 @@ export function gradeSpellingAttempt(
   const is_correct = a.length > 0 && a === b;
   const error_type = is_correct ? "none" : detectErrorType(a, b);
 
+  // TEMPORARY: Diagnostic logging with codepoints
+  console.log("[grade] item raw", JSON.stringify(correct), [...correct].map((c) => c.charCodeAt(0).toString(16)));
+  console.log("[grade] user raw", JSON.stringify(given), [...given].map((c) => c.charCodeAt(0).toString(16)));
+  console.log("[grade] item norm", JSON.stringify(a), [...a].map((c) => c.charCodeAt(0).toString(16)));
+  console.log("[grade] user norm", JSON.stringify(b), [...b].map((c) => c.charCodeAt(0).toString(16)));
+  console.log("[grade] equal?", is_correct);
+
   return {
     is_correct,
     feedback: is_correct
