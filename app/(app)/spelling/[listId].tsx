@@ -149,9 +149,9 @@ export default function SpellingPracticeScreen() {
   const handleSentence = async () => {
     if (!currentItem || isSentenceLoading) return;
 
-    try {
-      setIsSentenceLoading(true);
+    setIsSentenceLoading(true);
 
+    try {
       let sentence = currentItem.sentence;
 
       // If sentence is cached, speak it directly
@@ -159,18 +159,21 @@ export default function SpellingPracticeScreen() {
         console.log("[handleSentence] speaking cached sentence");
         await speakSentence(sentence, language);
       } else {
-        // Generate sentence from OpenAI and cache it
+        // Generate sentence from OpenAI
         console.log("[handleSentence] generating sentence for:", currentItem.item_text);
         sentence = await generateSentence(currentItem.item_text, language);
 
-        // Cache it in the database
-        await updateItemSentence(currentItem.id, sentence);
-
-        // Update local state so next tap uses cache
-        items[currentIndex].sentence = sentence;
-
-        // Speak the generated sentence
+        // Speak the generated sentence immediately (don't wait for cache)
         await speakSentence(sentence, language);
+
+        // Cache asynchronously in background (fire-and-forget)
+        // This never blocks audio playback
+        updateItemSentence(currentItem.id, sentence).catch((err) => {
+          console.error("[handleSentence] cache failed (non-blocking):", err);
+        });
+
+        // Update local state optimistically so next tap uses cache
+        items[currentIndex].sentence = sentence;
       }
     } catch (error) {
       console.error("[handleSentence] error:", error);

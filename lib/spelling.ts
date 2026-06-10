@@ -269,8 +269,9 @@ export async function updateItemSentence(
     if (error) throw error;
     console.log("[updateItemSentence] cached sentence for item:", itemId);
   } catch (error) {
-    console.error("[updateItemSentence] failed:", error);
-    throw error;
+    // Best-effort caching: log but don't throw
+    // Audio playback has already happened, so don't block on cache failure
+    console.error("[updateItemSentence] cache failed (non-blocking):", error);
   }
 }
 
