@@ -71,10 +71,17 @@ export type GradeResult = {
 // ── Normalization ──────────────────────────────────────────────
 
 export function normalise(input: string): string {
-  let s = (input ?? ‘’).normalize(‘NFC’);
+  let s = (input ?? "").normalize("NFC");
   s = s.toLowerCase();
-  s = s.replace(/[''ʼ′]/g, "'");
-  s = s.replace(/\s+/g, ‘ ‘).trim();
+  // Fold apostrophes: U+2018 U+2019 U+02BC U+2032 to ASCII apostrophe
+  s = s.split("").map(c => {
+    const code = c.charCodeAt(0);
+    if (code === 0x2018 || code === 0x2019 || code === 0x02BC || code === 0x2032) {
+      return "’";
+    }
+    return c;
+  }).join("");
+  s = s.replace(/\s+/g, " ").trim();
   return s;
 }
 
