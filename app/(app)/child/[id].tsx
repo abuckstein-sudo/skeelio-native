@@ -378,13 +378,13 @@ export default function ChildHomeScreen() {
       let result;
       if (useCamera) {
         result = await ImagePicker.launchCameraAsync({
-          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+          mediaTypes: ImagePicker.MediaType.Images,
           quality: 0.5,
           base64: true,
         });
       } else {
         result = await ImagePicker.launchImageLibraryAsync({
-          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+          mediaTypes: ImagePicker.MediaType.Images,
           quality: 0.5,
           base64: true,
         });
@@ -393,31 +393,30 @@ export default function ChildHomeScreen() {
       if (result.canceled) return;
 
       const asset = result.assets[0];
-      if (!asset.base64) {
+      if (!asset.uri) {
         Alert.alert("Error", "Could not read image");
         return;
       }
 
-      // Compress image if needed
-      let base64 = asset.base64;
-      const mimeType = asset.mimeType || "image/jpeg";
+      setIsExtractingPhoto(true);
+      console.log("[handleCaptureImage] converting image to JPEG");
 
-      // If image is large, manipulate it
-      if (asset.uri.length > 2000000) {
-        const manipulated = await ImageManipulator.manipulateAsync(
-          asset.uri,
-          [{ resize: { width: 1500, height: 1500 } }],
-          { compress: 0.5, format: ImageManipulator.SaveFormat.JPEG, base64: true }
-        );
-        if (manipulated.base64) {
-          base64 = manipulated.base64;
-        }
+      // Convert to JPEG (handles HEIC on iPhone) and resize/compress
+      // OpenAI Vision only accepts: png, jpeg, gif, webp
+      const manipulated = await ImageManipulator.manipulateAsync(
+        asset.uri,
+        [{ resize: { width: 1500 } }],
+        { compress: 0.5, format: ImageManipulator.SaveFormat.JPEG, base64: true }
+      );
+
+      if (!manipulated.base64) {
+        Alert.alert("Error", "Could not process image");
+        setIsExtractingPhoto(false);
+        return;
       }
 
-      setIsExtractingPhoto(true);
-      console.log("[handleCaptureImage] extracting words from image");
-
-      const { words, language } = await extractWordsFromImage(base64, mimeType);
+      console.log("[handleCaptureImage] extracting words from JPEG image");
+      const { words, language } = await extractWordsFromImage(manipulated.base64, "image/jpeg");
 
       if (words.length === 0) {
         Alert.alert("Error", "No words could be extracted from the image");
