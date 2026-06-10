@@ -684,8 +684,17 @@ export default function ChildHomeScreen() {
         }
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Assign Homework</Text>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            style={{ flex: 1 }}
+          >
+            <ScrollView
+              contentContainerStyle={styles.modalScrollContent}
+              keyboardShouldPersistTaps="handled"
+              onPress={() => Keyboard.dismiss()}
+            >
+              <View style={styles.modalContent}>
+                <Text style={styles.modalTitle}>Assign Homework</Text>
 
             {/* Topic Picker */}
             <Text style={styles.formLabel}>Topic</Text>
@@ -837,8 +846,9 @@ export default function ChildHomeScreen() {
                   <Text style={styles.buttonText}>Create Assignment</Text>
                 )}
               </TouchableOpacity>
-            </View>
-          </View>
+              </View>
+            </ScrollView>
+          </KeyboardAvoidingView>
         </View>
       </Modal>
 
@@ -852,86 +862,97 @@ export default function ChildHomeScreen() {
         }
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Add Spelling List</Text>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            style={{ flex: 1 }}
+          >
+            <ScrollView
+              contentContainerStyle={styles.modalScrollContent}
+              keyboardShouldPersistTaps="handled"
+              onPress={() => Keyboard.dismiss()}
+            >
+              <View style={styles.modalContent}>
+                <Text style={styles.modalTitle}>Add Spelling List</Text>
 
-            {/* Title Input */}
-            <Text style={styles.formLabel}>List Title</Text>
-            <TextInput
-              style={styles.formInput}
-              placeholder="e.g., 'Week 1 Spellings'"
-              value={spellingTitle}
-              onChangeText={setSpellingTitle}
-              editable={!isCreatingSpellingList}
-            />
+                {/* Title Input */}
+                <Text style={styles.formLabel}>List Title</Text>
+                <TextInput
+                  style={styles.formInput}
+                  placeholder="e.g., 'Week 1 Spellings'"
+                  value={spellingTitle}
+                  onChangeText={setSpellingTitle}
+                  editable={!isCreatingSpellingList}
+                />
 
-            {/* Language Picker */}
-            <Text style={styles.formLabel}>Language</Text>
-            <View style={styles.topicPickerRow}>
-              {(["English", "French"] as const).map((lang) => (
+                {/* Language Picker */}
+                <Text style={styles.formLabel}>Language</Text>
+                <View style={styles.topicPickerRow}>
+                  {(["English", "French"] as const).map((lang) => (
+                    <TouchableOpacity
+                      key={lang}
+                      style={[
+                        styles.topicButton,
+                        spellingLanguage === lang && styles.topicButtonActive,
+                      ]}
+                      onPress={() => setSpellingLanguage(lang)}
+                      disabled={isCreatingSpellingList}
+                    >
+                      <Text
+                        style={[
+                          styles.topicButtonText,
+                          spellingLanguage === lang && styles.topicButtonTextActive,
+                        ]}
+                      >
+                        {lang}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                {/* Words Input */}
+                <Text style={styles.formLabel}>Words (comma, newline, or semicolon separated)</Text>
+                <TextInput
+                  style={[styles.formInput, styles.multilineInput]}
+                  placeholder="beautiful, house, yellow&#10;quiet, friend"
+                  value={spellingWords}
+                  onChangeText={setSpellingWords}
+                  multiline={true}
+                  numberOfLines={6}
+                  editable={!isCreatingSpellingList}
+                />
+
+                {/* Submit Button */}
                 <TouchableOpacity
-                  key={lang}
                   style={[
-                    styles.topicButton,
-                    spellingLanguage === lang && styles.topicButtonActive,
+                    styles.submitButton,
+                    isCreatingSpellingList && styles.submitButtonDisabled,
                   ]}
-                  onPress={() => setSpellingLanguage(lang)}
+                  onPress={handleCreateSpellingList}
                   disabled={isCreatingSpellingList}
                 >
-                  <Text
-                    style={[
-                      styles.topicButtonText,
-                      spellingLanguage === lang && styles.topicButtonTextActive,
-                    ]}
-                  >
-                    {lang}
-                  </Text>
+                  {isCreatingSpellingList ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Text style={styles.submitButtonText}>Create List</Text>
+                  )}
                 </TouchableOpacity>
-              ))}
-            </View>
 
-            {/* Words Input */}
-            <Text style={styles.formLabel}>Words (comma, newline, or semicolon separated)</Text>
-            <TextInput
-              style={[styles.formInput, styles.multilineInput]}
-              placeholder="beautiful, house, yellow&#10;quiet, friend"
-              value={spellingWords}
-              onChangeText={setSpellingWords}
-              multiline={true}
-              numberOfLines={6}
-              editable={!isCreatingSpellingList}
-            />
-
-            {/* Submit Button */}
-            <TouchableOpacity
-              style={[
-                styles.submitButton,
-                isCreatingSpellingList && styles.submitButtonDisabled,
-              ]}
-              onPress={handleCreateSpellingList}
-              disabled={isCreatingSpellingList}
-            >
-              {isCreatingSpellingList ? (
-                <ActivityIndicator size="small" color="#fff" />
-              ) : (
-                <Text style={styles.submitButtonText}>Create List</Text>
-              )}
-            </TouchableOpacity>
-
-            {/* Cancel Button */}
-            <TouchableOpacity
-              style={styles.cancelButton}
-              onPress={() => {
-                setShowSpellingForm(false);
-                setSpellingTitle("");
-                setSpellingWords("");
-                setSpellingLanguage("English");
-              }}
-              disabled={isCreatingSpellingList}
-            >
-              <Text style={styles.cancelButtonText}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
+                {/* Cancel Button */}
+                <TouchableOpacity
+                  style={styles.cancelButton}
+                  onPress={() => {
+                    setShowSpellingForm(false);
+                    setSpellingTitle("");
+                    setSpellingWords("");
+                    setSpellingLanguage("English");
+                  }}
+                  disabled={isCreatingSpellingList}
+                >
+                  <Text style={styles.cancelButtonText}>Cancel</Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+          </KeyboardAvoidingView>
         </View>
       </Modal>
     </SafeAreaView>
@@ -1512,5 +1533,8 @@ const styles = StyleSheet.create({
     color: "#666",
     fontSize: 16,
     fontWeight: "600",
+  },
+  modalScrollContent: {
+    paddingBottom: 300,
   },
 });
