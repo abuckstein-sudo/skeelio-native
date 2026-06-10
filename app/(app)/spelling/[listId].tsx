@@ -241,11 +241,11 @@ export default function SpellingPracticeScreen() {
             },
           ]);
         } else if (attemptNumber < 3) {
-          // Show hint
+          // Show hint - keep the user's answer visible so they can compare and edit
           const hint = fallbackHint(error_type, attemptNumber as 1 | 2);
           setFeedback({ type: "hint", text: hint });
           setAttemptNumber((n) => (n + 1) as 1 | 2 | 3);
-          setUserAnswer("");
+          // DO NOT clear setUserAnswer("") — keep their typed text visible for comparison
           setTimeout(() => inputRef.current?.focus(), 50);
         } else {
           // Reveal after 3rd attempt

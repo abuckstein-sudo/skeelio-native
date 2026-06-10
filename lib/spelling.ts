@@ -70,14 +70,21 @@ export type GradeResult = {
 
 // ── Normalization ──────────────────────────────────────────────
 
-function normalise(s: string, language: SpellingLanguage): string {
-  let out = s.trim().toLowerCase();
-  if (language === "French") {
-    // NFD normalization + strip diacritics
-    out = out.normalize("NFD").replace(/[̀-ͯ]/g, "");
-  }
-  // Collapse internal whitespace
-  out = out.replace(/\s+/g, " ");
+function normalise(s: string): string {
+  // NFC normalization: ensures identical accents match regardless of encoding
+  // Preserves accents (élève ≠ eleve)
+  let out = s.normalize("NFC");
+
+  // Lowercase (preserves accents: "É" → "é")
+  out = out.toLowerCase();
+
+  // Canonicalize look-alike apostrophes to straight ASCII '
+  // U+2019 ' (right single quote), U+2018 ' (left single quote), U+02BC ʼ (modifier apostrophe)
+  out = out.replace(/[''ʼ]/g, "'");
+
+  // Trim and collapse internal whitespace
+  out = out.trim().replace(/\s+/g, " ");
+
   return out;
 }
 
@@ -126,10 +133,12 @@ function detectErrorType(a: string, b: string): ErrorType {
 export function gradeSpellingAttempt(
   correct: string,
   given: string,
-  language: SpellingLanguage = "English"
+  _language?: SpellingLanguage // kept for backwards compatibility, not used
 ): GradeResult {
-  const a = normalise(correct, language);
-  const b = normalise(given, language);
+  // Grade from fresh normalization, not stored normalized_text
+  // This ensures accent-sensitivity works correctly
+  const a = normalise(correct);
+  const b = normalise(given);
   const is_correct = a.length > 0 && a === b;
   const error_type = is_correct ? "none" : detectErrorType(a, b);
 
@@ -485,7 +494,7 @@ export async function createSpellingItems(
     user_id: authData.user.id,
     student_id: childId,
     item_text: word,
-    normalized_text: normalise(word, language),
+    normalized_text: normalise(word),
     language,
     item_order: i + 1,
   }));
