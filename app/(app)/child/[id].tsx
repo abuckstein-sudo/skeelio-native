@@ -17,6 +17,8 @@ import {
 import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "../../_layout";
+import * as ImagePicker from "expo-image-picker";
+import * as ImageManipulator from "expo-image-manipulator";
 import { getOperationStatus, OperationStatus } from "@/lib/tutor/status";
 import { Operation } from "@/lib/tutorConfig";
 import {
@@ -33,6 +35,7 @@ import {
   deleteSpellingList,
   parseManualWords,
   getListItemCount,
+  extractWordsFromImage,
   type SpellingList,
   type SpellingLanguage,
 } from "@/lib/spelling";
@@ -98,6 +101,13 @@ export default function ChildHomeScreen() {
   const [spellingLanguage, setSpellingLanguage] = useState<SpellingLanguage>("English");
   const [spellingWords, setSpellingWords] = useState("");
   const [isCreatingSpellingList, setIsCreatingSpellingList] = useState(false);
+
+  // Photo extraction state
+  const [showPhotoReview, setShowPhotoReview] = useState(false);
+  const [extractedWords, setExtractedWords] = useState<string[]>([]);
+  const [reviewTitle, setReviewTitle] = useState("");
+  const [reviewLanguage, setReviewLanguage] = useState<SpellingLanguage>("English");
+  const [isExtractingPhoto, setIsExtractingPhoto] = useState(false);
 
   const fetchStars = useCallback(async () => {
     if (!id) return;
@@ -361,6 +371,111 @@ export default function ChildHomeScreen() {
         },
       ]
     );
+  };
+
+  const handleCaptureImage = async (useCamera: boolean) => {
+    try {
+      let result;
+      if (useCamera) {
+        result = await ImagePicker.launchCameraAsync({
+          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+          quality: 0.5,
+          base64: true,
+        });
+      } else {
+        result = await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+          quality: 0.5,
+          base64: true,
+        });
+      }
+
+      if (result.canceled) return;
+
+      const asset = result.assets[0];
+      if (!asset.base64) {
+        Alert.alert("Error", "Could not read image");
+        return;
+      }
+
+      // Compress image if needed
+      let base64 = asset.base64;
+      const mimeType = asset.mimeType || "image/jpeg";
+
+      // If image is large, manipulate it
+      if (asset.uri.length > 2000000) {
+        const manipulated = await ImageManipulator.manipulateAsync(
+          asset.uri,
+          [{ resize: { width: 1500, height: 1500 } }],
+          { compress: 0.5, format: ImageManipulator.SaveFormat.JPEG, base64: true }
+        );
+        if (manipulated.base64) {
+          base64 = manipulated.base64;
+        }
+      }
+
+      setIsExtractingPhoto(true);
+      console.log("[handleCaptureImage] extracting words from image");
+
+      const { words, language } = await extractWordsFromImage(base64, mimeType);
+
+      if (words.length === 0) {
+        Alert.alert("Error", "No words could be extracted from the image");
+        setIsExtractingPhoto(false);
+        return;
+      }
+
+      // Show review screen
+      setExtractedWords(words);
+      setReviewLanguage(language);
+      setReviewTitle(""); // User will enter this
+      setShowPhotoReview(true);
+    } catch (err) {
+      console.error("[handleCaptureImage] error:", err);
+      Alert.alert("Error", "Failed to extract words from image");
+    } finally {
+      setIsExtractingPhoto(false);
+    }
+  };
+
+  const handleSavePhotoList = async () => {
+    if (!id || !reviewTitle.trim()) {
+      Alert.alert("Error", "Please enter a title");
+      return;
+    }
+
+    if (extractedWords.length === 0) {
+      Alert.alert("Error", "No words to save");
+      return;
+    }
+
+    setIsCreatingSpellingList(true);
+    try {
+      const list = await createSpellingList(
+        id,
+        reviewTitle.trim(),
+        reviewLanguage,
+        "photo"
+      );
+
+      await createSpellingItems(list.id, id, extractedWords, reviewLanguage);
+
+      // Refresh lists
+      await fetchSpellingLists();
+
+      // Reset state
+      setShowPhotoReview(false);
+      setExtractedWords([]);
+      setReviewTitle("");
+      setReviewLanguage("English");
+
+      Alert.alert("Success", `Created list with ${extractedWords.length} words`);
+    } catch (err) {
+      console.error("[handleSavePhotoList] error:", err);
+      Alert.alert("Error", "Failed to save list");
+    } finally {
+      setIsCreatingSpellingList(false);
+    }
   };
 
   useEffect(() => {
@@ -722,12 +837,31 @@ export default function ChildHomeScreen() {
             <View style={styles.section}>
               <View style={styles.sectionHeaderRow}>
                 <Text style={styles.sectionTitle}>Spelling Lists</Text>
-                <TouchableOpacity
-                  style={styles.addButton}
-                  onPress={() => setShowSpellingForm(true)}
-                >
-                  <Text style={styles.addButtonText}>+ Add List</Text>
-                </TouchableOpacity>
+                <View style={styles.buttonGroup}>
+                  <TouchableOpacity
+                    style={styles.addButton}
+                    onPress={() => setShowSpellingForm(true)}
+                  >
+                    <Text style={styles.addButtonText}>+ Add List</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.addButton, styles.addButtonSecondary]}
+                    onPress={() => {
+                      Alert.alert(
+                        "Add from Photo",
+                        "Choose a source:",
+                        [
+                          { text: "Take Photo", onPress: () => handleCaptureImage(true) },
+                          { text: "Choose from Library", onPress: () => handleCaptureImage(false) },
+                          { text: "Cancel", style: "cancel" },
+                        ]
+                      );
+                    }}
+                    disabled={isExtractingPhoto}
+                  >
+                    <Text style={styles.addButtonText}>📷</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
 
               {spellingLists.length === 0 ? (
@@ -1229,6 +1363,124 @@ export default function ChildHomeScreen() {
                 >
                   <Text style={styles.cancelButtonText}>Cancel</Text>
                 </TouchableOpacity>
+              </View>
+            </ScrollView>
+          </KeyboardAvoidingView>
+        </View>
+      </Modal>
+
+      {/* Photo Review Modal */}
+      <Modal
+        visible={showPhotoReview}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => !isCreatingSpellingList && setShowPhotoReview(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            style={{ flex: 1 }}
+          >
+            <ScrollView
+              contentContainerStyle={styles.modalScrollContent}
+              keyboardShouldPersistTaps="handled"
+            >
+              <View style={styles.modalContent}>
+                <Text style={styles.modalTitle}>Review & Edit Words</Text>
+
+                {/* Title Input */}
+                <Text style={styles.formLabel}>List Title</Text>
+                <TextInput
+                  style={styles.textInput}
+                  placeholder="Enter list title"
+                  value={reviewTitle}
+                  onChangeText={setReviewTitle}
+                  editable={!isCreatingSpellingList}
+                />
+
+                {/* Language Selector */}
+                <Text style={styles.formLabel}>Language</Text>
+                <View style={styles.topicPickerRow}>
+                  {["English", "French"].map((lang) => (
+                    <TouchableOpacity
+                      key={lang}
+                      style={[
+                        styles.topicButton,
+                        reviewLanguage === lang && styles.topicButtonActive,
+                      ]}
+                      onPress={() => setReviewLanguage(lang as SpellingLanguage)}
+                      disabled={isCreatingSpellingList}
+                    >
+                      <Text
+                        style={[
+                          styles.topicButtonText,
+                          reviewLanguage === lang && styles.topicButtonTextActive,
+                        ]}
+                      >
+                        {lang}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                {/* Extracted Words (Editable List) */}
+                <Text style={styles.formLabel}>Words ({extractedWords.length})</Text>
+                <View style={styles.wordListContainer}>
+                  {extractedWords.map((word, idx) => (
+                    <View key={idx} style={styles.wordRow}>
+                      <TextInput
+                        style={styles.wordInput}
+                        value={word}
+                        onChangeText={(text) => {
+                          const updated = [...extractedWords];
+                          updated[idx] = text;
+                          setExtractedWords(updated);
+                        }}
+                        editable={!isCreatingSpellingList}
+                      />
+                      <TouchableOpacity
+                        onPress={() => {
+                          setExtractedWords(extractedWords.filter((_, i) => i !== idx));
+                        }}
+                        disabled={isCreatingSpellingList}
+                      >
+                        <Text style={styles.removeButton}>✕</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </View>
+
+                {/* Action Buttons */}
+                <View style={styles.modalButtonsRow}>
+                  <TouchableOpacity
+                    style={[
+                      styles.button,
+                      !isCreatingSpellingList && styles.buttonSecondary,
+                    ]}
+                    onPress={() => {
+                      setShowPhotoReview(false);
+                      setExtractedWords([]);
+                      setReviewTitle("");
+                      setReviewLanguage("English");
+                    }}
+                    disabled={isCreatingSpellingList}
+                  >
+                    <Text style={[styles.buttonText, styles.buttonSecondaryText]}>
+                      Cancel
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.button, styles.buttonPrimary]}
+                    onPress={handleSavePhotoList}
+                    disabled={isCreatingSpellingList}
+                  >
+                    {isCreatingSpellingList ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <Text style={styles.buttonText}>Save List</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
               </View>
             </ScrollView>
           </KeyboardAvoidingView>
@@ -1857,5 +2109,51 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: "center",
     marginVertical: 12,
+  },
+  buttonGroup: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  addButtonSecondary: {
+    paddingHorizontal: 10,
+  },
+  wordListContainer: {
+    backgroundColor: "#f9f9f9",
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
+    maxHeight: 300,
+  },
+  wordRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 8,
+    alignItems: "center",
+  },
+  wordInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: "#ddd",
+    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    fontSize: 14,
+    color: "#333",
+  },
+  removeButton: {
+    fontSize: 18,
+    color: "#d32f2f",
+    fontWeight: "bold",
+    paddingHorizontal: 8,
+  },
+  textInput: {
+    borderWidth: 1,
+    borderColor: "#ddd",
+    borderRadius: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    marginBottom: 16,
+    color: "#333",
   },
 });

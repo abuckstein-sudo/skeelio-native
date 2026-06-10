@@ -256,6 +256,39 @@ export async function generateSentence(
   }
 }
 
+export async function extractWordsFromImage(
+  imageBase64: string,
+  mimeType: string
+): Promise<{ words: string[]; language: SpellingLanguage }> {
+  try {
+    console.log("[extractWordsFromImage] calling extract-spelling-words function");
+
+    const { data, error: invokeError } = await supabase.functions.invoke("extract-spelling-words", {
+      body: { imageBase64, mimeType },
+    });
+
+    console.log("[extractWordsFromImage] invoke error:", invokeError, "data:", data);
+
+    if (invokeError) {
+      console.error("[extractWordsFromImage] function error:", invokeError);
+      throw invokeError;
+    }
+
+    const words = data?.words ?? [];
+    const language = data?.language ?? "English";
+
+    if (!Array.isArray(words)) {
+      throw new Error("Invalid response: words is not an array");
+    }
+
+    console.log("[extractWordsFromImage] extracted", words.length, "words in", language);
+    return { words, language: language as SpellingLanguage };
+  } catch (error) {
+    console.error("[extractWordsFromImage] failed:", error);
+    throw error;
+  }
+}
+
 export async function updateItemSentence(
   itemId: string,
   sentence: string
