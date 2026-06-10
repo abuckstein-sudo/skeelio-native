@@ -16,6 +16,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { setAudioModeAsync } from "expo-audio";
 import { supabase } from "@/lib/supabase";
 import { addStars } from "@/lib/addStars";
+import { markAssignmentComplete } from "@/lib/assignments";
 import {
   speakWord,
   getListWithItems,
@@ -38,9 +39,11 @@ interface Answer {
 
 export default function SpellingPracticeScreen() {
   const router = useRouter();
-  const { listId, childId } = useLocalSearchParams<{
+  const { listId, childId, assignmentId, mode } = useLocalSearchParams<{
     listId: string;
     childId: string;
+    assignmentId?: string;
+    mode?: "practice" | "quiz";
   }>();
 
   const [listTitle, setListTitle] = useState("");
@@ -180,7 +183,20 @@ export default function SpellingPracticeScreen() {
         ]);
       } else {
         // Wrong answer
-        if (attemptNumber < 3) {
+        if (mode === "quiz") {
+          // In quiz mode, reveal immediately on any wrong answer
+          setFeedback({ type: "reveal", text: currentItem.item_text });
+          setAnswers([
+            ...answers,
+            {
+              itemId: currentItem.id,
+              itemText: currentItem.item_text,
+              userAnswer: given,
+              isCorrect: false,
+              attemptNumber,
+            },
+          ]);
+        } else if (attemptNumber < 3) {
           // Show hint
           const hint = fallbackHint(error_type, attemptNumber as 1 | 2);
           setFeedback({ type: "hint", text: hint });
@@ -226,6 +242,11 @@ export default function SpellingPracticeScreen() {
           finalCorrect,
           items.length - finalCorrect
         );
+
+        // Mark assignment complete if this is homework
+        if (assignmentId) {
+          await markAssignmentComplete(assignmentId);
+        }
 
         // Award stars
         if (finalCorrect > 0) {

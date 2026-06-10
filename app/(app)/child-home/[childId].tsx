@@ -167,10 +167,25 @@ export default function ChildHomeScreen() {
 
   const handleHomeworkTap = (assignmentId: string) => {
     console.log("[child-home] homework assignment selected:", assignmentId);
-    router.push({
-      pathname: "/homework/[assignmentId]",
-      params: { assignmentId, childId },
-    });
+
+    // Find the assignment to check its type
+    const assignment = pendingAssignments.find((a) => a.id === assignmentId);
+
+    if (assignment?.subject === "spelling") {
+      // Route to spelling session with assignmentId and mode
+      const listId = (assignment.custom_questions as any)?.list_id;
+      const mode = assignment.mode || "practice";
+      router.push({
+        pathname: "/spelling/[listId]",
+        params: { listId, childId, assignmentId, mode },
+      });
+    } else {
+      // Route to homework for math assignments
+      router.push({
+        pathname: "/homework/[assignmentId]",
+        params: { assignmentId, childId },
+      });
+    }
   };
 
   const handleAllDone = () => {
@@ -223,24 +238,29 @@ export default function ChildHomeScreen() {
       {pendingAssignments.length > 0 && (
         <View style={styles.homeworkSection}>
           <Text style={styles.homeworkSectionTitle}>📋 Homework</Text>
-          {pendingAssignments.map((assignment) => (
-            <TouchableOpacity
-              key={assignment.id}
-              style={styles.homeworkCard}
-              onPress={() => handleHomeworkTap(assignment.id)}
-            >
-              <View style={styles.homeworkInfo}>
-                <Text style={styles.homeworkCardTopic}>
-                  {(assignment.focus || assignment.subject || "Practice").charAt(0).toUpperCase() +
-                    (assignment.focus || assignment.subject || "Practice").slice(1)}
-                </Text>
-                <Text style={styles.homeworkCardCount}>
-                  {assignment.question_count} question{assignment.question_count !== 1 ? "s" : ""}
-                </Text>
-              </View>
-              <Text style={styles.playButton}>▶</Text>
-            </TouchableOpacity>
-          ))}
+          {pendingAssignments.map((assignment) => {
+            const isSpelling = assignment.subject === "spelling";
+            const displayTitle = isSpelling
+              ? `📝 Spelling: ${(assignment.custom_questions as any)?.title || "Spelling List"}`
+              : (assignment.focus || assignment.subject || "Practice").charAt(0).toUpperCase() +
+                (assignment.focus || assignment.subject || "Practice").slice(1);
+
+            return (
+              <TouchableOpacity
+                key={assignment.id}
+                style={styles.homeworkCard}
+                onPress={() => handleHomeworkTap(assignment.id)}
+              >
+                <View style={styles.homeworkInfo}>
+                  <Text style={styles.homeworkCardTopic}>{displayTitle}</Text>
+                  <Text style={styles.homeworkCardCount}>
+                    {assignment.question_count} {isSpelling ? "word" : "question"}{assignment.question_count !== 1 ? "s" : ""}
+                  </Text>
+                </View>
+                <Text style={styles.playButton}>▶</Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
       )}
 

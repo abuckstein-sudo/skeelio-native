@@ -22,6 +22,7 @@ import { Operation } from "@/lib/tutorConfig";
 import {
   listAssignmentsForChild,
   createMathAssignment,
+  createSpellingAssignment,
   deleteAssignment,
   Assignment,
 } from "@/lib/assignments";
@@ -91,6 +92,13 @@ export default function ChildHomeScreen() {
   const [spellingLanguage, setSpellingLanguage] = useState<SpellingLanguage>("English");
   const [spellingWords, setSpellingWords] = useState("");
   const [isCreatingSpellingList, setIsCreatingSpellingList] = useState(false);
+
+  // Spelling assignment state
+  const [showSpellingAssignForm, setShowSpellingAssignForm] = useState(false);
+  const [selectedSpellingList, setSelectedSpellingList] = useState<SpellingList | null>(null);
+  const [spellingAssignMode, setSpellingAssignMode] = useState<"practice" | "quiz">("practice");
+  const [spellingAssignDueDate, setSpellingAssignDueDate] = useState("");
+  const [isCreatingSpellingAssignment, setIsCreatingSpellingAssignment] = useState(false);
 
   const fetchStars = useCallback(async () => {
     if (!id) return;
@@ -238,6 +246,56 @@ export default function ChildHomeScreen() {
         },
       ]
     );
+  };
+
+  const handleAssignSpellingList = async () => {
+    if (!id || !selectedSpellingList) return;
+
+    setIsCreatingSpellingAssignment(true);
+    try {
+      // Get the item count for this list
+      const { data, error: countError } = await supabase
+        .from("spelling_list_items")
+        .select("*", { count: "exact", head: true })
+        .eq("list_id", selectedSpellingList.id);
+
+      if (countError) {
+        throw countError;
+      }
+
+      const wordCount = data?.length || 0;
+      if (wordCount === 0) {
+        Alert.alert("Error", "This list has no words");
+        setIsCreatingSpellingAssignment(false);
+        return;
+      }
+
+      await createSpellingAssignment(
+        id,
+        selectedSpellingList.id,
+        selectedSpellingList.title,
+        wordCount,
+        spellingAssignMode,
+        spellingAssignDueDate || undefined
+      );
+
+      // Refresh assignments and lists
+      await fetchAssignments();
+      await fetchSpellingLists();
+
+      // Reset form
+      setShowSpellingAssignForm(false);
+      setSelectedSpellingList(null);
+      setSpellingAssignMode("practice");
+      setSpellingAssignDueDate("");
+
+      Alert.alert("Success", "Assignment created!");
+    } catch (err) {
+      console.error("[spelling] error creating assignment:", err);
+      Alert.alert("Error", "Failed to create assignment");
+    } finally {
+      setIsCreatingSpellingAssignment(false);
+    }
   };
 
   useEffect(() => {
@@ -618,12 +676,23 @@ export default function ChildHomeScreen() {
                         {list.language} · {list.source_type === "photo" ? "📷 Photo" : "✏️ Manual"}
                       </Text>
                     </View>
-                    <TouchableOpacity
-                      style={styles.deleteButton}
-                      onPress={() => handleDeleteSpellingList(list.id)}
-                    >
-                      <Text style={styles.deleteButtonText}>✕</Text>
-                    </TouchableOpacity>
+                    <View style={styles.actionButtons}>
+                      <TouchableOpacity
+                        style={styles.assignButton}
+                        onPress={() => {
+                          setSelectedSpellingList(list);
+                          setShowSpellingAssignForm(true);
+                        }}
+                      >
+                        <Text style={styles.assignButtonText}>Assign</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.deleteButton}
+                        onPress={() => handleDeleteSpellingList(list.id)}
+                      >
+                        <Text style={styles.deleteButtonText}>✕</Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
                 ))
               )}
@@ -952,6 +1021,118 @@ export default function ChildHomeScreen() {
                 >
                   <Text style={styles.cancelButtonText}>Cancel</Text>
                 </TouchableOpacity>
+              </View>
+            </ScrollView>
+          </KeyboardAvoidingView>
+        </View>
+      </Modal>
+
+      {/* Spelling Assignment Modal */}
+      <Modal
+        visible={showSpellingAssignForm}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() =>
+          !isCreatingSpellingAssignment && setShowSpellingAssignForm(false)
+        }
+      >
+        <View style={styles.modalOverlay}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            style={{ flex: 1 }}
+          >
+            <ScrollView
+              contentContainerStyle={styles.modalScrollContent}
+              keyboardShouldPersistTaps="handled"
+            >
+              <View style={styles.modalContent}>
+                <Text style={styles.modalTitle}>Assign Spelling List</Text>
+                {selectedSpellingList && (
+                  <>
+                    <Text style={styles.formLabel}>List: {selectedSpellingList.title}</Text>
+
+                    {/* Mode Picker */}
+                    <Text style={styles.formLabel}>Mode</Text>
+                    <View style={styles.modeToggleRow}>
+                      <TouchableOpacity
+                        style={[
+                          styles.modeButton,
+                          spellingAssignMode === "practice" && styles.modeButtonActive,
+                        ]}
+                        onPress={() => setSpellingAssignMode("practice")}
+                        disabled={isCreatingSpellingAssignment}
+                      >
+                        <Text
+                          style={[
+                            styles.modeButtonText,
+                            spellingAssignMode === "practice" && styles.modeButtonTextActive,
+                          ]}
+                        >
+                          Practice
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[
+                          styles.modeButton,
+                          spellingAssignMode === "quiz" && styles.modeButtonActive,
+                        ]}
+                        onPress={() => setSpellingAssignMode("quiz")}
+                        disabled={isCreatingSpellingAssignment}
+                      >
+                        <Text
+                          style={[
+                            styles.modeButtonText,
+                            spellingAssignMode === "quiz" && styles.modeButtonTextActive,
+                          ]}
+                        >
+                          Quiz
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+
+                    {/* Due Date */}
+                    <Text style={styles.formLabel}>Due Date (optional)</Text>
+                    <TextInput
+                      style={styles.dateInput}
+                      placeholder="YYYY-MM-DD"
+                      value={spellingAssignDueDate}
+                      onChangeText={setSpellingAssignDueDate}
+                      editable={!isCreatingSpellingAssignment}
+                    />
+
+                    {/* Action Buttons */}
+                    <View style={styles.modalButtonsRow}>
+                      <TouchableOpacity
+                        style={[
+                          styles.button,
+                          !isCreatingSpellingAssignment && styles.buttonSecondary,
+                        ]}
+                        onPress={() => {
+                          setShowSpellingAssignForm(false);
+                          setSelectedSpellingList(null);
+                          setSpellingAssignMode("practice");
+                          setSpellingAssignDueDate("");
+                        }}
+                        disabled={isCreatingSpellingAssignment}
+                      >
+                        <Text style={[styles.buttonText, styles.buttonSecondaryText]}>
+                          Cancel
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.button, styles.buttonPrimary]}
+                        onPress={handleAssignSpellingList}
+                        disabled={isCreatingSpellingAssignment}
+                      >
+                        {isCreatingSpellingAssignment ? (
+                          <ActivityIndicator size="small" color="#fff" />
+                        ) : (
+                          <Text style={styles.buttonText}>Assign</Text>
+                        )}
+                      </TouchableOpacity>
+                    </View>
+                  </>
+                )}
               </View>
             </ScrollView>
           </KeyboardAvoidingView>
@@ -1538,5 +1719,17 @@ const styles = StyleSheet.create({
   },
   modalScrollContent: {
     paddingBottom: 300,
+  },
+  assignButton: {
+    backgroundColor: "#2196f3",
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    marginRight: 8,
+  },
+  assignButtonText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "600",
   },
 });

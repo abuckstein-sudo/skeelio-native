@@ -246,6 +246,58 @@ export async function markAssignmentComplete(assignmentId: string): Promise<void
   }
 }
 
+export async function createSpellingAssignment(
+  childId: string,
+  listId: string,
+  listTitle: string,
+  wordCount: number,
+  mode: "practice" | "quiz",
+  dueDate?: string | null
+): Promise<Assignment> {
+  // Get the current authenticated user
+  const { data: authData, error: authError } = await supabase.auth.getUser();
+  if (authError || !authData?.user?.id) {
+    console.error("[assignments] auth error:", authError);
+    throw new Error("Not authenticated");
+  }
+  const parentId = authData.user.id;
+
+  // Insert spelling assignment
+  const { data: newAssignment, error } = await supabase
+    .from("assignments")
+    .insert({
+      parent_id: parentId,
+      child_id: childId,
+      subject: "spelling",
+      mode,
+      question_count: wordCount,
+      due_date: dueDate || null,
+      status: "pending",
+      custom_questions: {
+        kind: "spelling",
+        list_id: listId,
+        title: listTitle,
+      },
+    })
+    .select()
+    .single();
+
+  if (error) {
+    console.error(
+      "[assignments] error creating spelling assignment:",
+      JSON.stringify({
+        message: error?.message,
+        code: error?.code,
+        details: error?.details,
+        hint: error?.hint,
+      })
+    );
+    throw error;
+  }
+
+  return newAssignment as Assignment;
+}
+
 export async function deleteAssignment(assignmentId: string): Promise<void> {
   const { error } = await supabase.from("assignments").delete().eq("id", assignmentId);
 
