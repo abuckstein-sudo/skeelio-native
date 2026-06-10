@@ -9,13 +9,14 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  Keyboard,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "@/lib/supabase";
 import { addStars } from "@/lib/addStars";
 import { generateQuestion, pickTeachExample } from "@/lib/tutor/generate";
-import { currentTierAndBand, Attempt } from "@/lib/tutor/ability";
+import { currentTierAndBand, Attempt, tierStats } from "@/lib/tutor/ability";
 import { LADDERS, GATE, Operation, TEACH_NOTES, FACT_TIERS } from "@/lib/tutorConfig";
 import { computeExampleSteps } from "@/lib/tutor/steps";
 import {
@@ -139,11 +140,57 @@ export default function PracticeScreen() {
         }));
 
         // Get current tier and band
-        const { tierId: workingTierId, band } = currentTierAndBand(
+        const tierAndBandResult = currentTierAndBand(
           attempts,
           topic as Operation,
           childData || {}
         );
+        const { tierId: workingTierId, band, advanceReady } = tierAndBandResult;
+
+        // DEBUG: Log Roger's actual values (remove after diagnosis)
+        if (childId === "0b266a82-ec3c-4156-9c11-f954a3874a25" && topic === "multiplication") {
+          console.log("\n========== ROGER'S MULTIPLICATION RUNTIME ==========");
+          console.log("1) CHILD DATA");
+          console.log(`   max_times_table: ${childData?.max_times_table}`);
+
+          console.log("\n2) CURRENT TIER AND BAND (return values)");
+          console.log(`   workingTier: ${workingTierId}`);
+          console.log(`   band: ${band}`);
+          console.log(`   advanceReady: ${advanceReady}`);
+
+          console.log("\n4) ATTEMPT FILTERING & MATCHING");
+          console.log(`   Total attempts: ${attempts.length}`);
+          const tierCounts: Record<string, number> = {};
+          attempts.forEach((a) => {
+            tierCounts[a.tierId] = (tierCounts[a.tierId] || 0) + 1;
+          });
+          console.log(`   Attempts per tier:`);
+          LADDERS.multiplication.forEach((tier) => {
+            console.log(`     ${tier.id}: ${tierCounts[tier.id] || 0} attempts`);
+          });
+
+          console.log("\n3) PER-TIER STATISTICS (M1..M7)");
+          const stats = tierStats(attempts);
+          console.log(`   Tier | Total | Unaided✓ | Unaided# | Mastery% | Solid?`);
+          console.log(`   -----|-------|----------|----------|----------|--------`);
+          LADDERS.multiplication.forEach((tier) => {
+            const stat = stats[tier.id];
+            if (stat) {
+              const isSolid =
+                stat.unaided_attempts >= GATE.minAttemptsToAdvance &&
+                stat.masteryRate >= GATE.accuracyToAdvance &&
+                stat.coverageMet;
+              const masteryPct = (stat.masteryRate * 100).toFixed(1);
+              const solidStr = isSolid ? "YES" : "NO";
+              console.log(
+                `   ${tier.id}   | ${String(stat.attempts).padStart(5)} | ${String(stat.unaided_correct).padStart(8)} | ${String(stat.unaided_attempts).padStart(8)} | ${String(masteryPct).padStart(8)} | ${solidStr}`
+              );
+            } else {
+              console.log(`   ${tier.id}   | 0     | 0        | 0        | 0.0      | NO`);
+            }
+          });
+          console.log("========== END DEBUG ==========\n");
+        }
 
         // Find tier label
         const ladder = LADDERS[topic as Operation];
@@ -507,94 +554,102 @@ export default function PracticeScreen() {
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={{ flex: 1 }}
       >
-        <ScrollView contentContainerStyle={styles.contentContainer} keyboardShouldPersistTaps="handled">
+        {/* Zone 1: Scrollable content (question + hint) — flex: 1 */}
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          onPress={() => Keyboard.dismiss()}
+        >
           <Text style={styles.progress}>
             Question {questionNumber} of {questions.length}
           </Text>
           <Text style={styles.tierLabel}>{tierLabel}</Text>
 
-        <View style={styles.questionBox}>
-          <Text style={styles.question}>
-            {question.a} {
-              question.operation === "addition" ? "+" :
-              question.operation === "subtraction" ? "−" :
-              question.operation === "multiplication" ? "×" :
-              "÷"
-            } {question.b} = ?
-          </Text>
-        </View>
-
-        {/* Hint button and display (hidden if answer correct) */}
-        {!showingFeedback && (
-          <>
-            {/* Button */}
-            <TouchableOpacity
-              style={[
-                styles.hintButton,
-                hintLoading && styles.hintButtonDisabled,
-                currentHintLevel >= 2 && styles.hintButtonDisabled,
-              ]}
-              onPress={handleRequestHint}
-              disabled={hintLoading || currentHintLevel >= 2}
-            >
-              {hintLoading ? (
-                <ActivityIndicator size="small" color="#666" />
-              ) : (
-                <Text style={styles.hintButtonText}>
-                  {currentHintLevel === 0
-                    ? "Need a hint?"
-                    : currentHintLevel === 1
-                    ? "More help"
-                    : "Hint shown"}
-                </Text>
-              )}
-            </TouchableOpacity>
-
-            {/* Strategy hint display (fact tiers) */}
-            {mulStrategy && (
-              <View style={styles.hintContainer}>
-                <StrategyView plan={mulStrategy} showStep2={currentHintLevel >= 2} />
-              </View>
-            )}
-
-            {/* AI hint display for other operations */}
-            {currentHint && !mulStrategy && (
-              <View style={styles.hintContainer}>
-                <Text style={styles.hintText}>{currentHint}</Text>
-              </View>
-            )}
-          </>
-        )}
-
-        <TextInput
-          style={styles.input}
-          placeholder="Enter your answer"
-          keyboardType="number-pad"
-          value={userAnswer}
-          onChangeText={setUserAnswer}
-          editable={!showingFeedback}
-          maxLength={10}
-        />
-
-        {showingFeedback && (
-          <View
-            style={[
-              styles.feedbackBox,
-              feedback.isCorrect ? styles.feedbackCorrect : styles.feedbackWrong,
-            ]}
-          >
-            <Text style={styles.feedbackText}>{feedback.message}</Text>
+          <View style={styles.questionBox}>
+            <Text style={styles.question}>
+              {question.a} {
+                question.operation === "addition" ? "+" :
+                question.operation === "subtraction" ? "−" :
+                question.operation === "multiplication" ? "×" :
+                "÷"
+              } {question.b} = ?
+            </Text>
           </View>
-        )}
 
-        <TouchableOpacity
-          style={[styles.button, (isSubmitting || showingFeedback) && styles.buttonDisabled]}
-          onPress={showingFeedback ? handleNext : handleSubmit}
-          disabled={isSubmitting}
-        >
-          <Text style={styles.buttonText}>{showingFeedback ? "Next" : "Submit"}</Text>
-        </TouchableOpacity>
-      </ScrollView>
+          {/* Hint button and display (hidden if answer correct) */}
+          {!showingFeedback && (
+            <>
+              {/* Button */}
+              <TouchableOpacity
+                style={[
+                  styles.hintButton,
+                  hintLoading && styles.hintButtonDisabled,
+                  currentHintLevel >= 2 && styles.hintButtonDisabled,
+                ]}
+                onPress={handleRequestHint}
+                disabled={hintLoading || currentHintLevel >= 2}
+              >
+                {hintLoading ? (
+                  <ActivityIndicator size="small" color="#666" />
+                ) : (
+                  <Text style={styles.hintButtonText}>
+                    {currentHintLevel === 0
+                      ? "Need a hint?"
+                      : currentHintLevel === 1
+                      ? "More help"
+                      : "Hint shown"}
+                  </Text>
+                )}
+              </TouchableOpacity>
+
+              {/* Strategy hint display (fact tiers) */}
+              {mulStrategy && (
+                <View style={styles.hintContainer}>
+                  <StrategyView plan={mulStrategy} showStep2={currentHintLevel >= 2} />
+                </View>
+              )}
+
+              {/* AI hint display for other operations */}
+              {currentHint && !mulStrategy && (
+                <View style={styles.hintContainer}>
+                  <Text style={styles.hintText}>{currentHint}</Text>
+                </View>
+              )}
+            </>
+          )}
+        </ScrollView>
+
+        {/* Zone 2: Fixed footer (input + button) — outside ScrollView, above keyboard */}
+        <View style={styles.footer}>
+          <TextInput
+            style={styles.input}
+            placeholder="Enter your answer"
+            keyboardType="number-pad"
+            value={userAnswer}
+            onChangeText={setUserAnswer}
+            editable={!showingFeedback}
+            maxLength={10}
+          />
+
+          {showingFeedback && (
+            <View
+              style={[
+                styles.feedbackBox,
+                feedback.isCorrect ? styles.feedbackCorrect : styles.feedbackWrong,
+              ]}
+            >
+              <Text style={styles.feedbackText}>{feedback.message}</Text>
+            </View>
+          )}
+
+          <TouchableOpacity
+            style={[styles.button, (isSubmitting || showingFeedback) && styles.buttonDisabled]}
+            onPress={showingFeedback ? handleNext : handleSubmit}
+            disabled={isSubmitting}
+          >
+            <Text style={styles.buttonText}>{showingFeedback ? "Next" : "Submit"}</Text>
+          </TouchableOpacity>
+        </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -605,10 +660,17 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#fff",
   },
-  contentContainer: {
+  scrollContent: {
     paddingHorizontal: 20,
     paddingTop: 40,
-    paddingBottom: 40,
+    paddingBottom: 20,
+  },
+  footer: {
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    backgroundColor: "#fff",
+    borderTopWidth: 1,
+    borderTopColor: "#eee",
   },
   centerContainer: {
     flex: 1,
@@ -659,7 +721,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 16,
     fontSize: 18,
-    marginBottom: 20,
+    marginBottom: 12,
     textAlign: "center",
   },
   feedbackBox: {
@@ -687,6 +749,7 @@ const styles = StyleSheet.create({
     padding: 16,
     borderRadius: 8,
     alignItems: "center",
+    marginBottom: 0,
   },
   buttonDisabled: {
     opacity: 0.6,

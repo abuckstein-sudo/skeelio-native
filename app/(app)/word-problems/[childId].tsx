@@ -8,6 +8,9 @@ import {
   TextInput,
   ScrollView,
   SafeAreaView,
+  KeyboardAvoidingView,
+  Platform,
+  Keyboard,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { supabase } from "@/lib/supabase";
@@ -398,98 +401,111 @@ export default function WordProblemsScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.contentContainer}>
-        <View style={styles.sessionHeader}>
-          <View style={styles.headerLeft}>
-            <TouchableOpacity onPress={handleBack}>
-              <Text style={styles.backText}>← Back</Text>
-            </TouchableOpacity>
-            <Text style={styles.title}>
-              {selectedOperation === "mixed"
-                ? "Mixed Problems"
-                : selectedOperation.charAt(0).toUpperCase() + selectedOperation.slice(1)}
-            </Text>
-          </View>
-          <TouchableOpacity
-            style={styles.endSessionButton}
-            onPress={handleEndSession}
-          >
-            <Text style={styles.endSessionButtonText}>✕ End</Text>
-          </TouchableOpacity>
-        </View>
-
-        <Text style={styles.progressText}>
-          Question {questionCount + 1} of {SESSION_LENGTH}
-        </Text>
-
-        <View style={styles.problemCard}>
-          <Text style={styles.problemText}>{problem.text}</Text>
-        </View>
-
-        {!feedback && (
-          <View style={styles.hintSection}>
-            <TouchableOpacity
-              style={[styles.hintButton, hintLevel >= 2 && styles.hintButtonDisabled]}
-              onPress={handleShowHint}
-              disabled={hintLevel >= 2}
-            >
-              <Text style={styles.hintButtonText}>
-                {hintLevel === 0 ? "Need help?" : `Hint ${hintLevel} of 2`}
-              </Text>
-            </TouchableOpacity>
-
-            {showHint && hintLevel > 0 && (
-              <View style={styles.hintDisplay}>
-                <StrategyHint operation={problem.operation} a={problem.a} b={problem.b} showStep2={hintLevel >= 2} />
-              </View>
-            )}
-          </View>
-        )}
-
-        {!feedback && (
-          <View style={styles.inputSection}>
-            <Text style={styles.inputLabel}>Your answer:</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Enter a number"
-              keyboardType="numeric"
-              value={userAnswer}
-              onChangeText={setUserAnswer}
-              editable={!isSubmitting}
-            />
-            <TouchableOpacity
-              style={[styles.submitButton, isSubmitting && styles.submitButtonDisabled]}
-              onPress={handleSubmit}
-              disabled={isSubmitting || !userAnswer.trim()}
-            >
-              <Text style={styles.submitButtonText}>
-                {isSubmitting ? "Checking..." : "Check Answer"}
-              </Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {feedback && (
-          <View
-            style={[
-              styles.feedbackCard,
-              feedback.isCorrect ? styles.feedbackCorrect : styles.feedbackIncorrect,
-            ]}
-          >
-            <Text style={styles.feedbackText}>{feedback.message}</Text>
-            {questionCount < SESSION_LENGTH && (
-              <TouchableOpacity style={styles.nextButton} onPress={handleNext}>
-                <Text style={styles.nextButtonText}>Next</Text>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={{ flex: 1 }}
+      >
+        {/* Zone 1: Scrollable content (problem + hint) — flex: 1 */}
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          onPress={() => Keyboard.dismiss()}
+        >
+          <View style={styles.sessionHeader}>
+            <View style={styles.headerLeft}>
+              <TouchableOpacity onPress={handleBack}>
+                <Text style={styles.backText}>← Back</Text>
               </TouchableOpacity>
-            )}
-            {questionCount >= SESSION_LENGTH && (
-              <TouchableOpacity style={styles.nextButton} onPress={handleNext}>
-                <Text style={styles.nextButtonText}>See Results</Text>
-              </TouchableOpacity>
-            )}
+              <Text style={styles.title}>
+                {selectedOperation === "mixed"
+                  ? "Mixed Problems"
+                  : selectedOperation.charAt(0).toUpperCase() + selectedOperation.slice(1)}
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={styles.endSessionButton}
+              onPress={handleEndSession}
+            >
+              <Text style={styles.endSessionButtonText}>✕ End</Text>
+            </TouchableOpacity>
           </View>
-        )}
-      </ScrollView>
+
+          <Text style={styles.progressText}>
+            Question {questionCount + 1} of {SESSION_LENGTH}
+          </Text>
+
+          <View style={styles.problemCard}>
+            <Text style={styles.problemText}>{problem.text}</Text>
+          </View>
+
+          {!feedback && (
+            <View style={styles.hintSection}>
+              <TouchableOpacity
+                style={[styles.hintButton, hintLevel >= 2 && styles.hintButtonDisabled]}
+                onPress={handleShowHint}
+                disabled={hintLevel >= 2}
+              >
+                <Text style={styles.hintButtonText}>
+                  {hintLevel === 0 ? "Need help?" : `Hint ${hintLevel} of 2`}
+                </Text>
+              </TouchableOpacity>
+
+              {showHint && hintLevel > 0 && (
+                <View style={styles.hintDisplay}>
+                  <StrategyHint operation={problem.operation} a={problem.a} b={problem.b} showStep2={hintLevel >= 2} />
+                </View>
+              )}
+            </View>
+          )}
+        </ScrollView>
+
+        {/* Zone 2: Fixed footer (input + button) — outside ScrollView, above keyboard */}
+        <View style={styles.footer}>
+          {!feedback && (
+            <View style={styles.inputSection}>
+              <Text style={styles.inputLabel}>Your answer:</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Enter a number"
+                keyboardType="numeric"
+                value={userAnswer}
+                onChangeText={setUserAnswer}
+                editable={!isSubmitting}
+              />
+              <TouchableOpacity
+                style={[styles.submitButton, isSubmitting && styles.submitButtonDisabled]}
+                onPress={handleSubmit}
+                disabled={isSubmitting || !userAnswer.trim()}
+              >
+                <Text style={styles.submitButtonText}>
+                  {isSubmitting ? "Checking..." : "Check Answer"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {feedback && (
+            <View
+              style={[
+                styles.feedbackCard,
+                feedback.isCorrect ? styles.feedbackCorrect : styles.feedbackIncorrect,
+              ]}
+            >
+              <Text style={styles.feedbackText}>{feedback.message}</Text>
+              {questionCount < SESSION_LENGTH && (
+                <TouchableOpacity style={styles.nextButton} onPress={handleNext}>
+                  <Text style={styles.nextButtonText}>Next</Text>
+                </TouchableOpacity>
+              )}
+              {questionCount >= SESSION_LENGTH && (
+                <TouchableOpacity style={styles.nextButton} onPress={handleNext}>
+                  <Text style={styles.nextButtonText}>See Results</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+        </View>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -502,6 +518,17 @@ const styles = StyleSheet.create({
   contentContainer: {
     padding: 16,
     paddingBottom: 40,
+  },
+  scrollContent: {
+    padding: 16,
+    paddingBottom: 20,
+  },
+  footer: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: "#fff",
+    borderTopWidth: 1,
+    borderTopColor: "#eee",
   },
   centerContainer: {
     flex: 1,
@@ -567,7 +594,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   inputSection: {
-    marginBottom: 24,
+    marginBottom: 0,
   },
   inputLabel: {
     fontSize: 14,
@@ -602,7 +629,7 @@ const styles = StyleSheet.create({
   feedbackCard: {
     borderRadius: 8,
     padding: 16,
-    marginBottom: 24,
+    marginBottom: 0,
   },
   feedbackCorrect: {
     backgroundColor: "#c8e6c9",

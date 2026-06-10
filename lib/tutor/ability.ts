@@ -7,10 +7,11 @@ export interface Attempt {
 }
 
 export interface TierStats {
-  attempts: number;
+  attempts: number; // total attempts (for display)
   correct: number;
+  unaided_attempts: number; // attempts without hints (gate denominator)
   unaided_correct: number; // correct AND NOT hinted
-  masteryRate: number; // unaided_correct / attempts (the true mastery metric)
+  masteryRate: number; // unaided_correct / unaided_attempts (true unaided mastery)
   coverageMet: boolean;
 }
 
@@ -20,14 +21,19 @@ export function tierStats(attempts: Attempt[]): Record<string, TierStats> {
   for (const tierId of new Set(attempts.map((a) => a.tierId))) {
     const tierAttempts = attempts.filter((a) => a.tierId === tierId);
     const correct = tierAttempts.filter((a) => a.correct).length;
-    const unaided_correct = tierAttempts.filter((a) => a.correct && !a.hintUsed).length;
+
+    // Filter to UNAIDED attempts only for mastery measurement
+    const unaidedAttempts = tierAttempts.filter((a) => !a.hintUsed);
+    const unaided_attempts = unaidedAttempts.length;
+    const unaided_correct = unaidedAttempts.filter((a) => a.correct).length;
     const total = tierAttempts.length;
 
     stats[tierId] = {
       attempts: total,
       correct,
+      unaided_attempts,
       unaided_correct,
-      masteryRate: total > 0 ? unaided_correct / total : 0,
+      masteryRate: unaided_attempts > 0 ? unaided_correct / unaided_attempts : 0,
       coverageMet: true, // simplified for now; fact-tiers would need divisor/factor tracking
     };
   }
@@ -51,14 +57,14 @@ export function currentTierAndBand(
   const { minAttemptsToAdvance, accuracyToAdvance, strugglingFloor } = GATE;
 
   // Find the highest tier the child is SOLID at:
-  // 8+ attempts AND 85%+ UNAIDED mastery (correct without hints) AND coverage met
+  // 8+ UNAIDED attempts AND 85%+ UNAIDED mastery (correct without hints) AND coverage met
   let highestSolidTierIndex = -1;
   for (let i = ladder.length - 1; i >= 0; i--) {
     const tier = ladder[i];
     const tierStat = stats[tier.id];
     if (
       tierStat &&
-      tierStat.attempts >= minAttemptsToAdvance &&
+      tierStat.unaided_attempts >= minAttemptsToAdvance &&
       tierStat.masteryRate >= accuracyToAdvance &&
       tierStat.coverageMet
     ) {
@@ -119,9 +125,9 @@ export function currentTierAndBand(
 
   if (workingStats) {
     // Has attempts at the working tier
-    // Advance requires 8+ attempts AND 85%+ UNAIDED mastery AND coverage
+    // Advance requires 8+ UNAIDED attempts AND 85%+ UNAIDED mastery AND coverage
     if (
-      workingStats.attempts >= minAttemptsToAdvance &&
+      workingStats.unaided_attempts >= minAttemptsToAdvance &&
       workingStats.masteryRate >= accuracyToAdvance &&
       workingStats.coverageMet
     ) {

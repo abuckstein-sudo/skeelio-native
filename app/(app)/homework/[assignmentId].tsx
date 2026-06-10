@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, ActivityIndicator, ScrollView, SafeAreaView, KeyboardAvoidingView, Platform } from "react-native";
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, ActivityIndicator, ScrollView, SafeAreaView, KeyboardAvoidingView, Platform, Keyboard } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { supabase } from "@/lib/supabase";
 import { markAssignmentComplete, Assignment, CustomQuestion } from "@/lib/assignments";
@@ -179,20 +179,21 @@ export default function HomeworkScreen() {
 
       // Check if this is a fact tier
       const isFactTier = FACT_TIERS.has(tierId);
+      let hintPlan: StrategyPlan | null = null;
+      let planType = "none";
 
       if (isFactTier && a !== undefined && b !== undefined) {
         // Use deterministic strategy picker based on operation
-        let strategy: StrategyPlan | null = null;
-
         if (topic === "addition") {
-          strategy = pickAdditionStrategy(a, b);
+          hintPlan = pickAdditionStrategy(a, b);
         } else if (topic === "subtraction") {
-          strategy = pickSubtractionStrategy(a, b);
+          hintPlan = pickSubtractionStrategy(a, b);
         } else if (topic === "multiplication") {
-          strategy = pickMultiplicationStrategy(a, b);
+          hintPlan = pickMultiplicationStrategy(a, b);
         } else if (topic === "division") {
-          strategy = pickDivisionStrategy(a, b);
+          hintPlan = pickDivisionStrategy(a, b);
         }
+        planType = hintPlan ? "strategy" : "none";
 
         console.log(
           "[hw-hint]",
@@ -202,13 +203,13 @@ export default function HomeworkScreen() {
             op,
             topic,
             tier: tierId,
-            plan: strategy ? "strategy" : "none",
-            stepCount: strategy?.steps?.length || 0,
+            plan: planType,
+            stepCount: hintPlan?.steps?.length || 0,
           })
         );
 
-        if (strategy) {
-          setMulStrategy(strategy);
+        if (hintPlan) {
+          setMulStrategy(hintPlan);
           setCurrentHintLevel(currentHintLevel + 1);
         }
       } else if (a !== undefined && b !== undefined) {
@@ -217,16 +218,16 @@ export default function HomeworkScreen() {
 
         // If steps are empty, fallback to strategy picker for a visual
         if (steps.length === 0) {
-          let strategy: StrategyPlan | null = null;
           if (topic === "addition") {
-            strategy = pickAdditionStrategy(a, b);
+            hintPlan = pickAdditionStrategy(a, b);
           } else if (topic === "subtraction") {
-            strategy = pickSubtractionStrategy(a, b);
+            hintPlan = pickSubtractionStrategy(a, b);
           } else if (topic === "multiplication") {
-            strategy = pickMultiplicationStrategy(a, b);
+            hintPlan = pickMultiplicationStrategy(a, b);
           } else if (topic === "division") {
-            strategy = pickDivisionStrategy(a, b);
+            hintPlan = pickDivisionStrategy(a, b);
           }
+          planType = hintPlan ? "strategy-fallback" : "none";
 
           console.log(
             "[hw-hint]",
@@ -236,17 +237,19 @@ export default function HomeworkScreen() {
               op,
               topic,
               tier: tierId,
-              plan: strategy ? "strategy-fallback" : "none",
-              stepCount: strategy?.steps?.length || 0,
+              plan: planType,
+              stepCount: hintPlan?.steps?.length || 0,
             })
           );
 
-          if (strategy) {
-            setMulStrategy(strategy);
+          if (hintPlan) {
+            setMulStrategy(hintPlan);
             setCurrentHintLevel(currentHintLevel + 1);
           }
         } else {
           // Has steps, show them
+          planType = "steps";
+
           console.log(
             "[hw-hint]",
             JSON.stringify({
@@ -255,7 +258,7 @@ export default function HomeworkScreen() {
               op,
               topic,
               tier: tierId,
-              plan: "steps",
+              plan: planType,
               stepCount: steps.length,
             })
           );
@@ -402,7 +405,8 @@ export default function HomeworkScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.container}>
-        <ScrollView contentContainerStyle={styles.contentContainer} keyboardShouldPersistTaps="handled">
+        {/* Zone 1: Scrollable content (question + hint) — flex: 1 */}
+        <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled" onPress={() => Keyboard.dismiss()}>
           {/* Header */}
           <View style={styles.header}>
             <Text style={styles.headerTitle}>
@@ -419,11 +423,10 @@ export default function HomeworkScreen() {
           <View style={styles.questionContainer}>
             <Text style={styles.questionText}>{question.question_text}</Text>
 
-            {/* Strategy View (for fact tiers in practice mode) */}
+            {/* Strategy View (for fact tiers and fallback strategies in practice mode) */}
             {showingStrategy && mulStrategy && (
               <View style={styles.strategyContainer}>
-                {console.log('[undef-check] StrategyView =', typeof StrategyView)}
-                <StrategyView strategy={mulStrategy} />
+                <StrategyView plan={mulStrategy} />
               </View>
             )}
 
@@ -433,15 +436,6 @@ export default function HomeworkScreen() {
                 <Text style={styles.hintText}>{currentHint}</Text>
               </View>
             )}
-
-            <TextInput
-              style={[styles.answerInput, isAnswered && styles.answerInputDisabled]}
-              placeholder="Your answer"
-              value={userAnswer}
-              onChangeText={setUserAnswer}
-              keyboardType="numeric"
-              editable={!isAnswered}
-            />
           </View>
 
           {/* Hint Button (Practice Mode Only) */}
@@ -456,6 +450,18 @@ export default function HomeworkScreen() {
               </Text>
             </TouchableOpacity>
           )}
+        </ScrollView>
+
+        {/* Zone 2: Fixed footer (input + button) — outside ScrollView, above keyboard */}
+        <View style={styles.footer}>
+          <TextInput
+            style={[styles.answerInput, isAnswered && styles.answerInputDisabled]}
+            placeholder="Your answer"
+            value={userAnswer}
+            onChangeText={setUserAnswer}
+            keyboardType="numeric"
+            editable={!isAnswered}
+          />
 
           {/* Feedback */}
           {feedback && (
@@ -478,7 +484,7 @@ export default function HomeworkScreen() {
               </TouchableOpacity>
             )}
           </View>
-        </ScrollView>
+        </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -489,10 +495,17 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#fff",
   },
-  contentContainer: {
+  scrollContent: {
     paddingHorizontal: 16,
     paddingVertical: 16,
-    paddingBottom: 40,
+    paddingBottom: 20,
+  },
+  footer: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: "#fff",
+    borderTopWidth: 1,
+    borderTopColor: "#eee",
   },
   centerContainer: {
     flex: 1,
@@ -584,7 +597,7 @@ const styles = StyleSheet.create({
   feedbackBox: {
     padding: 12,
     borderRadius: 8,
-    marginBottom: 24,
+    marginBottom: 12,
     alignItems: "center",
   },
   feedbackCorrect: {

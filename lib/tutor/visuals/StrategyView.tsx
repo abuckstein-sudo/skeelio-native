@@ -41,6 +41,8 @@ const styles = StyleSheet.create({
 });
 
 export function StrategyView({ plan, showStep2 = false }: StrategyViewProps) {
+  if (!plan) return null;
+
   console.log('[undef-check] visuals =', JSON.stringify({ DotGroups: typeof DotGroups, DotArray: typeof DotArray, NumberLine: typeof NumberLine, DoublingChain: typeof DoublingChain, PartBar: typeof PartBar, RemoveBar: typeof RemoveBar }));
 
   return (
