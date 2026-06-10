@@ -1371,119 +1371,119 @@ export default function ChildHomeScreen() {
       {/* Photo Review Modal */}
       <Modal
         visible={showPhotoReview}
-        transparent={true}
+        transparent={false}
         animationType="slide"
         onRequestClose={() => !isCreatingSpellingList && setShowPhotoReview(false)}
       >
-        <View style={styles.modalOverlay}>
+        <SafeAreaView style={styles.photoReviewContainer}>
           <KeyboardAvoidingView
             behavior={Platform.OS === "ios" ? "padding" : "height"}
             style={{ flex: 1 }}
           >
+            {/* Header */}
+            <View style={styles.photoReviewHeader}>
+              <Text style={styles.modalTitle}>Review & Edit Words</Text>
+
+              {/* Title Input */}
+              <Text style={styles.formLabel}>List Title</Text>
+              <TextInput
+                style={styles.textInput}
+                placeholder="Enter list title"
+                value={reviewTitle}
+                onChangeText={setReviewTitle}
+                editable={!isCreatingSpellingList}
+              />
+
+              {/* Language Selector */}
+              <Text style={styles.formLabel}>Language</Text>
+              <View style={styles.topicPickerRow}>
+                {["English", "French"].map((lang) => (
+                  <TouchableOpacity
+                    key={lang}
+                    style={[
+                      styles.topicButton,
+                      reviewLanguage === lang && styles.topicButtonActive,
+                    ]}
+                    onPress={() => setReviewLanguage(lang as SpellingLanguage)}
+                    disabled={isCreatingSpellingList}
+                  >
+                    <Text
+                      style={[
+                        styles.topicButtonText,
+                        reviewLanguage === lang && styles.topicButtonTextActive,
+                      ]}
+                    >
+                      {lang}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={styles.formLabel}>Words ({extractedWords.length})</Text>
+            </View>
+
+            {/* Scrollable Word List */}
             <ScrollView
-              contentContainerStyle={styles.modalScrollContent}
+              style={styles.photoReviewContent}
               keyboardShouldPersistTaps="handled"
             >
-              <View style={styles.modalContent}>
-                <Text style={styles.modalTitle}>Review & Edit Words</Text>
-
-                {/* Title Input */}
-                <Text style={styles.formLabel}>List Title</Text>
-                <TextInput
-                  style={styles.textInput}
-                  placeholder="Enter list title"
-                  value={reviewTitle}
-                  onChangeText={setReviewTitle}
-                  editable={!isCreatingSpellingList}
-                />
-
-                {/* Language Selector */}
-                <Text style={styles.formLabel}>Language</Text>
-                <View style={styles.topicPickerRow}>
-                  {["English", "French"].map((lang) => (
-                    <TouchableOpacity
-                      key={lang}
-                      style={[
-                        styles.topicButton,
-                        reviewLanguage === lang && styles.topicButtonActive,
-                      ]}
-                      onPress={() => setReviewLanguage(lang as SpellingLanguage)}
-                      disabled={isCreatingSpellingList}
-                    >
-                      <Text
-                        style={[
-                          styles.topicButtonText,
-                          reviewLanguage === lang && styles.topicButtonTextActive,
-                        ]}
-                      >
-                        {lang}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-
-                {/* Extracted Words (Editable List) */}
-                <Text style={styles.formLabel}>Words ({extractedWords.length})</Text>
-                <View style={styles.wordListContainer}>
-                  {extractedWords.map((word, idx) => (
-                    <View key={idx} style={styles.wordRow}>
-                      <TextInput
-                        style={styles.wordInput}
-                        value={word}
-                        onChangeText={(text) => {
-                          const updated = [...extractedWords];
-                          updated[idx] = text;
-                          setExtractedWords(updated);
-                        }}
-                        editable={!isCreatingSpellingList}
-                      />
-                      <TouchableOpacity
-                        onPress={() => {
-                          setExtractedWords(extractedWords.filter((_, i) => i !== idx));
-                        }}
-                        disabled={isCreatingSpellingList}
-                      >
-                        <Text style={styles.removeButton}>✕</Text>
-                      </TouchableOpacity>
-                    </View>
-                  ))}
-                </View>
-
-                {/* Action Buttons */}
-                <View style={styles.modalButtonsRow}>
+              {extractedWords.map((word, idx) => (
+                <View key={idx} style={styles.wordRow}>
+                  <TextInput
+                    style={styles.wordInput}
+                    value={word}
+                    onChangeText={(text) => {
+                      const updated = [...extractedWords];
+                      updated[idx] = text;
+                      setExtractedWords(updated);
+                    }}
+                    editable={!isCreatingSpellingList}
+                  />
                   <TouchableOpacity
-                    style={[
-                      styles.button,
-                      !isCreatingSpellingList && styles.buttonSecondary,
-                    ]}
                     onPress={() => {
-                      setShowPhotoReview(false);
-                      setExtractedWords([]);
-                      setReviewTitle("");
-                      setReviewLanguage("English");
+                      setExtractedWords(extractedWords.filter((_, i) => i !== idx));
                     }}
                     disabled={isCreatingSpellingList}
                   >
-                    <Text style={[styles.buttonText, styles.buttonSecondaryText]}>
-                      Cancel
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.button, styles.buttonPrimary]}
-                    onPress={handleSavePhotoList}
-                    disabled={isCreatingSpellingList}
-                  >
-                    {isCreatingSpellingList ? (
-                      <ActivityIndicator size="small" color="#fff" />
-                    ) : (
-                      <Text style={styles.buttonText}>Save List</Text>
-                    )}
+                    <Text style={styles.removeButton}>✕</Text>
                   </TouchableOpacity>
                 </View>
-              </View>
+              ))}
             </ScrollView>
+
+            {/* Fixed Footer Buttons */}
+            <View style={styles.photoReviewFooter}>
+              <TouchableOpacity
+                style={[
+                  styles.button,
+                  !isCreatingSpellingList && styles.buttonSecondary,
+                ]}
+                onPress={() => {
+                  setShowPhotoReview(false);
+                  setExtractedWords([]);
+                  setReviewTitle("");
+                  setReviewLanguage("English");
+                }}
+                disabled={isCreatingSpellingList}
+              >
+                <Text style={[styles.buttonText, styles.buttonSecondaryText]}>
+                  Cancel
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.button, styles.buttonPrimary]}
+                onPress={handleSavePhotoList}
+                disabled={isCreatingSpellingList}
+              >
+                {isCreatingSpellingList ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.buttonText}>Save List</Text>
+                )}
+              </TouchableOpacity>
+            </View>
           </KeyboardAvoidingView>
-        </View>
+        </SafeAreaView>
       </Modal>
     </SafeAreaView>
   );
@@ -2115,6 +2115,30 @@ const styles = StyleSheet.create({
   },
   addButtonSecondary: {
     paddingHorizontal: 10,
+  },
+  photoReviewContainer: {
+    flex: 1,
+    backgroundColor: "#fff",
+  },
+  photoReviewHeader: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#e0e0e0",
+  },
+  photoReviewContent: {
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  photoReviewFooter: {
+    flexDirection: "row",
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: "#e0e0e0",
+    backgroundColor: "#fff",
   },
   wordListContainer: {
     backgroundColor: "#f9f9f9",

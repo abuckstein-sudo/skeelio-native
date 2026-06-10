@@ -7,16 +7,20 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const PROMPT = `Extract every spelling word from this image.
-Follow these rules:
-- No numbering, no punctuation, no duplicates
-- Preserve original capitalisation and accents
-- Detect the language (English or French)
-- Return ONLY a JSON object, no explanation
+const PROMPT = `You are reading a spelling list from a photo of a child's worksheet. Extract each list ENTRY exactly as written, one per array element, preserving accents, apostrophes (e.g. l'éléphant), and articles (e.g. un animal, des animaux).
+
+Rules:
+- If an entry shows two forms separated by '/' (singular/plural, e.g. 'un animal/des animaux'), output BOTH as separate entries, each keeping its article: 'un animal' and 'des animaux'.
+- Keep multi-word entries together (e.g. 'un cheval', 'l'affiche'); do NOT split them into individual words.
+- Do not drop or merge entries; preserve their order.
+- Ignore list titles/headings (e.g. 'Liste 25') and any numbering/bullets.
+- If several lists are visible, extract ONLY the list that is fully visible and centered/boxed; ignore lists cut off at the edges.
+- Detect the language (English or French).
+- Return ONLY a JSON object, no explanation.
 
 Return STRICT JSON format:
 {
-  "words": ["word1", "word2", ...],
+  "words": ["entry1", "entry2", ...],
   "language": "English" | "French"
 }`;
 
