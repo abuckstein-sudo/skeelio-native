@@ -41,6 +41,7 @@ const VERB_GROUPS = [
   { value: "groupe_1", label: "Groupe 1 (-er)" },
   { value: "groupe_2", label: "Groupe 2 (-ir)" },
   { value: "groupe_3", label: "Groupe 3 (-re)" },
+  { value: "irregulier", label: "Irregular verbs" },
 ];
 
 export default function ConjugationPracticeScreen() {
