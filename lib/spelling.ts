@@ -168,6 +168,21 @@ export function fallbackHint(
   }
 }
 
+// ── Manual Input Parsing ──────────────────────────────────
+
+export const MAX_WORDS_PER_LIST = 30;
+
+export function parseManualWords(raw: string): string[] {
+  return Array.from(
+    new Set(
+      raw
+        .split(/[\n,;]+/g)
+        .map((w) => w.trim())
+        .filter((w) => w.length > 0)
+    )
+  ).slice(0, MAX_WORDS_PER_LIST);
+}
+
 // ── Speech ────────────────────────────────────────────────────
 
 export function speechLangCode(language: SpellingLanguage): string {
@@ -316,4 +331,89 @@ export async function getSessionAttempts(
 
   if (error) throw error;
   return (data ?? []) as SpellingAttempt[];
+}
+
+// ── List Creation & Deletion (Parent) ──────────────────────
+
+export async function createSpellingList(
+  childId: string,
+  title: string,
+  language: SpellingLanguage,
+  sourceType: "photo" | "manual"
+): Promise<SpellingList> {
+  const { data: authData } = await supabase.auth.getUser();
+  if (!authData.user) throw new Error("Not authenticated");
+
+  const { data, error } = await supabase
+    .from("spelling_lists")
+    .insert({
+      user_id: authData.user.id,
+      student_id: childId,
+      title,
+      language,
+      source_type: sourceType,
+    })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data as SpellingList;
+}
+
+export async function createSpellingItems(
+  listId: string,
+  childId: string,
+  words: string[],
+  language: SpellingLanguage
+): Promise<SpellingItem[]> {
+  if (words.length === 0) return [];
+
+  const { data: authData } = await supabase.auth.getUser();
+  if (!authData.user) throw new Error("Not authenticated");
+
+  const rows = words.map((word, i) => ({
+    list_id: listId,
+    user_id: authData.user.id,
+    student_id: childId,
+    item_text: word,
+    normalized_text: normalise(word, language),
+    language,
+    item_order: i + 1,
+  }));
+
+  const { data, error } = await supabase
+    .from("spelling_list_items")
+    .insert(rows)
+    .select();
+
+  if (error) throw error;
+  return (data ?? []) as SpellingItem[];
+}
+
+export async function deleteSpellingList(listId: string): Promise<void> {
+  // Delete items first
+  const { error: itemError } = await supabase
+    .from("spelling_list_items")
+    .delete()
+    .eq("list_id", listId);
+
+  if (itemError) throw itemError;
+
+  // Then delete list
+  const { error: listError } = await supabase
+    .from("spelling_lists")
+    .delete()
+    .eq("id", listId);
+
+  if (listError) throw listError;
+}
+
+export async function getListItemCount(listId: string): Promise<number> {
+  const { count, error } = await supabase
+    .from("spelling_list_items")
+    .select("*", { count: "exact", head: true })
+    .eq("list_id", listId);
+
+  if (error) throw error;
+  return count ?? 0;
 }

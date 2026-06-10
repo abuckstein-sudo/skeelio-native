@@ -22,6 +22,16 @@ import {
   deleteAssignment,
   Assignment,
 } from "@/lib/assignments";
+import {
+  listSpellingListsForChild,
+  createSpellingList,
+  createSpellingItems,
+  deleteSpellingList,
+  parseManualWords,
+  getListItemCount,
+  type SpellingList,
+  type SpellingLanguage,
+} from "@/lib/spelling";
 
 const KNOWN_SUBJECTS = [
   "multiplication",
@@ -71,6 +81,14 @@ export default function ChildHomeScreen() {
   const [isCreatingAssignment, setIsCreatingAssignment] = useState(false);
   const [showCompletedAssignments, setShowCompletedAssignments] = useState(false);
 
+  // Spelling list state
+  const [spellingLists, setSpellingLists] = useState<SpellingList[]>([]);
+  const [showSpellingForm, setShowSpellingForm] = useState(false);
+  const [spellingTitle, setSpellingTitle] = useState("");
+  const [spellingLanguage, setSpellingLanguage] = useState<SpellingLanguage>("English");
+  const [spellingWords, setSpellingWords] = useState("");
+  const [isCreatingSpellingList, setIsCreatingSpellingList] = useState(false);
+
   const fetchStars = useCallback(async () => {
     if (!id) return;
 
@@ -89,6 +107,16 @@ export default function ChildHomeScreen() {
     if (!id) return;
     const assns = await listAssignmentsForChild(id);
     setAssignments(assns);
+  }, [id]);
+
+  const fetchSpellingLists = useCallback(async () => {
+    if (!id) return;
+    try {
+      const lists = await listSpellingListsForChild(id);
+      setSpellingLists(lists);
+    } catch (err) {
+      console.error("[parent-dashboard] error fetching spelling lists:", err);
+    }
   }, [id]);
 
   const handleCreateAssignment = async () => {
@@ -144,6 +172,71 @@ export default function ChildHomeScreen() {
     );
   };
 
+  const handleCreateSpellingList = async () => {
+    if (!id || !spellingTitle.trim() || !spellingWords.trim()) {
+      Alert.alert("Error", "Please enter a title and words");
+      return;
+    }
+
+    setIsCreatingSpellingList(true);
+    try {
+      const words = parseManualWords(spellingWords);
+      if (words.length === 0) {
+        Alert.alert("Error", "No valid words found");
+        setIsCreatingSpellingList(false);
+        return;
+      }
+
+      const list = await createSpellingList(
+        id,
+        spellingTitle.trim(),
+        spellingLanguage,
+        "manual"
+      );
+
+      await createSpellingItems(list.id, id, words, spellingLanguage);
+
+      // Refresh lists
+      await fetchSpellingLists();
+
+      // Reset form
+      setShowSpellingForm(false);
+      setSpellingTitle("");
+      setSpellingWords("");
+      setSpellingLanguage("English");
+
+      Alert.alert("Success", `Created list with ${words.length} words`);
+    } catch (err) {
+      console.error("[spelling] error creating list:", err);
+      Alert.alert("Error", "Failed to create spelling list");
+    } finally {
+      setIsCreatingSpellingList(false);
+    }
+  };
+
+  const handleDeleteSpellingList = (listId: string) => {
+    Alert.alert(
+      "Delete Spelling List",
+      "Are you sure? This cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await deleteSpellingList(listId);
+              await fetchSpellingLists();
+            } catch (err) {
+              console.error("[spelling] error deleting list:", err);
+              Alert.alert("Error", "Failed to delete list");
+            }
+          },
+        },
+      ]
+    );
+  };
+
   useEffect(() => {
     if (id && session?.user?.id) {
       fetchChild();
@@ -155,7 +248,8 @@ export default function ChildHomeScreen() {
     useCallback(() => {
       fetchStars();
       fetchAssignments();
-    }, [fetchStars, fetchAssignments]),
+      fetchSpellingLists();
+    }, [fetchStars, fetchAssignments, fetchSpellingLists]),
   );
 
   const fetchChild = async () => {
@@ -220,6 +314,10 @@ export default function ChildHomeScreen() {
     // Fetch assignments
     const assns = await listAssignmentsForChild(id);
     setAssignments(assns);
+
+    // Fetch spelling lists
+    const lists = await listSpellingListsForChild(id);
+    setSpellingLists(lists);
 
     // Fetch tier-based operation statuses for math subjects
     const mathOperations: Operation[] = [
@@ -494,6 +592,40 @@ export default function ChildHomeScreen() {
               )}
             </View>
 
+            {/* Spelling Lists Section */}
+            <View style={styles.section}>
+              <View style={styles.sectionHeaderRow}>
+                <Text style={styles.sectionTitle}>Spelling Lists</Text>
+                <TouchableOpacity
+                  style={styles.addButton}
+                  onPress={() => setShowSpellingForm(true)}
+                >
+                  <Text style={styles.addButtonText}>+ Add List</Text>
+                </TouchableOpacity>
+              </View>
+
+              {spellingLists.length === 0 ? (
+                <Text style={styles.emptyItemText}>No spelling lists yet</Text>
+              ) : (
+                spellingLists.map((list) => (
+                  <View key={list.id} style={styles.homeworkRow}>
+                    <View style={styles.homeworkInfo}>
+                      <Text style={styles.homeworkTopic}>{list.title}</Text>
+                      <Text style={styles.homeworkDetails}>
+                        {list.language} · {list.source_type === "photo" ? "📷 Photo" : "✏️ Manual"}
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      style={styles.deleteButton}
+                      onPress={() => handleDeleteSpellingList(list.id)}
+                    >
+                      <Text style={styles.deleteButtonText}>✕</Text>
+                    </TouchableOpacity>
+                  </View>
+                ))
+              )}
+            </View>
+
             {/* Math Operations Section */}
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Math Progress</Text>
@@ -706,6 +838,99 @@ export default function ChildHomeScreen() {
                 )}
               </TouchableOpacity>
             </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Spelling List Form Modal */}
+      <Modal
+        visible={showSpellingForm}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() =>
+          !isCreatingSpellingList && setShowSpellingForm(false)
+        }
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Add Spelling List</Text>
+
+            {/* Title Input */}
+            <Text style={styles.formLabel}>List Title</Text>
+            <TextInput
+              style={styles.formInput}
+              placeholder="e.g., 'Week 1 Spellings'"
+              value={spellingTitle}
+              onChangeText={setSpellingTitle}
+              editable={!isCreatingSpellingList}
+            />
+
+            {/* Language Picker */}
+            <Text style={styles.formLabel}>Language</Text>
+            <View style={styles.topicPickerRow}>
+              {(["English", "French"] as const).map((lang) => (
+                <TouchableOpacity
+                  key={lang}
+                  style={[
+                    styles.topicButton,
+                    spellingLanguage === lang && styles.topicButtonActive,
+                  ]}
+                  onPress={() => setSpellingLanguage(lang)}
+                  disabled={isCreatingSpellingList}
+                >
+                  <Text
+                    style={[
+                      styles.topicButtonText,
+                      spellingLanguage === lang && styles.topicButtonTextActive,
+                    ]}
+                  >
+                    {lang}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* Words Input */}
+            <Text style={styles.formLabel}>Words (comma, newline, or semicolon separated)</Text>
+            <TextInput
+              style={[styles.formInput, styles.multilineInput]}
+              placeholder="beautiful, house, yellow&#10;quiet, friend"
+              value={spellingWords}
+              onChangeText={setSpellingWords}
+              multiline={true}
+              numberOfLines={6}
+              editable={!isCreatingSpellingList}
+            />
+
+            {/* Submit Button */}
+            <TouchableOpacity
+              style={[
+                styles.submitButton,
+                isCreatingSpellingList && styles.submitButtonDisabled,
+              ]}
+              onPress={handleCreateSpellingList}
+              disabled={isCreatingSpellingList}
+            >
+              {isCreatingSpellingList ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Text style={styles.submitButtonText}>Create List</Text>
+              )}
+            </TouchableOpacity>
+
+            {/* Cancel Button */}
+            <TouchableOpacity
+              style={styles.cancelButton}
+              onPress={() => {
+                setShowSpellingForm(false);
+                setSpellingTitle("");
+                setSpellingWords("");
+                setSpellingLanguage("English");
+              }}
+              disabled={isCreatingSpellingList}
+            >
+              <Text style={styles.cancelButtonText}>Cancel</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -1246,5 +1471,46 @@ const styles = StyleSheet.create({
   buttonPrimary: {
     backgroundColor: "#2196f3",
     flex: 1,
+  },
+  formInput: {
+    borderWidth: 1,
+    borderColor: "#ddd",
+    borderRadius: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    marginBottom: 16,
+    backgroundColor: "#fff",
+  },
+  multilineInput: {
+    minHeight: 100,
+    textAlignVertical: "top",
+  },
+  submitButton: {
+    backgroundColor: "#2196f3",
+    paddingVertical: 14,
+    borderRadius: 6,
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  submitButtonDisabled: {
+    opacity: 0.6,
+  },
+  submitButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  cancelButton: {
+    borderWidth: 1,
+    borderColor: "#ddd",
+    paddingVertical: 14,
+    borderRadius: 6,
+    alignItems: "center",
+  },
+  cancelButtonText: {
+    color: "#666",
+    fontSize: 16,
+    fontWeight: "600",
   },
 });
