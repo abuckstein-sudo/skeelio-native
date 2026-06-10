@@ -14,8 +14,6 @@ import {
 import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "../../_layout";
-import { getSubjectMastery, TopicMastery } from "@/lib/mastery";
-import { getWhatsNext, NextStep } from "@/lib/whatsNext";
 import { getOperationStatus, OperationStatus } from "@/lib/tutor/status";
 import { Operation } from "@/lib/tutorConfig";
 import {
@@ -47,12 +45,6 @@ interface ChildOption {
   name: string;
 }
 
-interface CategorizedMastery {
-  strengths: Array<[string, TopicMastery]>;
-  building: Array<[string, TopicMastery]>;
-  notStarted: string[];
-  neverTried: string[];
-}
 
 export default function ChildHomeScreen() {
   const router = useRouter();
@@ -60,15 +52,12 @@ export default function ChildHomeScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const [child, setChild] = useState<Child | null>(null);
   const [allChildren, setAllChildren] = useState<ChildOption[]>([]);
-  const [mastery, setMastery] = useState<Record<string, TopicMastery>>({});
   const [operationStatuses, setOperationStatuses] = useState<
     Record<Operation, OperationStatus>
   >({});
-  const [nextStep, setNextStep] = useState<NextStep | null>(null);
   const [todayPracticeCount, setTodayPracticeCount] = useState(0);
   const [stars, setStars] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
-  const [isMasteryLoading, setIsMasteryLoading] = useState(false);
   const [error, setError] = useState("");
 
   // Homework assignment state
@@ -229,14 +218,6 @@ export default function ChildHomeScreen() {
     const assns = await listAssignmentsForChild(id);
     setAssignments(assns);
 
-    setIsLoading(false);
-
-    // Fetch mastery data
-    setIsMasteryLoading(true);
-    const masteryData = await getSubjectMastery(id);
-    console.log("[MASTERY_RAW]", JSON.stringify(masteryData, null, 2));
-    setMastery(masteryData);
-
     // Fetch tier-based operation statuses for math subjects
     const mathOperations: Operation[] = [
       "addition",
@@ -251,18 +232,7 @@ export default function ChildHomeScreen() {
     }
     setOperationStatuses(statuses);
 
-    // Convert to MasteryRow[] for whatsNext logic
-    const rows = Object.entries(masteryData).map(([topic, data]) => ({
-      topic,
-      score: data.score / 100, // Convert 0–100 to 0–1
-      attempts: data.totalQuestionAttempts,
-    }));
-    console.log("[MASTERY_MAPPED]", JSON.stringify(rows, null, 2));
-    const step = getWhatsNext(rows);
-    console.log("[whatsnext]", step);
-    setNextStep(step);
-
-    setIsMasteryLoading(false);
+    setIsLoading(false);
   };
 
   const handleSwitchChild = (childId: string) => {
@@ -300,16 +270,6 @@ export default function ChildHomeScreen() {
     router.push("/children");
   };
 
-  const handleWhatsNext = () => {
-    if (nextStep && child) {
-      console.log("[whatsnext]", nextStep);
-      router.push({
-        pathname: "/practice",
-        params: { childId: child.id, topic: nextStep.topic },
-      });
-    }
-  };
-
   const handleScanWorksheet = () => {
     if (child) {
       router.push({
@@ -317,64 +277,6 @@ export default function ChildHomeScreen() {
         params: { childId: child.id },
       });
     }
-  };
-
-  const categorizeMastery = (): CategorizedMastery => {
-    const strengths: Array<[string, TopicMastery]> = [];
-    const building: Array<[string, TopicMastery]> = [];
-    const notStarted: string[] = [];
-
-    Object.entries(mastery).forEach(([topic, data]) => {
-      if (data.totalQuestionAttempts === 0) {
-        notStarted.push(topic);
-      } else if (data.score >= 80) {
-        strengths.push([topic, data]);
-      } else {
-        building.push([topic, data]);
-      }
-    });
-
-    // Sort by score for building (lowest first for suggestion)
-    building.sort((a, b) => a[1].score - b[1].score);
-
-    // Find never-tried subjects: KNOWN_SUBJECTS with no DB data at all
-    const neverTried = KNOWN_SUBJECTS.filter((subject) => !mastery[subject]);
-
-    return { strengths, building, notStarted, neverTried };
-  };
-
-  const getSuggestion = (categories: CategorizedMastery): string => {
-    // Priority 1: Never-tried subjects (always invite them)
-    if (categories.neverTried.length > 0) {
-      const [topic] = categories.neverTried;
-      return `${child?.name} hasn't tried ${topic} yet — want to start a session?`;
-    }
-
-    // Priority 2: Building topics (lowest-scoring first)
-    if (categories.building.length > 0) {
-      const [topic] = categories.building[0];
-      return `💡 A great focus this week: ${topic}.`;
-    }
-
-    // Priority 3: Everything is practiced and strong — suggest leveling up
-    const multiplicationStrong =
-      mastery.multiplication && mastery.multiplication.score >= 80;
-    const divisionStrong = mastery.division && mastery.division.score >= 80;
-    const additionStrong = mastery.addition && mastery.addition.score >= 80;
-
-    if (multiplicationStrong) {
-      return `${child?.name}'s mastered his times tables — he may be ready for multi-digit multiplication or division.`;
-    }
-
-    if (divisionStrong) {
-      return `${child?.name}'s doing great with division — he may be ready for more complex problem types.`;
-    }
-
-    if (additionStrong) {
-      return `${child?.name}'s strong with addition — ready to explore larger numbers or new operations.`;
-    }
-
-    return `💡 Wonderful progress! ${child?.name} is ready for new challenges.`;
   };
 
   if (isLoading) {
@@ -397,16 +299,7 @@ export default function ChildHomeScreen() {
     );
   }
 
-  if (isMasteryLoading) {
-    return (
-      <View style={styles.centerContainer}>
-        <ActivityIndicator size="large" color="#0000ff" />
-      </View>
-    );
-  }
-
-  const categories = categorizeMastery();
-  const hasData = Object.keys(mastery).length > 0;
+  const hasAttempts = Object.values(operationStatuses).some((s) => s.hasAttempts);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -472,22 +365,7 @@ export default function ChildHomeScreen() {
           <Text style={styles.headerName}>Parent dashboard</Text>
         </View>
 
-        {hasData && nextStep && (
-          <TouchableOpacity
-            style={styles.whatsnextCard}
-            onPress={handleWhatsNext}
-          >
-            <Text style={styles.whatsnextHeadline}>{nextStep.headline}</Text>
-            <View style={styles.whatsnextCTAContainer}>
-              <Text style={styles.whatsnextCTA}>{nextStep.cta}</Text>
-            </View>
-          </TouchableOpacity>
-        )}
-
-        {!hasData &&
-        Object.keys(operationStatuses).every(
-          (op) => !operationStatuses[op as Operation]?.hasAttempts,
-        ) ? (
+        {!hasAttempts ? (
           <View style={styles.emptySection}>
             <Text style={styles.emptyText}>
               No practice data yet. Come back after your first practice session!
@@ -602,112 +480,6 @@ export default function ChildHomeScreen() {
               })}
             </View>
 
-            {/* Other Subjects Section */}
-            {categories.strengths.length > 0 && (
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Doing well</Text>
-                {categories.strengths
-                  .filter(
-                    ([topic]) =>
-                      ![
-                        "addition",
-                        "subtraction",
-                        "multiplication",
-                        "division",
-                      ].includes(topic),
-                  )
-                  .map(([topic, data]) => (
-                    <View key={topic} style={styles.strengthRow}>
-                      <Text style={styles.topicName}>{topic}</Text>
-                      <Text style={styles.strengthScore}>{data.score}%</Text>
-                    </View>
-                  ))}
-              </View>
-            )}
-
-            {/* Building Section */}
-            {categories.building.length > 0 && (
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Still building</Text>
-                {categories.building
-                  .filter(
-                    ([topic]) =>
-                      ![
-                        "addition",
-                        "subtraction",
-                        "multiplication",
-                        "division",
-                      ].includes(topic),
-                  )
-                  .map(([topic, data]) => (
-                    <View key={topic} style={styles.buildingRow}>
-                      <View style={styles.buildingInfo}>
-                        <Text style={styles.topicName}>{topic}</Text>
-                        {data.weakest && (
-                          <Text style={styles.weakestSkill}>
-                            working on {data.weakest}
-                          </Text>
-                        )}
-                      </View>
-                      <Text style={styles.buildingScore}>{data.score}%</Text>
-                    </View>
-                  ))}
-              </View>
-            )}
-
-            {/* Not Started Section (combines never-tried + zero-attempt topics) */}
-            {(categories.notStarted.length > 0 ||
-              categories.neverTried.length > 0) && (
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Ready to explore</Text>
-                {categories.neverTried
-                  .filter(
-                    (topic) =>
-                      ![
-                        "addition",
-                        "subtraction",
-                        "multiplication",
-                        "division",
-                      ].includes(topic),
-                  )
-                  .map((topic) => (
-                    <View key={topic} style={styles.notStartedRow}>
-                      <Text style={styles.topicName}>{topic}</Text>
-                      <Text style={styles.notStartedHint}>
-                        Ready when you are
-                      </Text>
-                    </View>
-                  ))}
-                {categories.notStarted
-                  .filter(
-                    (topic) =>
-                      ![
-                        "addition",
-                        "subtraction",
-                        "multiplication",
-                        "division",
-                      ].includes(topic),
-                  )
-                  .map((topic) => (
-                    <View key={topic} style={styles.notStartedRow}>
-                      <Text style={styles.topicName}>{topic}</Text>
-                      <Text style={styles.notStartedHint}>
-                        Ready when you are
-                      </Text>
-                    </View>
-                  ))}
-              </View>
-            )}
-
-            {/* Suggestion */}
-            <View style={styles.suggestionBox}>
-              <Text style={styles.suggestionText}>
-                {getSuggestion(categories)}
-              </Text>
-            </View>
-
-            {/* Caption */}
-            <Text style={styles.caption}>Based on practice so far</Text>
           </>
         )}
 
