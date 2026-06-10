@@ -33,6 +33,7 @@ import {
   deleteSpellingList,
   parseManualWords,
   getListItemCount,
+  generateSpellingWords,
   type SpellingList,
   type SpellingLanguage,
 } from "@/lib/spelling";
@@ -86,6 +87,9 @@ export default function ChildHomeScreen() {
   const [isCreatingAssignment, setIsCreatingAssignment] = useState(false);
   const [showCompletedAssignments, setShowCompletedAssignments] = useState(false);
   const [selectedSpellingList, setSelectedSpellingList] = useState<SpellingList | null>(null);
+  const [isGeneratingNewList, setIsGeneratingNewList] = useState(false);
+  const [generateLanguage, setGenerateLanguage] = useState<SpellingLanguage>("English");
+  const [generateWordCount, setGenerateWordCount] = useState("10");
 
   // Spelling list state
   const [spellingLists, setSpellingLists] = useState<SpellingList[]>([]);
@@ -156,8 +160,15 @@ export default function ChildHomeScreen() {
         setIsCreatingAssignment(false);
       }
     } else if (assignmentSubject === "spelling") {
+      // Handle "Generate New List" option
+      if (isGeneratingNewList) {
+        await handleGenerateAndAssignList();
+        return;
+      }
+
+      // Handle existing list selection
       if (!selectedSpellingList) {
-        Alert.alert("Error", "Please select a spelling list");
+        Alert.alert("Error", "Please select a spelling list or choose 'Generate New List'");
         return;
       }
 
@@ -189,6 +200,79 @@ export default function ChildHomeScreen() {
       } finally {
         setIsCreatingAssignment(false);
       }
+    }
+  };
+
+  const handleGenerateAndAssignList = async () => {
+    if (!id || !child) return;
+
+    const wordCount = parseInt(generateWordCount, 10);
+    if (isNaN(wordCount) || wordCount < 1 || wordCount > 30) {
+      Alert.alert("Error", "Word count must be between 1 and 30");
+      return;
+    }
+
+    setIsCreatingAssignment(true);
+    try {
+      console.log("[handleGenerateAndAssignList] generating", wordCount, "words in", generateLanguage);
+
+      // Generate words using OpenAI
+      const words = await generateSpellingWords(
+        generateLanguage,
+        wordCount,
+        child.grade_level || "3", // Default to grade 3 if not set
+        [] // TODO: use child.context.interests if available
+      );
+
+      if (words.length === 0) {
+        Alert.alert("Error", "Failed to generate words");
+        setIsCreatingAssignment(false);
+        return;
+      }
+
+      // Create a new spelling list
+      const today = new Date().toISOString().split("T")[0];
+      const listTitle = `Generated · ${today}`;
+
+      const newList = await createSpellingList(
+        id,
+        listTitle,
+        generateLanguage,
+        "manual" // source_type is constrained to 'photo' | 'manual'
+      );
+
+      // Add items to the list
+      await createSpellingItems(newList.id, id, words, generateLanguage);
+
+      // Create assignment for the list
+      await createSpellingAssignment(
+        id,
+        newList.id,
+        listTitle,
+        words.length,
+        "practice",
+        dueDate || undefined
+      );
+
+      // Refresh data
+      await fetchAssignments();
+      await fetchSpellingLists();
+
+      // Reset form and close modal
+      setShowAssignmentForm(false);
+      setAssignmentSubject("math");
+      setSelectedSpellingList(null);
+      setDueDate("");
+      setGenerateWordCount("10");
+      setGenerateLanguage("English");
+      setIsGeneratingNewList(false);
+
+      Alert.alert("Success", `Created list with ${words.length} words`);
+    } catch (err) {
+      console.error("[handleGenerateAndAssignList] error:", err);
+      Alert.alert("Error", "Failed to generate and assign list");
+    } finally {
+      setIsCreatingAssignment(false);
     }
   };
 
@@ -935,10 +1019,65 @@ export default function ChildHomeScreen() {
                     </View>
 
                     {/* Generate New List Option */}
-                    <TouchableOpacity style={[styles.topicButton, styles.topicButtonDisabled]} disabled>
-                      <Text style={styles.topicButtonText}>Generate New List</Text>
-                      <Text style={styles.comingSoonLabel}>Coming Soon</Text>
+                    <TouchableOpacity
+                      style={[
+                        styles.topicButton,
+                        isGeneratingNewList && styles.topicButtonActive,
+                      ]}
+                      onPress={() => setIsGeneratingNewList(!isGeneratingNewList)}
+                      disabled={isCreatingAssignment}
+                    >
+                      <Text
+                        style={[
+                          styles.topicButtonText,
+                          isGeneratingNewList && styles.topicButtonTextActive,
+                        ]}
+                      >
+                        Generate New List
+                      </Text>
                     </TouchableOpacity>
+
+                    {/* Generate Form (shown when "Generate New List" is selected) */}
+                    {isGeneratingNewList && (
+                      <>
+                        {/* Language Picker */}
+                        <Text style={styles.formLabel}>Language</Text>
+                        <View style={styles.topicPickerRow}>
+                          {["English", "French"].map((lang) => (
+                            <TouchableOpacity
+                              key={lang}
+                              style={[
+                                styles.topicButton,
+                                generateLanguage === lang && styles.topicButtonActive,
+                              ]}
+                              onPress={() => setGenerateLanguage(lang as SpellingLanguage)}
+                              disabled={isCreatingAssignment}
+                            >
+                              <Text
+                                style={[
+                                  styles.topicButtonText,
+                                  generateLanguage === lang && styles.topicButtonTextActive,
+                                ]}
+                              >
+                                {lang}
+                              </Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+
+                        {/* Word Count */}
+                        <Text style={styles.formLabel}>Word Count</Text>
+                        <TextInput
+                          style={styles.numberInput}
+                          placeholder="10"
+                          value={generateWordCount}
+                          onChangeText={setGenerateWordCount}
+                          keyboardType="number-pad"
+                          editable={!isCreatingAssignment}
+                        />
+                        <Text style={styles.smallText}>Between 1 and 30 words</Text>
+                      </>
+                    )}
 
                     {/* Due Date */}
                     <Text style={styles.formLabel}>Due Date (optional)</Text>
@@ -1618,6 +1757,21 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginBottom: 20,
     color: "#333",
+  },
+  numberInput: {
+    borderWidth: 1,
+    borderColor: "#ddd",
+    borderRadius: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    fontSize: 14,
+    marginBottom: 6,
+    color: "#333",
+  },
+  smallText: {
+    fontSize: 12,
+    color: "#999",
+    marginBottom: 16,
   },
   modalButtonsRow: {
     flexDirection: "row",
