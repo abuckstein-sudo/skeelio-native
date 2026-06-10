@@ -13,6 +13,21 @@ export type ConjugationQuestion = {
   difficulty_level: number;
 };
 
+export type VerbConjugation = {
+  pronoun: string;
+  form: string;
+};
+
+export type TeachingPattern = {
+  group: string;
+  tense: string;
+  endings: string[];
+  example: {
+    verb: string;
+    conjugations: VerbConjugation[];
+  };
+};
+
 export type ConjugationSession = {
   id: string;
   student_id: string;
@@ -43,7 +58,9 @@ export type ConjugationAttempt = {
 
 export async function fetchConjugationPool(
   childId: string,
-  gradeLevel: string
+  gradeLevel: string,
+  tense?: string,
+  verbGroup?: string
 ): Promise<ConjugationQuestion[]> {
   try {
     console.log("[fetchConjugationPool] fetching for grade:", gradeLevel);
@@ -59,7 +76,7 @@ export async function fetchConjugationPool(
       throw error;
     }
 
-    // Filter in JS: check if grade_levels includes the child's grade
+    // Filter in JS: check if grade_levels includes the child's grade, plus tense and verb_group if provided
     let pool = (data ?? []).filter((q) => {
       let gl: any = q.grade_levels;
       // Handle both parsed array and stringified versions
@@ -70,7 +87,10 @@ export async function fetchConjugationPool(
           gl = [];
         }
       }
-      return Array.isArray(gl) && gl.includes(gradeLevel);
+      const gradeMatch = Array.isArray(gl) && gl.includes(gradeLevel);
+      const tenseMatch = !tense || q.tense === tense;
+      const groupMatch = !verbGroup || q.verb_group === verbGroup;
+      return gradeMatch && tenseMatch && groupMatch;
     });
 
     // If no questions for this grade, use all fetched questions
@@ -100,6 +120,83 @@ export function pickRandomQuestions(pool: ConjugationQuestion[], count: number):
     [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
   }
   return shuffled.slice(0, Math.min(count, shuffled.length));
+}
+
+export async function fetchTeachingExample(
+  group: string,
+  tense: string
+): Promise<TeachingPattern | null> {
+  try {
+    // Fetch all questions for this group+tense to find unique verbs
+    const { data, error } = await supabase
+      .from("conjugation_questions")
+      .select("*")
+      .eq("language", "fr-FR")
+      .eq("verb_group", group)
+      .eq("tense", tense)
+      .limit(10);
+
+    if (error || !data || data.length === 0) return null;
+
+    // Get unique verb
+    const uniqueVerbs = [...new Set(data.map((q) => q.verb))];
+    if (uniqueVerbs.length === 0) return null;
+
+    const exampleVerb = uniqueVerbs[0];
+
+    // Get all conjugations for this verb
+    const conjugations = data
+      .filter((q) => q.verb === exampleVerb)
+      .map((q) => ({
+        pronoun: q.pronoun,
+        form: q.correct_answer,
+      }))
+      .sort((a, b) => {
+        const order = ["je", "tu", "il/elle", "nous", "vous", "ils/elles"];
+        return order.indexOf(a.pronoun) - order.indexOf(b.pronoun);
+      });
+
+    // Get pattern endings
+    const endings = getPatternEndings(group, tense);
+
+    return {
+      group,
+      tense,
+      endings,
+      example: {
+        verb: exampleVerb,
+        conjugations,
+      },
+    };
+  } catch (err) {
+    console.error("[fetchTeachingExample] failed:", err);
+    return null;
+  }
+}
+
+function getPatternEndings(group: string, tense: string): string[] {
+  const patterns: Record<string, Record<string, string[]>> = {
+    groupe_1: {
+      "présent": ["e", "es", "e", "ons", "ez", "ent"],
+      "imparfait": ["ais", "ais", "ait", "ions", "iez", "aient"],
+      "futur simple": ["ai", "as", "a", "ons", "ez", "ont"],
+      "passé composé": ["ai", "as", "a", "avons", "avez", "ont"],
+    },
+    groupe_2: {
+      "présent": ["is", "is", "it", "issons", "issez", "issent"],
+      "imparfait": ["issais", "issais", "issait", "issions", "issiez", "issaient"],
+      "futur simple": ["ai", "as", "a", "ons", "ez", "ont"],
+      "passé composé": ["ai", "as", "a", "avons", "avez", "ont"],
+    },
+    groupe_3: {
+      "présent": ["s", "s", "–", "ons", "ez", "ent"],
+      "imparfait": ["ais", "ais", "ait", "ions", "iez", "aient"],
+      "futur simple": ["ai", "as", "a", "ons", "ez", "ont"],
+      "passé composé": ["u", "u", "u", "ons", "ez", "ont"],
+    },
+  };
+
+  return patterns[group]?.[tense] ?? [];
 }
 
 export function shuffleOptions(options: string[], correctAnswer: string): string[] {
