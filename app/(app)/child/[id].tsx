@@ -81,7 +81,7 @@ export default function ChildHomeScreen() {
   // Homework assignment state
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [showAssignmentForm, setShowAssignmentForm] = useState(false);
-  const [assignmentSubject, setAssignmentSubject] = useState<"math" | "spelling">("math");
+  const [assignmentSubject, setAssignmentSubject] = useState<"math" | "spelling" | "conjugation">("math");
   const [selectedTopic, setSelectedTopic] = useState<Operation | "word_problems">("addition");
   const [selectedWordProblemOp, setSelectedWordProblemOp] = useState<Operation | "mixed">("mixed");
   const [questionCount, setQuestionCount] = useState(8);
@@ -207,6 +207,39 @@ export default function ChildHomeScreen() {
       } catch (err) {
         console.error("[assignments] error creating spelling assignment:", err);
         Alert.alert("Error", err instanceof Error ? err.message : "Failed to create assignment");
+      } finally {
+        setIsCreatingAssignment(false);
+      }
+    } else if (assignmentSubject === "conjugation") {
+      setIsCreatingAssignment(true);
+      try {
+        // Create a new conjugation session
+        const { data: sessionData, error: sessionError } = await supabase
+          .from("conjugation_practice_sessions")
+          .insert({
+            student_id: id,
+            user_id: session?.user?.id,
+            started_at: new Date().toISOString(),
+            status: "in_progress",
+          })
+          .select()
+          .single();
+
+        if (sessionError) throw sessionError;
+
+        // Reset form
+        setShowAssignmentForm(false);
+        setAssignmentSubject("math");
+        setDueDate("");
+
+        // Navigate to conjugation session
+        router.push({
+          pathname: "/conjugation/[sessionId]",
+          params: { sessionId: sessionData.id, childId: id },
+        });
+      } catch (err) {
+        console.error("[assignments] error creating conjugation session:", err);
+        Alert.alert("Error", "Failed to start conjugation session");
       } finally {
         setIsCreatingAssignment(false);
       }
@@ -989,6 +1022,22 @@ export default function ChildHomeScreen() {
                       Spelling
                     </Text>
                   </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.topicButton,
+                      assignmentSubject === "conjugation" && styles.topicButtonActive,
+                    ]}
+                    onPress={() => setAssignmentSubject("conjugation")}
+                  >
+                    <Text
+                      style={[
+                        styles.topicButtonText,
+                        assignmentSubject === "conjugation" && styles.topicButtonTextActive,
+                      ]}
+                    >
+                      Conjugation
+                    </Text>
+                  </TouchableOpacity>
                 </View>
 
                 {/* Math Form */}
@@ -1220,6 +1269,18 @@ export default function ChildHomeScreen() {
                       onChangeText={setDueDate}
                       editable={!isCreatingAssignment}
                     />
+                  </>
+                )}
+
+                {/* Conjugation Form */}
+                {assignmentSubject === "conjugation" && (
+                  <>
+                    <Text style={styles.formLabel}>French Conjugation Practice</Text>
+                    <View style={styles.infoBox}>
+                      <Text style={styles.infoText}>
+                        A 10-question session with random French verbs in various tenses. No configuration needed — this will start automatically.
+                      </Text>
+                    </View>
                   </>
                 )}
 
@@ -2178,5 +2239,18 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginBottom: 16,
     color: "#333",
+  },
+  infoBox: {
+    backgroundColor: "#e3f2fd",
+    borderLeftWidth: 4,
+    borderLeftColor: "#2196f3",
+    padding: 12,
+    borderRadius: 6,
+    marginBottom: 16,
+  },
+  infoText: {
+    fontSize: 14,
+    color: "#1976d2",
+    lineHeight: 20,
   },
 });
