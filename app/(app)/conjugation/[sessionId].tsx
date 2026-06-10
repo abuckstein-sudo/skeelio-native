@@ -121,13 +121,9 @@ export default function ConjugationPracticeScreen() {
         currentQuestion.id,
         childId,
         (await supabase.auth.getUser()).data.user?.id || "",
-        currentQuestion.pronoun,
-        currentQuestion.verb,
-        currentQuestion.tense,
         selectedOption,
         currentQuestion.correct_answer,
-        isCorrect,
-        1
+        isCorrect
       );
 
       if (isCorrect) {
@@ -169,7 +165,8 @@ export default function ConjugationPracticeScreen() {
     } else {
       // Session complete
       if (session) {
-        await endConjugationSession(session.id, questions.length, correctCount, questions.length - correctCount);
+        const incorrectCount = questions.length - correctCount;
+        await endConjugationSession(session.id, questions.length, correctCount, incorrectCount);
       }
       setSessionComplete(true);
     }

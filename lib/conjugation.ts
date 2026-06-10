@@ -126,26 +126,18 @@ export async function recordConjugationAttempt(
   questionId: string,
   childId: string,
   userId: string,
-  pronoun: string,
-  verb: string,
-  tense: string,
-  studentAnswer: string,
+  givenAnswer: string,
   correctAnswer: string,
-  isCorrect: boolean,
-  attemptNumber: number
+  isCorrect: boolean
 ): Promise<void> {
   const { error } = await supabase.from("conjugation_practice_attempts").insert({
     session_id: sessionId,
     question_id: questionId,
     student_id: childId,
     user_id: userId,
-    pronoun,
-    verb,
-    tense,
-    student_answer: studentAnswer,
+    given_answer: givenAnswer,
     correct_answer: correctAnswer,
     is_correct: isCorrect,
-    attempt_number: attemptNumber,
   });
 
   if (error) throw error;
@@ -168,5 +160,8 @@ export async function endConjugationSession(
     })
     .eq("id", sessionId);
 
-  if (error) throw error;
+  if (error) {
+    console.error("[endConjugationSession] error:", error);
+    throw error;
+  }
 }

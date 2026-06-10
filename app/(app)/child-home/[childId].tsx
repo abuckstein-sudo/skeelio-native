@@ -163,25 +163,16 @@ export default function ChildHomeScreen() {
           const userId = authData.user?.id;
           if (!userId) return;
 
-          const { data: sessionData, error: sessionError } = await supabase
-            .from("conjugation_practice_sessions")
-            .insert({
-              student_id: childId,
-              user_id: userId,
-              started_at: new Date().toISOString(),
-              status: "in_progress",
-            })
-            .select()
-            .single();
-
-          if (sessionError) throw sessionError;
+          const { createConjugationSession } = await import("@/lib/conjugation");
+          const session = await createConjugationSession(childId, userId, 10);
 
           router.push({
             pathname: "/conjugation/[sessionId]",
-            params: { sessionId: sessionData.id, childId },
+            params: { sessionId: session.id, childId },
           });
         } catch (err) {
-          console.log('[conj] error', JSON.stringify(err), 'msg:', (err as any)?.message, 'code:', (err as any)?.code, 'details:', (err as any)?.details, 'hint:', (err as any)?.hint);
+          console.error("[child-home] failed to create conjugation session:", err);
+          alert("Failed to start conjugation session");
         }
       } else {
         router.push({
