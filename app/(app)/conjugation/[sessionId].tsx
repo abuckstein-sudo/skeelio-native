@@ -226,8 +226,8 @@ export default function ConjugationPracticeScreen() {
       const pool = await fetchConjugationPool(childId, gradeLevel, tenses, groups, language);
       console.log('[conj] pool size (assignment)', pool.length);
       if (pool.length === 0) {
-        setError("No questions available for this selection");
         setIsLoadingQuiz(false);
+        setError("No questions available for this selection");
         return;
       }
 
@@ -256,11 +256,12 @@ export default function ConjugationPracticeScreen() {
         setShuffledOptions(shuffled);
       }
 
+      // Clear loading state BEFORE changing screen so quiz renders immediately
+      setIsLoadingQuiz(false);
       setScreen("quiz");
     } catch (err) {
       console.error("[startQuizFromAssignment] failed:", err);
       setError(String(err));
-    } finally {
       setIsLoadingQuiz(false);
     }
   };
@@ -330,8 +331,8 @@ export default function ConjugationPracticeScreen() {
       console.log('[conj] pool size', pool.length);
 
       if (pool.length === 0) {
+        setIsLoadingQuiz(false);
         setSelectionError("No questions available for this selection. Try different options.");
-        setIsLoadingTeaching(false);
         setScreen("selection");
         return;
       }
@@ -361,11 +362,12 @@ export default function ConjugationPracticeScreen() {
         setShuffledOptions(shuffled);
       }
 
+      // Clear loading state BEFORE changing screen so quiz renders immediately
+      setIsLoadingQuiz(false);
       setScreen("quiz");
     } catch (err) {
       console.error("[ConjugationPractice] quiz start failed:", err);
       setError(String(err));
-    } finally {
       setIsLoadingQuiz(false);
     }
   };
