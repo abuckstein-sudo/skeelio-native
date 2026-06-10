@@ -90,8 +90,12 @@ export default function ChildHomeScreen() {
   const [isCreatingAssignment, setIsCreatingAssignment] = useState(false);
   const [showCompletedAssignments, setShowCompletedAssignments] = useState(false);
   const [selectedSpellingList, setSelectedSpellingList] = useState<SpellingList | null>(null);
+  const [conjugationLanguage, setConjugationLanguage] = useState<string>("");
+  const [conjugationLanguages, setConjugationLanguages] = useState<Array<{ locale: string; name: string }>>([]);
   const [conjugationVerbGroups, setConjugationVerbGroups] = useState<string[]>([]);
+  const [conjugationVerbGroupOptions, setConjugationVerbGroupOptions] = useState<Array<{ value: string; label: string }>>([]);
   const [conjugationTenses, setConjugationTenses] = useState<string[]>([]);
+  const [conjugationTenseOptions, setConjugationTenseOptions] = useState<Array<{ value: string; label: string }>>([]);
   const [isGeneratingNewList, setIsGeneratingNewList] = useState(false);
   const [generateLanguage, setGenerateLanguage] = useState<SpellingLanguage>("English");
   const [generateWordCount, setGenerateWordCount] = useState("10");
@@ -140,6 +144,86 @@ export default function ChildHomeScreen() {
       console.error("[parent-dashboard] error fetching spelling lists:", err);
     }
   }, [id]);
+
+  const loadConjugationLanguages = useCallback(async () => {
+    if (!id) return;
+    try {
+      const { data: childData, error } = await supabase
+        .from("children")
+        .select("languages, preferred_language")
+        .eq("id", id)
+        .single();
+
+      if (error) throw error;
+
+      const langs = (childData?.languages as any) || [];
+      const langs_array = Array.isArray(langs) ? langs : (typeof langs === "string" ? JSON.parse(langs) : []);
+
+      const languageMap: Record<string, { locale: string; name: string }> = {
+        "French": { locale: "fr-FR", name: "French" },
+        "English": { locale: "en-CA", name: "English" },
+      };
+
+      const available = langs_array
+        .map((lang: string) => languageMap[lang])
+        .filter(Boolean);
+
+      setConjugationLanguages(available);
+      if (available.length === 1) {
+        setConjugationLanguage(available[0].locale);
+        await loadConjugationOptions(available[0].locale);
+      }
+    } catch (err) {
+      console.error("[parent-dashboard] error loading conjugation languages:", err);
+    }
+  }, [id]);
+
+  const loadConjugationOptions = async (language: string) => {
+    try {
+      const { data, error } = await supabase
+        .from("conjugation_questions")
+        .select("verb_group, tense")
+        .eq("language", language);
+
+      if (error) throw error;
+
+      const uniqueGroups = new Set<string>();
+      const uniqueTenses = new Set<string>();
+
+      (data || []).forEach((q) => {
+        uniqueGroups.add(q.verb_group);
+        uniqueTenses.add(q.tense);
+      });
+
+      const groupMap: Record<string, string> = {
+        groupe_1: "-er (Groupe 1)",
+        groupe_2: "-ir (Groupe 2)",
+        groupe_3: "-re (Groupe 3)",
+        irregulier: "Irregular",
+      };
+
+      const groups = Array.from(uniqueGroups)
+        .map((g) => ({
+          value: g,
+          label: groupMap[g] || (g.charAt(0).toUpperCase() + g.slice(1)),
+        }))
+        .sort((a, b) => a.label.localeCompare(b.label));
+
+      const tenses = Array.from(uniqueTenses)
+        .map((t) => ({
+          value: t,
+          label: t.charAt(0).toUpperCase() + t.slice(1),
+        }))
+        .sort((a, b) => a.label.localeCompare(b.label));
+
+      setConjugationVerbGroupOptions(groups);
+      setConjugationTenseOptions(tenses);
+      setConjugationVerbGroups([]);
+      setConjugationTenses([]);
+    } catch (err) {
+      console.error("[parent-dashboard] error loading conjugation options:", err);
+    }
+  };
 
   const handleCreateAssignment = async () => {
     if (!id || !session?.user?.id) return;
@@ -213,8 +297,8 @@ export default function ChildHomeScreen() {
         setIsCreatingAssignment(false);
       }
     } else if (assignmentSubject === "conjugation") {
-      if (conjugationVerbGroups.length === 0 || conjugationTenses.length === 0) {
-        Alert.alert("Error", "Please select at least one verb type and one tense");
+      if (!conjugationLanguage || conjugationVerbGroups.length === 0 || conjugationTenses.length === 0) {
+        Alert.alert("Error", "Please select a language, at least one verb type, and at least one tense");
         return;
       }
 
@@ -223,6 +307,7 @@ export default function ChildHomeScreen() {
         const { createConjugationAssignment } = await import("@/lib/assignments");
         await createConjugationAssignment(
           id,
+          conjugationLanguage,
           conjugationVerbGroups,
           conjugationTenses,
           questionCount,
@@ -235,6 +320,7 @@ export default function ChildHomeScreen() {
         // Reset form
         setShowAssignmentForm(false);
         setAssignmentSubject("math");
+        setConjugationLanguage("");
         setConjugationVerbGroups([]);
         setConjugationTenses([]);
         setQuestionCount(8);
@@ -755,7 +841,10 @@ export default function ChildHomeScreen() {
                 <Text style={styles.sectionTitle}>Homework</Text>
                 <TouchableOpacity
                   style={styles.addButton}
-                  onPress={() => setShowAssignmentForm(true)}
+                  onPress={() => {
+                    setShowAssignmentForm(true);
+                    loadConjugationLanguages();
+                  }}
                 >
                   <Text style={styles.addButtonText}>+ Assign</Text>
                 </TouchableOpacity>
@@ -1288,14 +1377,40 @@ export default function ChildHomeScreen() {
                 {/* Conjugation Form */}
                 {assignmentSubject === "conjugation" && (
                   <>
+                    {conjugationLanguages.length > 1 && (
+                      <>
+                        <Text style={styles.formLabel}>Language</Text>
+                        <View style={styles.topicPickerRow}>
+                          {conjugationLanguages.map((lang) => (
+                            <TouchableOpacity
+                              key={lang.locale}
+                              style={[
+                                styles.topicButton,
+                                conjugationLanguage === lang.locale && styles.topicButtonActive,
+                              ]}
+                              onPress={async () => {
+                                setConjugationLanguage(lang.locale);
+                                await loadConjugationOptions(lang.locale);
+                              }}
+                              disabled={isCreatingAssignment}
+                            >
+                              <Text
+                                style={[
+                                  styles.topicButtonText,
+                                  conjugationLanguage === lang.locale && styles.topicButtonTextActive,
+                                ]}
+                              >
+                                {lang.name}
+                              </Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      </>
+                    )}
+
                     <Text style={styles.formLabel}>Verb Types (select at least one)</Text>
                     <View style={styles.topicPickerRow}>
-                      {[
-                        { value: "groupe_1", label: "-er (Groupe 1)" },
-                        { value: "groupe_2", label: "-ir (Groupe 2)" },
-                        { value: "groupe_3", label: "-re (Groupe 3)" },
-                        { value: "irregulier", label: "Irregular" },
-                      ].map((group) => (
+                      {conjugationVerbGroupOptions.map((group) => (
                         <TouchableOpacity
                           key={group.value}
                           style={[
@@ -1325,12 +1440,7 @@ export default function ChildHomeScreen() {
 
                     <Text style={styles.formLabel}>Tenses (select at least one)</Text>
                     <View style={styles.topicPickerRow}>
-                      {[
-                        { value: "présent", label: "Présent" },
-                        { value: "imparfait", label: "Imparfait" },
-                        { value: "passé composé", label: "Passé Composé" },
-                        { value: "futur simple", label: "Futur Simple" },
-                      ].map((tense) => (
+                      {conjugationTenseOptions.map((tense) => (
                         <TouchableOpacity
                           key={tense.value}
                           style={[

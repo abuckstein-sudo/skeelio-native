@@ -315,6 +315,7 @@ export async function createSpellingAssignment(
 
 export async function createConjugationAssignment(
   childId: string,
+  language: string,
   verbGroups: string[],
   tenses: string[],
   questionCount: number,
@@ -328,7 +329,7 @@ export async function createConjugationAssignment(
   }
   const parentId = authData.user.id;
 
-  console.log("[createConjugationAssignment] creating with groups:", verbGroups, "tenses:", tenses, "count:", questionCount);
+  console.log("[createConjugationAssignment] creating with language:", language, "groups:", verbGroups, "tenses:", tenses, "count:", questionCount);
 
   // Create readable focus summary
   const groupLabels = verbGroups.map((g) => {
@@ -356,6 +357,7 @@ export async function createConjugationAssignment(
       status: "pending",
       custom_questions: {
         kind: "conjugation",
+        language,
         verb_groups: verbGroups,
         tenses,
       },

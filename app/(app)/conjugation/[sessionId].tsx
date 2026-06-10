@@ -34,15 +34,10 @@ interface Answer {
   isCorrect: boolean;
 }
 
-type Screen = "selection" | "teaching" | "quiz" | "complete";
+type Screen = "loading" | "language" | "selection" | "teaching" | "quiz" | "complete";
 
-const TENSES = ["présent", "imparfait", "passé composé", "futur simple"];
-const VERB_GROUPS = [
-  { value: "groupe_1", label: "Groupe 1 (-er)" },
-  { value: "groupe_2", label: "Groupe 2 (-ir)" },
-  { value: "groupe_3", label: "Groupe 3 (-re)" },
-  { value: "irregulier", label: "Irregular verbs" },
-];
+type VerbGroupOption = { value: string; label: string };
+type TenseOption = { value: string; label: string };
 
 export default function ConjugationPracticeScreen() {
   const router = useRouter();
@@ -53,12 +48,26 @@ export default function ConjugationPracticeScreen() {
   }>();
 
   // Navigation
-  const [screen, setScreen] = useState<Screen>("selection");
+  const [screen, setScreen] = useState<Screen>("loading");
+
+  // Language state
+  const [availableLanguages, setAvailableLanguages] = useState<Array<{ locale: string; name: string }>>([]);
+  const [selectedLanguage, setSelectedLanguage] = useState<string>("");
 
   // Selection state
   const [selectedTense, setSelectedTense] = useState<string>("");
   const [selectedGroup, setSelectedGroup] = useState<string>("");
   const [selectionError, setSelectionError] = useState<string>("");
+  const [availableGroups, setAvailableGroups] = useState<VerbGroupOption[]>([]);
+  const [availableTenses, setAvailableTenses] = useState<TenseOption[]>([]);
+
+  // Assignment state
+  const [assignmentFilters, setAssignmentFilters] = useState<{
+    language: string;
+    verb_groups: string[];
+    tenses: string[];
+    question_count: number;
+  } | null>(null);
 
   // Teaching state
   const [teachingPattern, setTeachingPattern] = useState<TeachingPattern | null>(null);
@@ -82,6 +91,187 @@ export default function ConjugationPracticeScreen() {
 
   const currentQuestion = questions[currentIndex];
 
+  // Initialize: check if assignment or free play
+  useEffect(() => {
+    const init = async () => {
+      try {
+        if (assignmentId) {
+          // Load assignment filters and go straight to quiz
+          const { data: assignmentData, error: assignErr } = await supabase
+            .from("assignments")
+            .select("*")
+            .eq("id", assignmentId)
+            .single();
+
+          if (assignErr) throw assignErr;
+          const cq = (assignmentData?.custom_questions as any) || {};
+          setAssignmentFilters({
+            language: cq.language || "fr-FR",
+            verb_groups: cq.verb_groups || [],
+            tenses: cq.tenses || [],
+            question_count: assignmentData?.question_count || 10,
+          });
+          // Skip straight to loading quiz
+          setScreen("loading");
+          setTimeout(() => startQuizFromAssignment(cq.language || "fr-FR", cq.verb_groups || [], cq.tenses || [], assignmentData?.question_count || 10), 100);
+        } else {
+          // Free play: check child languages
+          const { data: childData, error: childErr } = await supabase
+            .from("children")
+            .select("languages, preferred_language")
+            .eq("id", childId)
+            .single();
+
+          if (childErr) throw childErr;
+
+          const langs = (childData?.languages as any) || [];
+          const langs_array = Array.isArray(langs) ? langs : (typeof langs === "string" ? JSON.parse(langs) : []);
+
+          const languageMap: Record<string, { locale: string; name: string }> = {
+            "French": { locale: "fr-FR", name: "French" },
+            "English": { locale: "en-CA", name: "English" },
+          };
+
+          const available = langs_array
+            .map((lang: string) => languageMap[lang])
+            .filter(Boolean);
+
+          setAvailableLanguages(available);
+
+          if (available.length === 1) {
+            // Only one language: skip to selection
+            setSelectedLanguage(available[0].locale);
+            await loadVerbGroupsAndTenses(available[0].locale);
+            setScreen("selection");
+          } else if (available.length > 1) {
+            // Multiple languages: show selector
+            setScreen("language");
+          } else {
+            // No languages found, default to French
+            setSelectedLanguage("fr-FR");
+            await loadVerbGroupsAndTenses("fr-FR");
+            setScreen("selection");
+          }
+        }
+      } catch (err) {
+        console.error("[ConjugationPractice] init failed:", err);
+        setError(String(err));
+        setScreen("selection");
+      }
+    };
+
+    init();
+  }, []);
+
+  const loadVerbGroupsAndTenses = async (language: string) => {
+    try {
+      // Fetch all questions for this language to find available groups and tenses
+      const { data, error } = await supabase
+        .from("conjugation_questions")
+        .select("verb_group, tense")
+        .eq("language", language);
+
+      if (error) throw error;
+
+      // Get unique values
+      const uniqueGroups = new Set<string>();
+      const uniqueTenses = new Set<string>();
+
+      (data || []).forEach((q) => {
+        uniqueGroups.add(q.verb_group);
+        uniqueTenses.add(q.tense);
+      });
+
+      // Map groups to labels
+      const groupMap: Record<string, string> = {
+        groupe_1: "-er (Groupe 1)",
+        groupe_2: "-ir (Groupe 2)",
+        groupe_3: "-re (Groupe 3)",
+        irregulier: "Irregular",
+      };
+
+      const groups = Array.from(uniqueGroups)
+        .map((g) => ({
+          value: g,
+          label: groupMap[g] || (g.charAt(0).toUpperCase() + g.slice(1)),
+        }))
+        .sort((a, b) => a.label.localeCompare(b.label));
+
+      const tenses = Array.from(uniqueTenses)
+        .map((t) => ({
+          value: t,
+          label: t.charAt(0).toUpperCase() + t.slice(1),
+        }))
+        .sort((a, b) => a.label.localeCompare(b.label));
+
+      setAvailableGroups(groups);
+      setAvailableTenses(tenses);
+    } catch (err) {
+      console.error("[loadVerbGroupsAndTenses] failed:", err);
+    }
+  };
+
+  const startQuizFromAssignment = async (language: string, groups: string[], tenses: string[], count: number) => {
+    setIsLoadingQuiz(true);
+
+    try {
+      const { data: childData, error: childErr } = await supabase
+        .from("children")
+        .select("grade_level")
+        .eq("id", childId)
+        .single();
+
+      if (childErr) throw childErr;
+      const gradeLevel = childData?.grade_level || "CE1";
+
+      // Fetch pool with assignment filters
+      const pool = await fetchConjugationPool(childId, gradeLevel, tenses, groups);
+      if (pool.length === 0) {
+        setError("No questions available");
+        setIsLoadingQuiz(false);
+        return;
+      }
+
+      // Pick up to question count
+      const picked = pickRandomQuestions(pool, count);
+      setQuestions(picked);
+
+      // Update session
+      const { data: sessions, error: sessErr } = await supabase
+        .from("conjugation_practice_sessions")
+        .select("*")
+        .eq("id", sessionId)
+        .single();
+
+      if (sessErr) throw sessErr;
+      await supabase
+        .from("conjugation_practice_sessions")
+        .update({ total_items: picked.length })
+        .eq("id", sessionId);
+
+      setSession(sessions);
+
+      // Shuffle first question
+      if (picked.length > 0) {
+        const shuffled = shuffleOptions(picked[0].options, picked[0].correct_answer);
+        setShuffledOptions(shuffled);
+      }
+
+      setScreen("quiz");
+    } catch (err) {
+      console.error("[startQuizFromAssignment] failed:", err);
+      setError(String(err));
+    } finally {
+      setIsLoadingQuiz(false);
+    }
+  };
+
+  const handleSelectLanguage = async (locale: string) => {
+    setSelectedLanguage(locale);
+    await loadVerbGroupsAndTenses(locale);
+    setScreen("selection");
+  };
+
   const handleSelectOptions = async () => {
     if (!selectedTense || !selectedGroup) {
       setSelectionError("Please select both a tense and a verb group");
@@ -92,7 +282,6 @@ export default function ConjugationPracticeScreen() {
     setSelectionError("");
 
     try {
-      // Fetch child grade
       const { data: childData, error: childErr } = await supabase
         .from("children")
         .select("grade_level")
@@ -136,41 +325,16 @@ export default function ConjugationPracticeScreen() {
       if (childErr) throw childErr;
       const gradeLevel = childData?.grade_level || "CE1";
 
-      // Determine filters: from assignment or from selection
-      let tensesToUse: string[] = [];
-      let groupsToUse: string[] = [];
-      let questionCountToUse = 10;
-
-      if (assignmentId) {
-        // Fetch assignment to get filters
-        const { data: assignmentData, error: assignErr } = await supabase
-          .from("assignments")
-          .select("*")
-          .eq("id", assignmentId)
-          .single();
-
-        if (assignErr) throw assignErr;
-        const cq = (assignmentData?.custom_questions as any) || {};
-        tensesToUse = cq.tenses || [];
-        groupsToUse = cq.verb_groups || [];
-        questionCountToUse = assignmentData?.question_count || 10;
-      } else {
-        // Use selection
-        tensesToUse = selectedTense ? [selectedTense] : [];
-        groupsToUse = selectedGroup ? [selectedGroup] : [];
-        questionCountToUse = 10;
-      }
-
       // Fetch pool with filters
-      const pool = await fetchConjugationPool(childId, gradeLevel, tensesToUse, groupsToUse);
+      const pool = await fetchConjugationPool(childId, gradeLevel, selectedTense, selectedGroup);
       if (pool.length === 0) {
         setError("No questions available");
         setIsLoadingQuiz(false);
         return;
       }
 
-      // Pick up to question count
-      const picked = pickRandomQuestions(pool, questionCountToUse);
+      // Pick up to 10
+      const picked = pickRandomQuestions(pool, 10);
       setQuestions(picked);
 
       // Update session
@@ -276,6 +440,31 @@ export default function ConjugationPracticeScreen() {
     }
   };
 
+  // LANGUAGE SELECTION SCREEN
+  if (screen === "language") {
+    return (
+      <SafeAreaView style={styles.container}>
+        <ScrollView contentContainerStyle={styles.scrollContent}>
+          <Text style={styles.title}>Choose Language</Text>
+
+          <View style={styles.buttonGrid}>
+            {availableLanguages.map((lang) => (
+              <TouchableOpacity
+                key={lang.locale}
+                style={[styles.selectButton, selectedLanguage === lang.locale && styles.selectButtonActive]}
+                onPress={() => handleSelectLanguage(lang.locale)}
+              >
+                <Text style={[styles.selectButtonText, selectedLanguage === lang.locale && styles.selectButtonTextActive]}>
+                  {lang.name}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
   // SELECTION SCREEN
   if (screen === "selection") {
     return (
@@ -285,14 +474,14 @@ export default function ConjugationPracticeScreen() {
 
           <Text style={styles.label}>Tense</Text>
           <View style={styles.buttonGrid}>
-            {TENSES.map((tense) => (
+            {availableTenses.map((tense) => (
               <TouchableOpacity
-                key={tense}
-                style={[styles.selectButton, selectedTense === tense && styles.selectButtonActive]}
-                onPress={() => setSelectedTense(tense)}
+                key={tense.value}
+                style={[styles.selectButton, selectedTense === tense.value && styles.selectButtonActive]}
+                onPress={() => setSelectedTense(tense.value)}
               >
-                <Text style={[styles.selectButtonText, selectedTense === tense && styles.selectButtonTextActive]}>
-                  {tense}
+                <Text style={[styles.selectButtonText, selectedTense === tense.value && styles.selectButtonTextActive]}>
+                  {tense.label}
                 </Text>
               </TouchableOpacity>
             ))}
@@ -300,7 +489,7 @@ export default function ConjugationPracticeScreen() {
 
           <Text style={styles.label}>Verb Group</Text>
           <View style={styles.buttonGrid}>
-            {VERB_GROUPS.map((group) => (
+            {availableGroups.map((group) => (
               <TouchableOpacity
                 key={group.value}
                 style={[styles.selectButton, selectedGroup === group.value && styles.selectButtonActive]}
@@ -474,13 +663,31 @@ export default function ConjugationPracticeScreen() {
     );
   }
 
-  return null;
+  // LOADING SCREEN
+  return (
+    <SafeAreaView style={styles.container}>
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#007AFF" />
+        <Text style={styles.loadingText}>Loading...</Text>
+      </View>
+    </SafeAreaView>
+  );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#fff",
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 16,
+  },
+  loadingText: {
+    fontSize: 16,
+    color: "#666",
   },
   scrollContent: {
     padding: 16,
