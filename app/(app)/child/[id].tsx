@@ -90,6 +90,8 @@ export default function ChildHomeScreen() {
   const [isCreatingAssignment, setIsCreatingAssignment] = useState(false);
   const [showCompletedAssignments, setShowCompletedAssignments] = useState(false);
   const [selectedSpellingList, setSelectedSpellingList] = useState<SpellingList | null>(null);
+  const [conjugationVerbGroups, setConjugationVerbGroups] = useState<string[]>([]);
+  const [conjugationTenses, setConjugationTenses] = useState<string[]>([]);
   const [isGeneratingNewList, setIsGeneratingNewList] = useState(false);
   const [generateLanguage, setGenerateLanguage] = useState<SpellingLanguage>("English");
   const [generateWordCount, setGenerateWordCount] = useState("10");
@@ -211,35 +213,35 @@ export default function ChildHomeScreen() {
         setIsCreatingAssignment(false);
       }
     } else if (assignmentSubject === "conjugation") {
+      if (conjugationVerbGroups.length === 0 || conjugationTenses.length === 0) {
+        Alert.alert("Error", "Please select at least one verb type and one tense");
+        return;
+      }
+
       setIsCreatingAssignment(true);
       try {
-        // Create a new conjugation session
-        const { data: sessionData, error: sessionError } = await supabase
-          .from("conjugation_practice_sessions")
-          .insert({
-            student_id: id,
-            user_id: session?.user?.id,
-            started_at: new Date().toISOString(),
-            status: "in_progress",
-          })
-          .select()
-          .single();
+        const { createConjugationAssignment } = await import("@/lib/assignments");
+        await createConjugationAssignment(
+          id,
+          conjugationVerbGroups,
+          conjugationTenses,
+          questionCount,
+          dueDate || undefined
+        );
 
-        if (sessionError) throw sessionError;
+        // Refresh assignments
+        await fetchAssignments();
 
         // Reset form
         setShowAssignmentForm(false);
         setAssignmentSubject("math");
+        setConjugationVerbGroups([]);
+        setConjugationTenses([]);
+        setQuestionCount(8);
         setDueDate("");
-
-        // Navigate to conjugation session
-        router.push({
-          pathname: "/conjugation/[sessionId]",
-          params: { sessionId: sessionData.id, childId: id },
-        });
       } catch (err) {
-        console.error("[assignments] error creating conjugation session:", err);
-        Alert.alert("Error", "Failed to start conjugation session");
+        console.error("[assignments] error creating conjugation assignment:", err);
+        Alert.alert("Error", "Failed to create conjugation assignment");
       } finally {
         setIsCreatingAssignment(false);
       }
@@ -1286,12 +1288,94 @@ export default function ChildHomeScreen() {
                 {/* Conjugation Form */}
                 {assignmentSubject === "conjugation" && (
                   <>
-                    <Text style={styles.formLabel}>French Conjugation Practice</Text>
-                    <View style={styles.infoBox}>
-                      <Text style={styles.infoText}>
-                        A 10-question session with random French verbs in various tenses. No configuration needed — this will start automatically.
-                      </Text>
+                    <Text style={styles.formLabel}>Verb Types (select at least one)</Text>
+                    <View style={styles.topicPickerRow}>
+                      {[
+                        { value: "groupe_1", label: "-er (Groupe 1)" },
+                        { value: "groupe_2", label: "-ir (Groupe 2)" },
+                        { value: "groupe_3", label: "-re (Groupe 3)" },
+                        { value: "irregulier", label: "Irregular" },
+                      ].map((group) => (
+                        <TouchableOpacity
+                          key={group.value}
+                          style={[
+                            styles.topicButton,
+                            conjugationVerbGroups.includes(group.value) && styles.topicButtonActive,
+                          ]}
+                          onPress={() => {
+                            if (conjugationVerbGroups.includes(group.value)) {
+                              setConjugationVerbGroups(conjugationVerbGroups.filter((g) => g !== group.value));
+                            } else {
+                              setConjugationVerbGroups([...conjugationVerbGroups, group.value]);
+                            }
+                          }}
+                          disabled={isCreatingAssignment}
+                        >
+                          <Text
+                            style={[
+                              styles.topicButtonText,
+                              conjugationVerbGroups.includes(group.value) && styles.topicButtonTextActive,
+                            ]}
+                          >
+                            {group.label}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
                     </View>
+
+                    <Text style={styles.formLabel}>Tenses (select at least one)</Text>
+                    <View style={styles.topicPickerRow}>
+                      {[
+                        { value: "présent", label: "Présent" },
+                        { value: "imparfait", label: "Imparfait" },
+                        { value: "passé composé", label: "Passé Composé" },
+                        { value: "futur simple", label: "Futur Simple" },
+                      ].map((tense) => (
+                        <TouchableOpacity
+                          key={tense.value}
+                          style={[
+                            styles.topicButton,
+                            conjugationTenses.includes(tense.value) && styles.topicButtonActive,
+                          ]}
+                          onPress={() => {
+                            if (conjugationTenses.includes(tense.value)) {
+                              setConjugationTenses(conjugationTenses.filter((t) => t !== tense.value));
+                            } else {
+                              setConjugationTenses([...conjugationTenses, tense.value]);
+                            }
+                          }}
+                          disabled={isCreatingAssignment}
+                        >
+                          <Text
+                            style={[
+                              styles.topicButtonText,
+                              conjugationTenses.includes(tense.value) && styles.topicButtonTextActive,
+                            ]}
+                          >
+                            {tense.label}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+
+                    <Text style={styles.formLabel}>Question Count</Text>
+                    <TextInput
+                      style={styles.numberInput}
+                      placeholder="10"
+                      value={assignmentSubject === "conjugation" ? String(questionCount) : ""}
+                      onChangeText={(text) => setQuestionCount(parseInt(text, 10) || 10)}
+                      keyboardType="number-pad"
+                      editable={!isCreatingAssignment}
+                    />
+
+                    <Text style={styles.formLabel}>Due Date (optional)</Text>
+                    <TextInput
+                      style={styles.dateInput}
+                      placeholder="YYYY-MM-DD"
+                      value={dueDate}
+                      onChangeText={setDueDate}
+                      editable={!isCreatingAssignment}
+                    />
                   </>
                 )}
 

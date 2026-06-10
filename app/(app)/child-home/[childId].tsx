@@ -202,7 +202,7 @@ export default function ChildHomeScreen() {
     }
   };
 
-  const handleHomeworkTap = (assignmentId: string) => {
+  const handleHomeworkTap = async (assignmentId: string) => {
     console.log("[child-home] homework assignment selected:", assignmentId);
 
     // Find the assignment to check its type
@@ -216,6 +216,24 @@ export default function ChildHomeScreen() {
         pathname: "/spelling/[listId]",
         params: { listId, childId, assignmentId, mode },
       });
+    } else if (assignment?.subject === "conjugation") {
+      // Create conjugation session for homework
+      try {
+        const { data: authData } = await supabase.auth.getUser();
+        const userId = authData.user?.id;
+        if (!userId) return;
+
+        const { createConjugationSession } = await import("@/lib/conjugation");
+        const session = await createConjugationSession(childId, userId, assignment.question_count || 10);
+
+        router.push({
+          pathname: "/conjugation/[sessionId]",
+          params: { sessionId: session.id, childId, assignmentId },
+        });
+      } catch (err) {
+        console.error("[child-home] failed to create conjugation homework session:", err);
+        alert("Failed to start conjugation homework");
+      }
     } else {
       // Route to homework for math assignments
       router.push({

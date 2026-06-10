@@ -313,6 +313,73 @@ export async function createSpellingAssignment(
   return newAssignment as Assignment;
 }
 
+export async function createConjugationAssignment(
+  childId: string,
+  verbGroups: string[],
+  tenses: string[],
+  questionCount: number,
+  dueDate?: string | null
+): Promise<Assignment> {
+  // Get the current authenticated user
+  const { data: authData, error: authError } = await supabase.auth.getUser();
+  if (authError || !authData?.user?.id) {
+    console.error("[assignments] auth error:", authError);
+    throw new Error("Not authenticated");
+  }
+  const parentId = authData.user.id;
+
+  console.log("[createConjugationAssignment] creating with groups:", verbGroups, "tenses:", tenses, "count:", questionCount);
+
+  // Create readable focus summary
+  const groupLabels = verbGroups.map((g) => {
+    const labels: Record<string, string> = {
+      groupe_1: "-er",
+      groupe_2: "-ir",
+      groupe_3: "-re",
+      irregulier: "Irregular",
+    };
+    return labels[g] || g;
+  });
+  const focus = `${tenses.join(", ")} · ${groupLabels.join(", ")}`;
+
+  // Insert conjugation assignment
+  const { data: newAssignment, error } = await supabase
+    .from("assignments")
+    .insert({
+      parent_id: parentId,
+      child_id: childId,
+      subject: "conjugation",
+      focus,
+      mode: "practice",
+      question_count: questionCount,
+      due_date: dueDate || null,
+      status: "pending",
+      custom_questions: {
+        kind: "conjugation",
+        verb_groups: verbGroups,
+        tenses,
+      },
+    })
+    .select()
+    .single();
+
+  if (error) {
+    console.error(
+      "[assignments] error creating conjugation assignment:",
+      JSON.stringify({
+        message: error?.message,
+        code: error?.code,
+        details: error?.details,
+        hint: error?.hint,
+      })
+    );
+    throw error;
+  }
+
+  console.log("[createConjugationAssignment] created assignment:", newAssignment.id);
+  return newAssignment as Assignment;
+}
+
 export async function deleteAssignment(assignmentId: string): Promise<void> {
   const { error } = await supabase.from("assignments").delete().eq("id", assignmentId);
 

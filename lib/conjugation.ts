@@ -59,11 +59,11 @@ export type ConjugationAttempt = {
 export async function fetchConjugationPool(
   childId: string,
   gradeLevel: string,
-  tense?: string,
-  verbGroup?: string
+  tense?: string | string[],
+  verbGroup?: string | string[]
 ): Promise<ConjugationQuestion[]> {
   try {
-    console.log("[fetchConjugationPool] fetching for grade:", gradeLevel);
+    console.log("[fetchConjugationPool] fetching for grade:", gradeLevel, "tense:", tense, "group:", verbGroup);
 
     // Fetch all French conjugation questions
     const { data, error } = await supabase
@@ -75,6 +75,10 @@ export async function fetchConjugationPool(
       console.error("[fetchConjugationPool] error:", error);
       throw error;
     }
+
+    // Normalize inputs to arrays
+    const tenses = Array.isArray(tense) ? tense : tense ? [tense] : [];
+    const verbGroups = Array.isArray(verbGroup) ? verbGroup : verbGroup ? [verbGroup] : [];
 
     // Filter in JS: check if grade_levels includes the child's grade, plus tense and verb_group if provided
     let pool = (data ?? []).filter((q) => {
@@ -88,8 +92,8 @@ export async function fetchConjugationPool(
         }
       }
       const gradeMatch = Array.isArray(gl) && gl.includes(gradeLevel);
-      const tenseMatch = !tense || q.tense === tense;
-      const groupMatch = !verbGroup || q.verb_group === verbGroup;
+      const tenseMatch = tenses.length === 0 || tenses.includes(q.tense);
+      const groupMatch = verbGroups.length === 0 || verbGroups.includes(q.verb_group);
       return gradeMatch && tenseMatch && groupMatch;
     });
 

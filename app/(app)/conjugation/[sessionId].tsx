@@ -46,9 +46,10 @@ const VERB_GROUPS = [
 
 export default function ConjugationPracticeScreen() {
   const router = useRouter();
-  const { sessionId, childId } = useLocalSearchParams<{
+  const { sessionId, childId, assignmentId } = useLocalSearchParams<{
     sessionId: string;
     childId: string;
+    assignmentId?: string;
   }>();
 
   // Navigation
@@ -135,19 +136,44 @@ export default function ConjugationPracticeScreen() {
       if (childErr) throw childErr;
       const gradeLevel = childData?.grade_level || "CE1";
 
-      // Fetch pool
-      const pool = await fetchConjugationPool(childId, gradeLevel, selectedTense, selectedGroup);
+      // Determine filters: from assignment or from selection
+      let tensesToUse: string[] = [];
+      let groupsToUse: string[] = [];
+      let questionCountToUse = 10;
+
+      if (assignmentId) {
+        // Fetch assignment to get filters
+        const { data: assignmentData, error: assignErr } = await supabase
+          .from("assignments")
+          .select("*")
+          .eq("id", assignmentId)
+          .single();
+
+        if (assignErr) throw assignErr;
+        const cq = (assignmentData?.custom_questions as any) || {};
+        tensesToUse = cq.tenses || [];
+        groupsToUse = cq.verb_groups || [];
+        questionCountToUse = assignmentData?.question_count || 10;
+      } else {
+        // Use selection
+        tensesToUse = selectedTense ? [selectedTense] : [];
+        groupsToUse = selectedGroup ? [selectedGroup] : [];
+        questionCountToUse = 10;
+      }
+
+      // Fetch pool with filters
+      const pool = await fetchConjugationPool(childId, gradeLevel, tensesToUse, groupsToUse);
       if (pool.length === 0) {
         setError("No questions available");
         setIsLoadingQuiz(false);
         return;
       }
 
-      // Pick up to 10
-      const picked = pickRandomQuestions(pool, 10);
+      // Pick up to question count
+      const picked = pickRandomQuestions(pool, questionCountToUse);
       setQuestions(picked);
 
-      // Create session (use existing one)
+      // Update session
       const { data: sessions, error: sessErr } = await supabase
         .from("conjugation_practice_sessions")
         .select("*")
@@ -155,13 +181,12 @@ export default function ConjugationPracticeScreen() {
         .single();
 
       if (sessErr) throw sessErr;
-      const sess = sessions;
       await supabase
         .from("conjugation_practice_sessions")
         .update({ total_items: picked.length })
         .eq("id", sessionId);
 
-      setSession(sess);
+      setSession(sessions);
 
       // Shuffle first question
       if (picked.length > 0) {
@@ -236,6 +261,17 @@ export default function ConjugationPracticeScreen() {
         const incorrectCount = questions.length - correctCount;
         await endConjugationSession(session.id, questions.length, correctCount, incorrectCount);
       }
+
+      // Mark assignment complete if this is from homework
+      if (assignmentId) {
+        try {
+          const { markAssignmentComplete } = await import("@/lib/assignments");
+          await markAssignmentComplete(assignmentId);
+        } catch (err) {
+          console.error("[ConjugationPractice] failed to mark assignment complete:", err);
+        }
+      }
+
       setScreen("complete");
     }
   };
