@@ -1,0 +1,319 @@
+import { supabase } from "@/lib/supabase";
+import * as Speech from "expo-speech";
+
+export type SpellingLanguage = "English" | "French";
+
+export type SpellingList = {
+  id: string;
+  user_id: string;
+  student_id: string;
+  title: string;
+  language: SpellingLanguage;
+  source_type: "photo" | "manual";
+  created_at: string;
+};
+
+export type SpellingItem = {
+  id: string;
+  list_id: string;
+  item_text: string;
+  item_order: number | null;
+  language: SpellingLanguage;
+  user_id: string;
+  student_id: string;
+  normalized_text: string;
+  sentence?: string;
+};
+
+export type SpellingSession = {
+  id: string;
+  student_id: string;
+  list_id: string;
+  user_id: string;
+  started_at: string;
+  completed_at: string | null;
+  status: "in_progress" | "completed";
+  total_items: number | null;
+  correct_count: number | null;
+  incorrect_count: number | null;
+};
+
+export type SpellingAttempt = {
+  id: string;
+  session_id: string;
+  item_id: string;
+  item_text: string;
+  student_answer: string;
+  is_correct: boolean;
+  attempt_number: number;
+  created_at: string;
+  user_id: string;
+  student_id: string;
+  list_id: string;
+};
+
+export type ErrorType =
+  | "none"
+  | "wrong_letter"
+  | "wrong_vowel"
+  | "wrong_ending"
+  | "missing_letter"
+  | "extra_letter"
+  | "transposition"
+  | "unknown";
+
+export type GradeResult = {
+  is_correct: boolean;
+  feedback: string;
+  error_type: ErrorType;
+};
+
+// ── Normalization ──────────────────────────────────────────────
+
+function normalise(s: string, language: SpellingLanguage): string {
+  let out = s.trim().toLowerCase();
+  if (language === "French") {
+    // NFD normalization + strip diacritics
+    out = out.normalize("NFD").replace(/[̀-ͯ]/g, "");
+  }
+  // Collapse internal whitespace
+  out = out.replace(/\s+/g, " ");
+  return out;
+}
+
+// ── Error Detection ────────────────────────────────────────────
+
+function detectErrorType(a: string, b: string): ErrorType {
+  if (a === b) return "none";
+  if (!a || !b) return "unknown";
+
+  // Wrong ending: last 1-2 chars differ but prefix matches a lot
+  const minLen = Math.min(a.length, b.length);
+  let prefix = 0;
+  while (prefix < minLen && a[prefix] === b[prefix]) prefix++;
+  if (prefix >= Math.max(2, minLen - 2) && prefix < a.length)
+    return "wrong_ending";
+
+  if (a.length === b.length) {
+    const diffs: number[] = [];
+    for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) diffs.push(i);
+
+    if (
+      diffs.length === 2 &&
+      a[diffs[0]] === b[diffs[1]] &&
+      a[diffs[1]] === b[diffs[0]]
+    ) {
+      return "transposition";
+    }
+
+    if (diffs.length === 1) {
+      const ca = a[diffs[0]];
+      const cb = b[diffs[0]];
+      if ("aeiouy".includes(ca) && "aeiouy".includes(cb))
+        return "wrong_vowel";
+      return "wrong_letter";
+    }
+
+    return "wrong_letter";
+  }
+
+  if (b.length < a.length) return "missing_letter";
+  return "extra_letter";
+}
+
+// ── Grading ───────────────────────────────────────────────────
+
+export function gradeSpellingAttempt(
+  correct: string,
+  given: string,
+  language: SpellingLanguage = "English"
+): GradeResult {
+  const a = normalise(correct, language);
+  const b = normalise(given, language);
+  const is_correct = a.length > 0 && a === b;
+  const error_type = is_correct ? "none" : detectErrorType(a, b);
+
+  return {
+    is_correct,
+    feedback: is_correct
+      ? "Correct!"
+      : `The correct spelling is "${correct}".`,
+    error_type,
+  };
+}
+
+// ── Fallback Hints ─────────────────────────────────────────────
+
+export function fallbackHint(
+  errorType: ErrorType,
+  attempt: 1 | 2 | 3
+): string {
+  if (attempt === 3)
+    return "Say the word slowly and listen to every single sound.";
+  switch (errorType) {
+    case "wrong_ending":
+      return "Check the ending carefully — what letters make that last sound?";
+    case "missing_letter":
+      return "This word has a letter you might not hear when you say it.";
+    case "extra_letter":
+      return "Say it slowly — you may have added a letter you don't need.";
+    case "wrong_vowel":
+      return "Listen to the vowel sound — there may be a different vowel.";
+    case "transposition":
+      return "Two letters might be swapped — check the order.";
+    case "wrong_letter":
+      return "Check each letter carefully — one doesn't match the word's sound.";
+    default:
+      return "Say the word slowly and check every sound matches a letter.";
+  }
+}
+
+// ── Speech ────────────────────────────────────────────────────
+
+export function speechLangCode(language: SpellingLanguage): string {
+  return language === "French" ? "fr-FR" : "en-US";
+}
+
+export async function speakWord(
+  word: string,
+  language: SpellingLanguage
+): Promise<void> {
+  try {
+    await Speech.stop();
+    await Speech.speak(word, {
+      language: speechLangCode(language),
+      rate: 0.9,
+      onError: (error) => console.error("[speech] error:", error),
+    });
+  } catch (error) {
+    console.error("[speech] speak failed:", error);
+  }
+}
+
+// ── DB Queries ─────────────────────────────────────────────────
+
+export async function listSpellingListsForChild(
+  childId: string
+): Promise<SpellingList[]> {
+  const { data, error } = await supabase
+    .from("spelling_lists")
+    .select("*")
+    .eq("student_id", childId)
+    .order("created_at", { ascending: false });
+
+  if (error) throw error;
+  return (data ?? []) as SpellingList[];
+}
+
+export async function getListWithItems(listId: string): Promise<{
+  list: SpellingList;
+  items: SpellingItem[];
+} | null> {
+  const { data: list, error: listError } = await supabase
+    .from("spelling_lists")
+    .select("*")
+    .eq("id", listId)
+    .maybeSingle();
+
+  if (listError) throw listError;
+  if (!list) return null;
+
+  const { data: items, error: itemsError } = await supabase
+    .from("spelling_list_items")
+    .select("*")
+    .eq("list_id", listId)
+    .order("item_order", { ascending: true });
+
+  if (itemsError) throw itemsError;
+
+  return {
+    list: list as SpellingList,
+    items: (items ?? []) as SpellingItem[],
+  };
+}
+
+export async function createSpellingSession(
+  childId: string,
+  listId: string,
+  totalItems: number
+): Promise<SpellingSession> {
+  const { data: authData } = await supabase.auth.getUser();
+  if (!authData.user) throw new Error("Not authenticated");
+
+  const { data, error } = await supabase
+    .from("spelling_practice_sessions")
+    .insert({
+      student_id: childId,
+      list_id: listId,
+      user_id: authData.user.id,
+      started_at: new Date().toISOString(),
+      status: "in_progress",
+      total_items: totalItems,
+    })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data as SpellingSession;
+}
+
+export async function recordSpellingAttempt(
+  sessionId: string,
+  itemId: string,
+  childId: string,
+  listId: string,
+  itemText: string,
+  studentAnswer: string,
+  isCorrect: boolean,
+  attemptNumber: number
+): Promise<void> {
+  const { data: authData } = await supabase.auth.getUser();
+  if (!authData.user) throw new Error("Not authenticated");
+
+  const { error } = await supabase.from("spelling_practice_attempts").insert({
+    session_id: sessionId,
+    item_id: itemId,
+    student_id: childId,
+    list_id: listId,
+    user_id: authData.user.id,
+    item_text: itemText,
+    student_answer: studentAnswer,
+    is_correct: isCorrect,
+    attempt_number: attemptNumber,
+  });
+
+  if (error) throw error;
+}
+
+export async function endSpellingSession(
+  sessionId: string,
+  totalItems: number,
+  correctCount: number,
+  incorrectCount: number
+): Promise<void> {
+  const { error } = await supabase
+    .from("spelling_practice_sessions")
+    .update({
+      completed_at: new Date().toISOString(),
+      status: "completed",
+      total_items: totalItems,
+      correct_count: correctCount,
+      incorrect_count: incorrectCount,
+    })
+    .eq("id", sessionId);
+
+  if (error) throw error;
+}
+
+export async function getSessionAttempts(
+  sessionId: string
+): Promise<SpellingAttempt[]> {
+  const { data, error } = await supabase
+    .from("spelling_practice_attempts")
+    .select("*")
+    .eq("session_id", sessionId)
+    .order("created_at", { ascending: true });
+
+  if (error) throw error;
+  return (data ?? []) as SpellingAttempt[];
+}

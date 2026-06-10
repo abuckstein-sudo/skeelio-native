@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabase";
 import { getOperationStatus, OperationStatus, getWordProblemsStatus, WordProblemsStatus } from "@/lib/tutor/status";
 import { Operation } from "@/lib/tutorConfig";
 import { listAssignmentsForChild, Assignment } from "@/lib/assignments";
+import { listSpellingListsForChild, type SpellingList } from "@/lib/spelling";
 
 interface Child {
   id: string;
@@ -35,7 +36,7 @@ const SUBJECTS: SubjectTile[] = [
   { topic: "addition", label: "Addition", description: "Add numbers together", isActive: true },
   { topic: "subtraction", label: "Subtraction", description: "Take numbers away", isActive: true },
   { topic: "word_problems", label: "Word Problems", description: "Solve real-world math", isActive: true },
-  { topic: "spelling", label: "Spelling", description: "Spell words correctly", isActive: false },
+  { topic: "spelling", label: "Spelling", description: "Spell words correctly", isActive: true },
   { topic: "reading", label: "Reading", description: "Read and understand", isActive: false },
   { topic: "conjugation", label: "Conjugation", description: "Learn verb forms", isActive: false },
 ];
@@ -50,6 +51,7 @@ export default function ChildHomeScreen() {
   const [operationStatuses, setOperationStatuses] = useState<Record<Operation, OperationStatus>>({});
   const [wordProblemsStatus, setWordProblemsStatus] = useState<WordProblemsStatus | null>(null);
   const [pendingAssignments, setPendingAssignments] = useState<Assignment[]>([]);
+  const [spellingLists, setSpellingLists] = useState<SpellingList[]>([]);
 
   const fetchStars = useCallback(async () => {
     if (!childId) return;
@@ -70,6 +72,14 @@ export default function ChildHomeScreen() {
     const assignments = await listAssignmentsForChild(childId);
     const pending = assignments.filter((a) => a.status === "pending");
     setPendingAssignments(pending);
+
+    // Fetch spelling lists
+    try {
+      const lists = await listSpellingListsForChild(childId);
+      setSpellingLists(lists);
+    } catch (err) {
+      console.error("[child-home] failed to fetch spelling lists:", err);
+    }
   }, [childId]);
 
   useEffect(() => {
@@ -139,6 +149,11 @@ export default function ChildHomeScreen() {
       if (topic === "word_problems") {
         router.push({
           pathname: "/word-problems/[childId]",
+          params: { childId },
+        });
+      } else if (topic === "spelling") {
+        router.push({
+          pathname: "/spelling-lists/[childId]",
           params: { childId },
         });
       } else {
