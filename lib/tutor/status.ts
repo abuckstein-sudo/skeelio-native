@@ -14,6 +14,14 @@ export interface OperationStatus {
   childHomeText: string;
 }
 
+export interface WordProblemsStatus {
+  hasAttempts: boolean;
+  workingTierId: string;
+  workingTierLabel: string;
+  parentDashboardText: string;
+  childHomeText: string;
+}
+
 export async function getOperationStatus(
   childId: string,
   operation: Operation,
@@ -114,6 +122,74 @@ export async function getOperationStatus(
       highestSolidTierLabel: null,
       parentDashboardText: `Not practiced yet — starting around ${label}`,
       childHomeText: `Up next: ${label}`,
+    };
+  }
+}
+
+export async function getWordProblemsStatus(
+  childId: string,
+  child: any
+): Promise<WordProblemsStatus> {
+  try {
+    // Fetch word_problems attempts (grouped by skill, which is the underlying operation)
+    const { data: attemptData } = await supabase
+      .from("learning_attempts")
+      .select("skill, tier, was_correct, ai_hint_used")
+      .eq("child_id", childId)
+      .eq("topic", "word_problems")
+      .not("tier", "is", null);
+
+    if (!attemptData || attemptData.length === 0) {
+      // No word_problems attempts yet, return default
+      return {
+        hasAttempts: false,
+        workingTierId: "",
+        workingTierLabel: "Word Problems",
+        parentDashboardText: "Not practiced yet",
+        childHomeText: "Ready to try",
+      };
+    }
+
+    // For word problems, we show aggregate status across all underlying skills
+    // Count how many distinct skills have solid performance
+    const operations: Operation[] = ["addition", "subtraction", "multiplication", "division"];
+    const solidSkillCount = operations.reduce((count, op) => {
+      const skillAttempts = attemptData.filter((a: any) => a.skill === op);
+      if (skillAttempts.length === 0) return count;
+
+      const attempts: Attempt[] = skillAttempts.map((a: any) => ({
+        tierId: a.tier,
+        correct: a.was_correct,
+        hintUsed: a.ai_hint_used || false,
+      }));
+
+      const stats = tierStats(attempts);
+      const hasSolid = Object.values(stats).some(
+        (s) =>
+          s.attempts >= GATE.minAttemptsToAdvance &&
+          s.masteryRate >= GATE.accuracyToAdvance &&
+          s.coverageMet
+      );
+
+      return count + (hasSolid ? 1 : 0);
+    }, 0);
+
+    const skillsWords = solidSkillCount === 1 ? "skill" : "skills";
+    return {
+      hasAttempts: true,
+      workingTierId: "word_problems",
+      workingTierLabel: "Word Problems",
+      parentDashboardText: `Practiced with ${solidSkillCount} solid ${skillsWords}`,
+      childHomeText: `Ready to try — ${solidSkillCount} solid ${skillsWords}`,
+    };
+  } catch (error) {
+    console.error("[status] error fetching word_problems:", error);
+    return {
+      hasAttempts: false,
+      workingTierId: "",
+      workingTierLabel: "Word Problems",
+      parentDashboardText: "Not practiced yet",
+      childHomeText: "Ready to try",
     };
   }
 }

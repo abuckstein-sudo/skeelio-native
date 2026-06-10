@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, FlatList, SafeAreaView } from "react-native";
 import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
 import { supabase } from "@/lib/supabase";
-import { getOperationStatus, OperationStatus } from "@/lib/tutor/status";
+import { getOperationStatus, OperationStatus, getWordProblemsStatus, WordProblemsStatus } from "@/lib/tutor/status";
 import { Operation } from "@/lib/tutorConfig";
 import { listAssignmentsForChild, Assignment } from "@/lib/assignments";
 
@@ -34,7 +34,7 @@ const SUBJECTS: SubjectTile[] = [
   { topic: "division", label: "Division", description: "Learn to divide numbers", isActive: true },
   { topic: "addition", label: "Addition", description: "Add numbers together", isActive: true },
   { topic: "subtraction", label: "Subtraction", description: "Take numbers away", isActive: true },
-  { topic: "word_problems", label: "Word Problems", description: "Solve real-world math", isActive: false },
+  { topic: "word_problems", label: "Word Problems", description: "Solve real-world math", isActive: true },
   { topic: "spelling", label: "Spelling", description: "Spell words correctly", isActive: false },
   { topic: "reading", label: "Reading", description: "Read and understand", isActive: false },
   { topic: "conjugation", label: "Conjugation", description: "Learn verb forms", isActive: false },
@@ -48,6 +48,7 @@ export default function ChildHomeScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [operationStatuses, setOperationStatuses] = useState<Record<Operation, OperationStatus>>({});
+  const [wordProblemsStatus, setWordProblemsStatus] = useState<WordProblemsStatus | null>(null);
   const [pendingAssignments, setPendingAssignments] = useState<Assignment[]>([]);
 
   const fetchStars = useCallback(async () => {
@@ -125,16 +126,27 @@ export default function ChildHomeScreen() {
     }
     setOperationStatuses(statuses);
 
+    // Fetch word problems status
+    const wpStatus = await getWordProblemsStatus(childId, data || {});
+    setWordProblemsStatus(wpStatus);
+
     setIsLoading(false);
   };
 
   const handleSubjectTap = (topic: string) => {
     if (childId) {
       console.log("[child-home] topic selected:", topic);
-      router.push({
-        pathname: "/practice",
-        params: { topic, childId },
-      });
+      if (topic === "word_problems") {
+        router.push({
+          pathname: "/word-problems/[childId]",
+          params: { childId },
+        });
+      } else {
+        router.push({
+          pathname: "/practice",
+          params: { topic, childId },
+        });
+      }
     }
   };
 
@@ -222,7 +234,9 @@ export default function ChildHomeScreen() {
         <View style={styles.subjectsContainer}>
           {SUBJECTS.map((subject) => {
             const isMathSubject = ["addition", "subtraction", "multiplication", "division"].includes(subject.topic);
+            const isWordProblems = subject.topic === "word_problems";
             const operationStatus = isMathSubject ? operationStatuses[subject.topic as Operation] : null;
+            const statusText = isWordProblems ? wordProblemsStatus?.childHomeText : operationStatus?.childHomeText;
 
             return (
               <TouchableOpacity
@@ -233,8 +247,8 @@ export default function ChildHomeScreen() {
               >
                 <Text style={styles.subjectLabel}>{subject.label}</Text>
                 <Text style={styles.subjectDescription}>{subject.description}</Text>
-                {operationStatus && (
-                  <Text style={styles.statusText}>{operationStatus.childHomeText}</Text>
+                {statusText && (
+                  <Text style={styles.statusText}>{statusText}</Text>
                 )}
                 {!subject.isActive && <Text style={styles.comingSoonLabel}>Coming soon</Text>}
               </TouchableOpacity>
