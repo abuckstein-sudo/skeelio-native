@@ -195,24 +195,19 @@ export default function ChildHomeScreen() {
         uniqueTenses.add(q.tense);
       });
 
-      const groupMap: Record<string, string> = {
-        groupe_1: "-er (Groupe 1)",
-        groupe_2: "-ir (Groupe 2)",
-        groupe_3: "-re (Groupe 3)",
-        irregulier: "Irregular",
-      };
+      const { getLabelForVerbGroup, getLabelForTense } = await import("@/lib/conjugation");
 
       const groups = Array.from(uniqueGroups)
         .map((g) => ({
           value: g,
-          label: groupMap[g] || (g.charAt(0).toUpperCase() + g.slice(1)),
+          label: getLabelForVerbGroup(g),
         }))
         .sort((a, b) => a.label.localeCompare(b.label));
 
       const tenses = Array.from(uniqueTenses)
         .map((t) => ({
           value: t,
-          label: t.charAt(0).toUpperCase() + t.slice(1),
+          label: getLabelForTense(t),
         }))
         .sort((a, b) => a.label.localeCompare(b.label));
 

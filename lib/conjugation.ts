@@ -178,6 +178,22 @@ export async function fetchTeachingExample(
   }
 }
 
+export function getLabelForVerbGroup(group: string): string {
+  const groupMap: Record<string, string> = {
+    groupe_1: "-er (groupe 1)",
+    groupe_2: "-ir (groupe 2)",
+    groupe_3: "-re (groupe 3)",
+    irregulier: "Irréguliers",
+  };
+
+  return groupMap[group] || (group.charAt(0).toUpperCase() + group.slice(1));
+}
+
+export function getLabelForTense(tense: string): string {
+  // Display the raw value with first letter capitalized
+  return tense.charAt(0).toUpperCase() + tense.slice(1);
+}
+
 function getPatternEndings(group: string, tense: string): string[] {
   const patterns: Record<string, Record<string, string[]>> = {
     groupe_1: {
