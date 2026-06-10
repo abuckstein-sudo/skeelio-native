@@ -2,6 +2,7 @@
 // No AI generation — all words are pre-vetted curriculum vocabulary
 
 import type { SpellingLanguage } from "./spelling";
+import frenchWordsData from "./wordBanks/french.json";
 
 // English Dolch Sight Words (Public Domain)
 // Bucketed by grade level
@@ -101,14 +102,15 @@ const ENGLISH_WORDS: Record<string, string[]> = {
   ]
 };
 
-// French Dubois-Buyse word bank (TODO: parse from CSV if provided)
-// For now, stubbed with basic curriculum words
+// French Dubois-Buyse word bank (imported from converted CSV)
+// Classe → Grade mapping: CP (Petite Section), CE1 (Grade 1), CE2 (Grade 2), CM1 (Grade 3), CM2 (Grade 4), Collège (Grade 5+)
 const FRENCH_WORDS: Record<string, string[]> = {
-  "cp": ["a", "an", "as", "au", "avec", "avoir", "bien", "bonjour", "c", "ca", "car", "cent", "cher", "chez", "comment", "comme", "corps", "couleur", "coup", "cours", "croire", "d", "da", "dans", "de", "debout", "defendre", "degre", "dehors", "dei", "dejà", "del", "demain", "demi", "demouvoir", "den", "dent", "depart", "depend", "deplaire", "depuis", "derangement", "dernier", "derriere", "des", "desaccord", "desanimer", "desapprendre", "desapprovation", "desappuyer", "desarme", "desarmer", "desastre", "desastreuse"],
-  "ce1": ["TODO", "French", "CE1", "words"],
-  "ce2": ["TODO", "French", "CE2", "words"],
-  "cm1": ["TODO", "French", "CM1", "words"],
-  "cm2": ["TODO", "French", "CM2", "words"]
+  "CP": frenchWordsData["CP"] || [],
+  "CE1": frenchWordsData["CE1"] || [],
+  "CE2": frenchWordsData["CE2"] || [],
+  "CM1": frenchWordsData["CM1"] || [],
+  "CM2": frenchWordsData["CM2"] || [],
+  "Collège": frenchWordsData["Collège"] || [],
 };
 
 // Map grade_level strings to word bank levels
@@ -124,12 +126,13 @@ function getEnglishGradeLevel(gradeLevel: string): string {
 
 function getFrenchGradeLevel(gradeLevel: string): string {
   const grade = parseInt(gradeLevel, 10);
-  if (isNaN(grade)) return "ce1";
-  if (grade <= 1) return "cp";
-  if (grade === 2) return "ce1";
-  if (grade === 3) return "ce2";
-  if (grade === 4) return "cm1";
-  return "cm2"; // Grade 5+ use cm2 bank
+  if (isNaN(grade)) return "CE1";
+  if (grade <= 1) return "CP";
+  if (grade === 2) return "CE1";
+  if (grade === 3) return "CE2";
+  if (grade === 4) return "CM1";
+  if (grade === 5) return "CM2";
+  return "Collège"; // Grade 6+ use Collège bank
 }
 
 /**
@@ -150,6 +153,15 @@ export function getWordsForLevel(
   if (language === "French") {
     const level = getFrenchGradeLevel(gradeLevel);
     bank = FRENCH_WORDS[level] || [];
+
+    // If bucket is small, also include the next-easier grade for variety
+    const minWords = 100; // Threshold for small buckets
+    if (bank.length < minWords) {
+      const nextLevel = getPreviousFrenchGradeLevel(level);
+      if (nextLevel && FRENCH_WORDS[nextLevel]) {
+        bank = [...bank, ...FRENCH_WORDS[nextLevel]];
+      }
+    }
   } else {
     // Default to English
     const level = getEnglishGradeLevel(gradeLevel);
@@ -171,4 +183,17 @@ export function getWordsForLevel(
   const result = shuffled.slice(0, maxCount);
   console.log(`[getWordsForLevel] Selected ${result.length} words for ${language} grade ${gradeLevel}`);
   return result;
+}
+
+// Helper function to get the previous (easier) French grade level
+function getPreviousFrenchGradeLevel(level: string): string | null {
+  const hierarchy: Record<string, string> = {
+    "CP": null,
+    "CE1": "CP",
+    "CE2": "CE1",
+    "CM1": "CE2",
+    "CM2": "CM1",
+    "Collège": "CM2",
+  };
+  return hierarchy[level] || null;
 }
