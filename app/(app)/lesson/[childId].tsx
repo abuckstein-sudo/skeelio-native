@@ -213,10 +213,10 @@ export default function LessonScreen() {
       setShowAnswer(false);
       setIsCorrect(false);
     } else {
-      // Navigate to practice
+      // Navigate to practice after lesson complete (lessonShown prevents re-routing to lesson)
       router.push({
         pathname: "/practice",
-        params: { topic: operation, childId },
+        params: { topic: operation, childId, lessonShown: "true" },
       });
     }
   };
@@ -224,7 +224,7 @@ export default function LessonScreen() {
   const handleSkip = () => {
     router.push({
       pathname: "/practice",
-      params: { topic: operation, childId },
+      params: { topic: operation, childId, lessonShown: "true" },
     });
   };
 

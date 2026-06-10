@@ -60,7 +60,7 @@ interface TeachData {
 
 export default function PracticeScreen() {
   const router = useRouter();
-  const { topic, childId } = useLocalSearchParams<{ topic: string; childId: string }>();
+  const { topic, childId, lessonShown } = useLocalSearchParams<{ topic: string; childId: string; lessonShown?: string }>();
   const { session } = useAuth();
 
   // Adaptive engine state
@@ -156,8 +156,9 @@ export default function PracticeScreen() {
         // Check attempt count for this tier
         const tierAttempts = attemptData?.filter((a: any) => a.tier === workingTierId) || [];
 
-        // If this is first time at this tier (OR needs-teach), route to lesson
-        if (tierAttempts.length === 0 || band === "needs-teach") {
+        // If first time at this tier AND not returning from lesson, route to lesson for teaching
+        // lessonShown param prevents infinite loop: after lesson completes, don't route back to lesson
+        if (tierAttempts.length === 0 && !lessonShown) {
           router.replace({
             pathname: "/lesson/[childId]",
             params: { childId, tierId: workingTierId, tierLabel: label, operation: topic },
