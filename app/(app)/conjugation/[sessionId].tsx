@@ -325,12 +325,14 @@ export default function ConjugationPracticeScreen() {
       const gradeLevel = childData?.grade_level || "CE1";
 
       // Fetch pool with filters - pass selectedLanguage
+      console.log('[conj] passing groups', JSON.stringify(selectedGroup), 'tenses', JSON.stringify(selectedTense), 'locale', selectedLanguage);
       const pool = await fetchConjugationPool(childId, gradeLevel, selectedTense, selectedGroup, selectedLanguage);
       console.log('[conj] pool size', pool.length);
 
       if (pool.length === 0) {
-        setError("No questions available for this selection");
-        setIsLoadingQuiz(false);
+        setSelectionError("No questions available for this selection. Try different options.");
+        setIsLoadingTeaching(false);
+        setScreen("selection");
         return;
       }
 

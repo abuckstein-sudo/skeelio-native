@@ -82,7 +82,9 @@ export async function fetchConjugationPool(
     const verbGroups = Array.isArray(verbGroup) ? verbGroup : verbGroup ? [verbGroup] : [];
 
     // Filter in JS: check if grade_levels includes the child's grade, plus tense and verb_group if provided
-    let pool = (data ?? []).filter((q) => {
+    console.log('[conj] filter params - verbGroups:', verbGroups, 'tenses:', tenses, 'gradeLevel:', gradeLevel);
+
+    let pool = (data ?? []).filter((q, idx) => {
       let gl: any = q.grade_levels;
       // Handle both parsed array and stringified versions
       if (typeof gl === "string") {
@@ -95,6 +97,20 @@ export async function fetchConjugationPool(
       const gradeMatch = Array.isArray(gl) && gl.includes(gradeLevel);
       const tenseMatch = tenses.length === 0 || tenses.includes(q.tense);
       const groupMatch = verbGroups.length === 0 || verbGroups.includes(q.verb_group);
+
+      // Debug logging for first few items
+      if (idx < 2) {
+        console.log('[conj] sample filter check:', {
+          q_verb_group: q.verb_group,
+          q_tense: q.tense,
+          q_grade_levels: gl,
+          gradeMatch,
+          tenseMatch,
+          groupMatch,
+          willInclude: gradeMatch && tenseMatch && groupMatch,
+        });
+      }
+
       return gradeMatch && tenseMatch && groupMatch;
     });
 
