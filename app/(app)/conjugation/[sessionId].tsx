@@ -301,7 +301,7 @@ export default function ConjugationPracticeScreen() {
       }
 
       // Fetch teaching example
-      const pattern = await fetchTeachingExample(selectedGroup, selectedTense);
+      const pattern = await fetchTeachingExample(selectedGroup, selectedTense, selectedLanguage);
       setTeachingPattern(pattern);
       setScreen("teaching");
     } catch (err) {
@@ -526,34 +526,36 @@ export default function ConjugationPracticeScreen() {
   }
 
   // TEACHING SCREEN
-  if (screen === "teaching" && teachingPattern) {
+  if (screen === "teaching") {
     return (
       <SafeAreaView style={styles.container}>
         <ScrollView contentContainerStyle={styles.scrollContent}>
           <Text style={styles.title}>Learn the Pattern</Text>
 
-          <View style={styles.patternCard}>
-            <Text style={styles.patternTitle}>
-              {teachingPattern.tense} • {teachingPattern.group}
-            </Text>
+          {teachingPattern && (
+            <View style={styles.patternCard}>
+              <Text style={styles.patternTitle}>
+                {teachingPattern.tense} • {teachingPattern.group}
+              </Text>
 
-            <Text style={styles.patternSubtitle}>Endings:</Text>
-            <View style={styles.endingsRow}>
-              {teachingPattern.endings.map((ending, idx) => (
-                <View key={idx} style={styles.endingBox}>
-                  <Text style={styles.endingText}>{ending || "—"}</Text>
+              <Text style={styles.patternSubtitle}>Endings:</Text>
+              <View style={styles.endingsRow}>
+                {teachingPattern.endings.map((ending, idx) => (
+                  <View key={idx} style={styles.endingBox}>
+                    <Text style={styles.endingText}>{ending || "—"}</Text>
+                  </View>
+                ))}
+              </View>
+
+              <Text style={styles.patternSubtitle}>Example: {teachingPattern.example.verb}</Text>
+              {teachingPattern.example.conjugations.map((conj, idx) => (
+                <View key={idx} style={styles.conjugationRow}>
+                  <Text style={styles.pronounText}>{conj.pronoun}</Text>
+                  <Text style={styles.formText}>{conj.form}</Text>
                 </View>
               ))}
             </View>
-
-            <Text style={styles.patternSubtitle}>Example: {teachingPattern.example.verb}</Text>
-            {teachingPattern.example.conjugations.map((conj, idx) => (
-              <View key={idx} style={styles.conjugationRow}>
-                <Text style={styles.pronounText}>{conj.pronoun}</Text>
-                <Text style={styles.formText}>{conj.form}</Text>
-              </View>
-            ))}
-          </View>
+          )}
 
           <TouchableOpacity
             style={[styles.button, styles.buttonPrimary]}

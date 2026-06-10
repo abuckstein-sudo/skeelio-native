@@ -145,14 +145,15 @@ export function pickRandomQuestions(pool: ConjugationQuestion[], count: number):
 
 export async function fetchTeachingExample(
   group: string,
-  tense: string
+  tense: string,
+  language: string = "fr-FR"
 ): Promise<TeachingPattern | null> {
   try {
-    // Fetch all questions for this group+tense to find unique verbs
+    // Fetch all questions for this language + group + tense
     const { data, error } = await supabase
       .from("conjugation_questions")
       .select("*")
-      .eq("language", "fr-FR")
+      .eq("language", language)
       .eq("verb_group", group)
       .eq("tense", tense)
       .limit(10);
@@ -177,8 +178,8 @@ export async function fetchTeachingExample(
         return order.indexOf(a.pronoun) - order.indexOf(b.pronoun);
       });
 
-    // Get pattern endings
-    const endings = getPatternEndings(group, tense);
+    // Get pattern endings (only for French; others get empty array)
+    const endings = language === "fr-FR" ? getPatternEndings(group, tense) : [];
 
     return {
       group,
