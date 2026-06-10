@@ -88,12 +88,15 @@ export default function SpellingPracticeScreen() {
 
     const loadList = async () => {
       try {
+        console.log("[SpellingPracticeScreen] loading list:", listId, "child:", childId, "assignmentId:", assignmentId);
         const data = await getListWithItems(listId);
         if (!data) {
           setError("List not found");
           setIsLoading(false);
           return;
         }
+
+        console.log("[SpellingPracticeScreen] list items count:", data.items.length);
 
         if (data.items.length === 0) {
           setError("This list has no words");

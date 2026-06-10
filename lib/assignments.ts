@@ -262,6 +262,14 @@ export async function createSpellingAssignment(
   }
   const parentId = authData.user.id;
 
+  console.log("[createSpellingAssignment] creating with:", {
+    childId,
+    listId,
+    listTitle,
+    wordCount,
+    mode,
+  });
+
   // Insert spelling assignment
   const { data: newAssignment, error } = await supabase
     .from("assignments")
@@ -295,6 +303,7 @@ export async function createSpellingAssignment(
     throw error;
   }
 
+  console.log("[createSpellingAssignment] created assignment:", newAssignment.id);
   return newAssignment as Assignment;
 }
 
