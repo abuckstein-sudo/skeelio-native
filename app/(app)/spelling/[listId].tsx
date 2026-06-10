@@ -27,8 +27,6 @@ import {
   type SpellingLanguage,
   type SpellingSession,
 } from "@/lib/spelling";
-import { useAuth } from "../_layout";
-
 interface Answer {
   itemId: string;
   itemText: string;
@@ -43,7 +41,6 @@ export default function SpellingPracticeScreen() {
     listId: string;
     childId: string;
   }>();
-  const { session } = useAuth();
 
   const [listTitle, setListTitle] = useState("");
   const [language, setLanguage] = useState<SpellingLanguage>("English");
