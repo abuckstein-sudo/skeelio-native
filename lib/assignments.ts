@@ -2,6 +2,7 @@ import { supabase } from "./supabase";
 import { generateQuestion, Question } from "./tutor/generate";
 import { currentTierAndBand } from "./tutor/ability";
 import { Operation } from "./tutorConfig";
+import { generateWordProblem } from "./tutor/wordProblems";
 
 export type CustomQuestion = {
   question_text: string;
@@ -83,13 +84,30 @@ function questionToCustom(
     tier: generatedQ.tierId,
     operandA: generatedQ.a,
     operandB: generatedQ.b,
-    operator: symbol,
+    operator: getOperationSymbol(topic),
+  };
+}
+
+function wordProblemToCustom(
+  wordProblem: Awaited<ReturnType<typeof generateWordProblem>>
+): CustomQuestion {
+  return {
+    question_text: wordProblem.text,
+    correct_answer: String(wordProblem.answer),
+    question_type: "numeric",
+    subject: "math",
+    topic: "word_problems",
+    skill: wordProblem.skill,
+    tier: wordProblem.tierId,
+    operandA: wordProblem.a,
+    operandB: wordProblem.b,
+    operator: wordProblem.operation,
   };
 }
 
 export async function createMathAssignment(params: {
   childId: string;
-  topic: Operation;
+  topic: Operation | "word_problems";
   count: number;
   dueDate?: string | null;
   mode?: "practice" | "quiz";
@@ -107,33 +125,58 @@ export async function createMathAssignment(params: {
   // Fetch child data for tier calculation
   const { data: childData } = await supabase
     .from("children")
-    .select("max_addition_number, max_times_table, math_subtraction_level, math_division_level")
+    .select("max_addition_number, max_times_table, math_subtraction_level, math_division_level, id, name")
     .eq("id", childId)
     .single();
 
   // Fetch attempt data for tier and band calculation
   const { data: attemptData } = await supabase
     .from("learning_attempts")
-    .select("tier, was_correct, ai_hint_used")
+    .select("tier, was_correct, ai_hint_used, topic, skill")
     .eq("child_id", childId)
-    .eq("topic", topic)
     .not("tier", "is", null);
 
-  // Convert to attempt format
-  const attempts = (attemptData || []).map((row: any) => ({
-    tierId: row.tier,
-    correct: row.was_correct,
-    hintUsed: row.ai_hint_used || false,
-  }));
-
-  // Get current tier
-  const { tierId } = currentTierAndBand(attempts, topic, childData || {});
-
-  // Generate questions at this tier
   const customQuestions: CustomQuestion[] = [];
-  for (let i = 0; i < count; i++) {
-    const genQ = generateQuestion(topic, tierId, childData?.max_times_table);
-    customQuestions.push(questionToCustom(genQ, topic));
+
+  if (topic === "word_problems") {
+    // Generate word problems
+    // First, organize attempts by operation
+    const mathOps: Operation[] = ["addition", "subtraction", "multiplication", "division"];
+    const attemptsByOp: Record<Operation, any[]> = {} as any;
+
+    for (const op of mathOps) {
+      attemptsByOp[op] = (attemptData || [])
+        .filter((row: any) => row.topic === op || row.skill === op)
+        .map((row: any) => ({
+          tierId: row.tier,
+          correct: row.was_correct,
+          hintUsed: row.ai_hint_used || false,
+        }));
+    }
+
+    for (let i = 0; i < count; i++) {
+      // Rotate through operations
+      const opIndex = i % mathOps.length;
+      const op = mathOps[opIndex];
+      const wordProblem = await generateWordProblem(childId, op, attemptsByOp);
+      customQuestions.push(wordProblemToCustom(wordProblem));
+    }
+  } else {
+    // Generate regular math questions
+    const attempts = (attemptData || [])
+      .filter((row: any) => row.topic === topic)
+      .map((row: any) => ({
+        tierId: row.tier,
+        correct: row.was_correct,
+        hintUsed: row.ai_hint_used || false,
+      }));
+
+    const { tierId } = currentTierAndBand(attempts, topic as Operation, childData || {});
+
+    for (let i = 0; i < count; i++) {
+      const genQ = generateQuestion(topic as Operation, tierId, childData?.max_times_table);
+      customQuestions.push(questionToCustom(genQ, topic as Operation));
+    }
   }
 
   // Insert assignment

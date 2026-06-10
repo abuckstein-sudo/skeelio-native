@@ -23,6 +23,9 @@ import {
   pickDivisionStrategy,
 } from "@/lib/tutor/strategies";
 
+const SESSION_LENGTH = 8;
+const STARS_PER_CORRECT = 10;
+
 interface Child {
   id: string;
   name: string;
@@ -58,7 +61,7 @@ function StrategyHint({
   return <StrategyView plan={plan} showStep2={showStep2} />;
 }
 
-type SessionMode = "picker" | "session";
+type SessionMode = "picker" | "session" | "summary";
 
 export default function WordProblemsScreen() {
   const router = useRouter();
@@ -82,6 +85,10 @@ export default function WordProblemsScreen() {
   const [hintLevel, setHintLevel] = useState(0);
   const [showHint, setShowHint] = useState(false);
 
+  // Session progress
+  const [questionCount, setQuestionCount] = useState(0);
+  const [correctCount, setCorrectCount] = useState(0);
+
   useEffect(() => {
     if (childId && session?.user?.id) {
       fetchChild();
@@ -93,7 +100,6 @@ export default function WordProblemsScreen() {
 
     setIsLoading(true);
     try {
-      // Fetch child
       const { data: childData, error: childError } = await supabase
         .from("children")
         .select("id, name")
@@ -108,7 +114,6 @@ export default function WordProblemsScreen() {
 
       setChild(childData);
 
-      // Fetch attempts for all math operations to determine tier
       const operations: Operation[] = ["addition", "subtraction", "multiplication", "division"];
       const attemptsByOpData: Record<Operation, Attempt[]> = {} as any;
 
@@ -140,7 +145,6 @@ export default function WordProblemsScreen() {
 
     let operation: Operation;
     if (selectedOperation === "mixed") {
-      // Rotate through operations
       const ops: Operation[] = ["addition", "subtraction", "multiplication", "division"];
       const randomIndex = Math.floor(Math.random() * ops.length);
       operation = ops[randomIndex];
@@ -159,7 +163,11 @@ export default function WordProblemsScreen() {
   const handleStartSession = async (op: Operation | "mixed") => {
     setSelectedOperation(op);
     setMode("session");
-    // Generate first problem
+    setQuestionCount(0);
+    setCorrectCount(0);
+    setProblem(null);
+
+    // Reset state before generating first problem (FIX #1: stale first question)
     setTimeout(async () => {
       await generateNextProblem();
     }, 0);
@@ -201,12 +209,23 @@ export default function WordProblemsScreen() {
           message: `Error saving attempt: ${insertError.message}`,
         });
       } else {
+        const newCorrectCount = isCorrect ? correctCount + 1 : correctCount;
+        setCorrectCount(newCorrectCount);
+        setQuestionCount(questionCount + 1);
+
         setFeedback({
           isCorrect,
           message: isCorrect
             ? "Correct! Great job! 🎉"
             : `Not quite. The answer is ${problem.answer}.`,
         });
+
+        // Check if session is complete (FIX #2: session length)
+        if (questionCount + 1 >= SESSION_LENGTH) {
+          setTimeout(() => {
+            setMode("summary");
+          }, 800);
+        }
       }
     } catch (error) {
       console.error("[word-problems-submit] error:", error);
@@ -220,13 +239,56 @@ export default function WordProblemsScreen() {
   };
 
   const handleNext = async () => {
-    await generateNextProblem();
+    if (questionCount >= SESSION_LENGTH) {
+      setMode("summary");
+    } else {
+      await generateNextProblem();
+    }
+  };
+
+  const awardStarsAndReturn = async () => {
+    if (!childId || !session?.user?.id) return;
+
+    const starsEarned = correctCount * STARS_PER_CORRECT;
+    if (starsEarned > 0) {
+      const { data: rewardData, error: fetchError } = await supabase
+        .from("rewards")
+        .select("stars")
+        .eq("child_id", childId)
+        .maybeSingle();
+
+      const currentStars = rewardData?.stars || 0;
+      const newStars = currentStars + starsEarned;
+
+      if (rewardData?.id) {
+        await supabase
+          .from("rewards")
+          .update({ stars: newStars })
+          .eq("id", rewardData.id);
+      } else {
+        await supabase.from("rewards").insert([
+          {
+            user_id: session.user.id,
+            child_id: childId,
+            stars: newStars,
+          },
+        ]);
+      }
+    }
+
+    router.push(`/child-home/${childId}`);
+  };
+
+  const handleEndSession = async () => {
+    await awardStarsAndReturn();
   };
 
   const handleBack = () => {
-    if (mode === "session") {
+    if (mode === "session" || mode === "summary") {
       setMode("picker");
       setProblem(null);
+      setQuestionCount(0);
+      setCorrectCount(0);
     } else {
       router.push(`/child-home/${childId}`);
     }
@@ -293,6 +355,36 @@ export default function WordProblemsScreen() {
     );
   }
 
+  // Summary Mode
+  if (mode === "summary") {
+    return (
+      <SafeAreaView style={styles.container}>
+        <ScrollView contentContainerStyle={styles.contentContainer}>
+          <View style={styles.header}>
+            <TouchableOpacity onPress={handleBack}>
+              <Text style={styles.backText}>← Back</Text>
+            </TouchableOpacity>
+            <Text style={styles.title}>Session Complete</Text>
+          </View>
+
+          <View style={styles.summaryCard}>
+            <Text style={styles.summaryTitle}>Great Job!</Text>
+            <Text style={styles.summaryScore}>
+              {correctCount} / {SESSION_LENGTH} correct
+            </Text>
+            <Text style={styles.summaryStars}>
+              ⭐ {correctCount * STARS_PER_CORRECT} stars earned
+            </Text>
+          </View>
+
+          <TouchableOpacity style={styles.finishButton} onPress={handleEndSession}>
+            <Text style={styles.finishButtonText}>Back to Home</Text>
+          </TouchableOpacity>
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
   // Session Mode
   if (!problem) {
     return (
@@ -305,14 +397,28 @@ export default function WordProblemsScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.contentContainer}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={handleBack}>
-            <Text style={styles.backText}>← Back</Text>
+        <View style={styles.sessionHeader}>
+          <View style={styles.headerLeft}>
+            <TouchableOpacity onPress={handleBack}>
+              <Text style={styles.backText}>← Back</Text>
+            </TouchableOpacity>
+            <Text style={styles.title}>
+              {selectedOperation === "mixed"
+                ? "Mixed Problems"
+                : selectedOperation.charAt(0).toUpperCase() + selectedOperation.slice(1)}
+            </Text>
+          </View>
+          <TouchableOpacity
+            style={styles.endSessionButton}
+            onPress={handleEndSession}
+          >
+            <Text style={styles.endSessionButtonText}>✕ End</Text>
           </TouchableOpacity>
-          <Text style={styles.title}>
-            {selectedOperation === "mixed" ? "Mixed Problems" : selectedOperation.charAt(0).toUpperCase() + selectedOperation.slice(1)}
-          </Text>
         </View>
+
+        <Text style={styles.progressText}>
+          Question {questionCount + 1} of {SESSION_LENGTH}
+        </Text>
 
         <View style={styles.problemCard}>
           <Text style={styles.problemText}>{problem.text}</Text>
@@ -369,9 +475,16 @@ export default function WordProblemsScreen() {
             ]}
           >
             <Text style={styles.feedbackText}>{feedback.message}</Text>
-            <TouchableOpacity style={styles.nextButton} onPress={handleNext}>
-              <Text style={styles.nextButtonText}>Next</Text>
-            </TouchableOpacity>
+            {questionCount < SESSION_LENGTH && (
+              <TouchableOpacity style={styles.nextButton} onPress={handleNext}>
+                <Text style={styles.nextButtonText}>Next</Text>
+              </TouchableOpacity>
+            )}
+            {questionCount >= SESSION_LENGTH && (
+              <TouchableOpacity style={styles.nextButton} onPress={handleNext}>
+                <Text style={styles.nextButtonText}>See Results</Text>
+              </TouchableOpacity>
+            )}
           </View>
         )}
       </ScrollView>
@@ -553,5 +666,74 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: "#2196f3",
     marginRight: 12,
+  },
+  sessionHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  headerLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+  },
+  endSessionButton: {
+    backgroundColor: "#ffebee",
+    borderRadius: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderWidth: 1,
+    borderColor: "#f44336",
+  },
+  endSessionButtonText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#f44336",
+  },
+  progressText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#666",
+    marginBottom: 12,
+    textAlign: "center",
+  },
+  summaryCard: {
+    backgroundColor: "#f0f9f0",
+    borderRadius: 12,
+    padding: 24,
+    marginBottom: 24,
+    borderWidth: 2,
+    borderColor: "#4caf50",
+    alignItems: "center",
+  },
+  summaryTitle: {
+    fontSize: 24,
+    fontWeight: "700",
+    color: "#1a1a1a",
+    marginBottom: 12,
+  },
+  summaryScore: {
+    fontSize: 32,
+    fontWeight: "700",
+    color: "#4caf50",
+    marginBottom: 12,
+  },
+  summaryStars: {
+    fontSize: 20,
+    fontWeight: "600",
+    color: "#ffc107",
+  },
+  finishButton: {
+    backgroundColor: "#4caf50",
+    borderRadius: 8,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+  },
+  finishButtonText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#fff",
+    textAlign: "center",
   },
 });

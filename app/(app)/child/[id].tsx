@@ -63,7 +63,7 @@ export default function ChildHomeScreen() {
   // Homework assignment state
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [showAssignmentForm, setShowAssignmentForm] = useState(false);
-  const [selectedTopic, setSelectedTopic] = useState<Operation>("addition");
+  const [selectedTopic, setSelectedTopic] = useState<Operation | "word_problems">("addition");
   const [questionCount, setQuestionCount] = useState(8);
   const [dueDate, setDueDate] = useState("");
   const [assignmentMode, setAssignmentMode] = useState<"practice" | "quiz">("practice");
@@ -556,7 +556,7 @@ export default function ChildHomeScreen() {
             {/* Topic Picker */}
             <Text style={styles.formLabel}>Topic</Text>
             <View style={styles.topicPickerRow}>
-              {["addition", "subtraction", "multiplication", "division"].map(
+              {["addition", "subtraction", "multiplication", "division", "word_problems"].map(
                 (topic) => (
                   <TouchableOpacity
                     key={topic}
@@ -564,7 +564,7 @@ export default function ChildHomeScreen() {
                       styles.topicButton,
                       selectedTopic === topic && styles.topicButtonActive,
                     ]}
-                    onPress={() => setSelectedTopic(topic as Operation)}
+                    onPress={() => setSelectedTopic(topic as Operation | "word_problems")}
                   >
                     <Text
                       style={[
@@ -572,7 +572,7 @@ export default function ChildHomeScreen() {
                         selectedTopic === topic && styles.topicButtonTextActive,
                       ]}
                     >
-                      {topic.charAt(0).toUpperCase() + topic.slice(1)}
+                      {topic === "word_problems" ? "Word Problems" : topic.charAt(0).toUpperCase() + topic.slice(1)}
                     </Text>
                   </TouchableOpacity>
                 ),
