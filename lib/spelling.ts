@@ -230,23 +230,19 @@ export async function generateSentence(
   language: SpellingLanguage
 ): Promise<string> {
   try {
-    // Use EXPO_PUBLIC_SUPABASE_URL environment variable
-    const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || "https://aalqeqjlspxqhxohubfi.supabase.co";
-    const response = await fetch(`${supabaseUrl}/functions/v1/spelling-sentence`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ word, language }),
+    console.log("[generateSentence] calling function for word:", word, "language:", language);
+
+    const { data, error: invokeError } = await supabase.functions.invoke("spelling-sentence", {
+      body: { word, language },
     });
 
-    if (!response.ok) {
-      const error = await response.text();
-      console.error("[generateSentence] function error:", response.status, error);
-      throw new Error(`Failed to generate sentence: ${response.status}`);
+    console.log("[generateSentence] invoke error:", invokeError, "data:", data);
+
+    if (invokeError) {
+      console.error("[generateSentence] function error:", invokeError);
+      throw invokeError;
     }
 
-    const data = await response.json();
     const sentence = data?.sentence ?? "";
     if (!sentence) {
       throw new Error("No sentence returned from function");
