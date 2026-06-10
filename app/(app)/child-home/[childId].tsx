@@ -181,7 +181,7 @@ export default function ChildHomeScreen() {
             params: { sessionId: sessionData.id, childId },
           });
         } catch (err) {
-          console.error("[child-home] failed to create conjugation session:", err);
+          console.log('[conj] error', JSON.stringify(err), 'msg:', (err as any)?.message, 'code:', (err as any)?.code, 'details:', (err as any)?.details, 'hint:', (err as any)?.hint);
         }
       } else {
         router.push({
