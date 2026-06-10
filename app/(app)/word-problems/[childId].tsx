@@ -58,14 +58,21 @@ function StrategyHint({
   return <StrategyView plan={plan} showStep2={showStep2} />;
 }
 
+type SessionMode = "picker" | "session";
+
 export default function WordProblemsScreen() {
   const router = useRouter();
   const { session } = useAuth();
   const { childId } = useLocalSearchParams<{ childId: string }>();
 
   const [child, setChild] = useState<Child | null>(null);
-  const [problem, setProblem] = useState<WordProblem | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [mode, setMode] = useState<SessionMode>("picker");
+  const [selectedOperation, setSelectedOperation] = useState<Operation | "mixed">("mixed");
+  const [attemptsByOp, setAttemptsByOp] = useState<Record<Operation, Attempt[]>>({} as any);
+
+  // Session state
+  const [problem, setProblem] = useState<WordProblem | null>(null);
   const [userAnswer, setUserAnswer] = useState("");
   const [feedback, setFeedback] = useState<{
     isCorrect: boolean;
@@ -103,7 +110,7 @@ export default function WordProblemsScreen() {
 
       // Fetch attempts for all math operations to determine tier
       const operations: Operation[] = ["addition", "subtraction", "multiplication", "division"];
-      const attemptsByOp: Record<Operation, Attempt[]> = {} as any;
+      const attemptsByOpData: Record<Operation, Attempt[]> = {} as any;
 
       for (const op of operations) {
         const { data: attemptData } = await supabase
@@ -113,20 +120,14 @@ export default function WordProblemsScreen() {
           .eq("topic", op)
           .not("tier", "is", null);
 
-        attemptsByOp[op] = (attemptData || []).map((row: any) => ({
+        attemptsByOpData[op] = (attemptData || []).map((row: any) => ({
           tierId: row.tier,
           correct: row.was_correct,
           hintUsed: row.ai_hint_used || false,
         }));
       }
 
-      // Generate a word problem
-      const newProblem = await generateWordProblem(childId, childData.name, attemptsByOp);
-      setProblem(newProblem);
-      setUserAnswer("");
-      setFeedback(null);
-      setHintLevel(0);
-      setShowHint(false);
+      setAttemptsByOp(attemptsByOpData);
     } catch (error) {
       console.error("[word-problems] error:", error);
     } finally {
@@ -134,9 +135,38 @@ export default function WordProblemsScreen() {
     }
   };
 
-  const handleShowHint = async () => {
-    if (hintLevel >= 2) return; // Max 2 hint levels
+  const generateNextProblem = async () => {
+    if (!child) return;
 
+    let operation: Operation;
+    if (selectedOperation === "mixed") {
+      // Rotate through operations
+      const ops: Operation[] = ["addition", "subtraction", "multiplication", "division"];
+      const randomIndex = Math.floor(Math.random() * ops.length);
+      operation = ops[randomIndex];
+    } else {
+      operation = selectedOperation;
+    }
+
+    const newProblem = await generateWordProblem(childId, operation, attemptsByOp);
+    setProblem(newProblem);
+    setUserAnswer("");
+    setFeedback(null);
+    setHintLevel(0);
+    setShowHint(false);
+  };
+
+  const handleStartSession = async (op: Operation | "mixed") => {
+    setSelectedOperation(op);
+    setMode("session");
+    // Generate first problem
+    setTimeout(async () => {
+      await generateNextProblem();
+    }, 0);
+  };
+
+  const handleShowHint = () => {
+    if (hintLevel >= 2) return;
     setHintLevel(hintLevel + 1);
     setShowHint(true);
   };
@@ -148,7 +178,6 @@ export default function WordProblemsScreen() {
 
     setIsSubmitting(true);
     try {
-      // Record the attempt
       const { error: insertError } = await supabase.from("learning_attempts").insert([
         {
           user_id: session.user.id,
@@ -172,22 +201,12 @@ export default function WordProblemsScreen() {
           message: `Error saving attempt: ${insertError.message}`,
         });
       } else {
-        if (isCorrect) {
-          setFeedback({
-            isCorrect: true,
-            message: "Correct! Great job! 🎉",
-          });
-
-          // Auto-load next problem after a short delay
-          setTimeout(() => {
-            fetchChild();
-          }, 1500);
-        } else {
-          setFeedback({
-            isCorrect: false,
-            message: `Not quite. The answer is ${problem.answer}. Try again!`,
-          });
-        }
+        setFeedback({
+          isCorrect,
+          message: isCorrect
+            ? "Correct! Great job! 🎉"
+            : `Not quite. The answer is ${problem.answer}.`,
+        });
       }
     } catch (error) {
       console.error("[word-problems-submit] error:", error);
@@ -200,11 +219,82 @@ export default function WordProblemsScreen() {
     }
   };
 
-  const handleBack = () => {
-    router.push(`/child-home/${childId}`);
+  const handleNext = async () => {
+    await generateNextProblem();
   };
 
-  if (isLoading || !child || !problem) {
+  const handleBack = () => {
+    if (mode === "session") {
+      setMode("picker");
+      setProblem(null);
+    } else {
+      router.push(`/child-home/${childId}`);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <View style={styles.centerContainer}>
+        <ActivityIndicator size="large" color="#2196f3" />
+      </View>
+    );
+  }
+
+  // Operation Picker Mode
+  if (mode === "picker") {
+    return (
+      <SafeAreaView style={styles.container}>
+        <ScrollView contentContainerStyle={styles.contentContainer}>
+          <View style={styles.header}>
+            <TouchableOpacity onPress={() => router.push(`/child-home/${childId}`)}>
+              <Text style={styles.backText}>← Back</Text>
+            </TouchableOpacity>
+            <Text style={styles.title}>Word Problems</Text>
+          </View>
+
+          <Text style={styles.pickerPrompt}>Choose an operation:</Text>
+
+          <TouchableOpacity
+            style={styles.operationButton}
+            onPress={() => handleStartSession("addition")}
+          >
+            <Text style={styles.operationButtonText}>➕ Addition</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.operationButton}
+            onPress={() => handleStartSession("subtraction")}
+          >
+            <Text style={styles.operationButtonText}>➖ Subtraction</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.operationButton}
+            onPress={() => handleStartSession("multiplication")}
+          >
+            <Text style={styles.operationButtonText}>✖️ Multiplication</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.operationButton}
+            onPress={() => handleStartSession("division")}
+          >
+            <Text style={styles.operationButtonText}>➗ Division</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.operationButton, styles.mixedButton]}
+            onPress={() => handleStartSession("mixed")}
+          >
+            <Text style={styles.operationButtonText}>🎲 Mixed</Text>
+          </TouchableOpacity>
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
+  // Session Mode
+  if (!problem) {
     return (
       <View style={styles.centerContainer}>
         <ActivityIndicator size="large" color="#2196f3" />
@@ -215,20 +305,19 @@ export default function WordProblemsScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.contentContainer}>
-        {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity onPress={handleBack}>
             <Text style={styles.backText}>← Back</Text>
           </TouchableOpacity>
-          <Text style={styles.title}>Word Problems</Text>
+          <Text style={styles.title}>
+            {selectedOperation === "mixed" ? "Mixed Problems" : selectedOperation.charAt(0).toUpperCase() + selectedOperation.slice(1)}
+          </Text>
         </View>
 
-        {/* Problem Text */}
         <View style={styles.problemCard}>
           <Text style={styles.problemText}>{problem.text}</Text>
         </View>
 
-        {/* Hint Section */}
         {!feedback && (
           <View style={styles.hintSection}>
             <TouchableOpacity
@@ -249,7 +338,6 @@ export default function WordProblemsScreen() {
           </View>
         )}
 
-        {/* Answer Input */}
         {!feedback && (
           <View style={styles.inputSection}>
             <Text style={styles.inputLabel}>Your answer:</Text>
@@ -273,7 +361,6 @@ export default function WordProblemsScreen() {
           </View>
         )}
 
-        {/* Feedback */}
         {feedback && (
           <View
             style={[
@@ -282,11 +369,9 @@ export default function WordProblemsScreen() {
             ]}
           >
             <Text style={styles.feedbackText}>{feedback.message}</Text>
-            {!feedback.isCorrect && (
-              <TouchableOpacity style={styles.nextButton} onPress={fetchChild}>
-                <Text style={styles.nextButtonText}>Try Another Problem</Text>
-              </TouchableOpacity>
-            )}
+            <TouchableOpacity style={styles.nextButton} onPress={handleNext}>
+              <Text style={styles.nextButtonText}>Next</Text>
+            </TouchableOpacity>
           </View>
         )}
       </ScrollView>
@@ -431,5 +516,42 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: "#fff",
     textAlign: "center",
+  },
+  pickerPrompt: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#333",
+    marginBottom: 24,
+    textAlign: "center",
+  },
+  operationButton: {
+    backgroundColor: "#e3f2fd",
+    borderRadius: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    marginBottom: 12,
+    borderWidth: 2,
+    borderColor: "#2196f3",
+  },
+  mixedButton: {
+    backgroundColor: "#f3e5f5",
+    borderColor: "#9c27b0",
+  },
+  operationButtonText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#333",
+    textAlign: "center",
+  },
+  title: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#1a1a1a",
+  },
+  backText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#2196f3",
+    marginRight: 12,
   },
 });
