@@ -68,6 +68,7 @@ export default function ChildHomeScreen() {
   const [dueDate, setDueDate] = useState("");
   const [assignmentMode, setAssignmentMode] = useState<"practice" | "quiz">("practice");
   const [isCreatingAssignment, setIsCreatingAssignment] = useState(false);
+  const [showCompletedAssignments, setShowCompletedAssignments] = useState(false);
 
   const fetchStars = useCallback(async () => {
     if (!id) return;
@@ -384,13 +385,25 @@ export default function ChildHomeScreen() {
                   <Text style={styles.addButtonText}>+ Assign</Text>
                 </TouchableOpacity>
               </View>
+
               {assignments.length === 0 ? (
                 <Text style={styles.emptyItemText}>No assignments yet</Text>
               ) : (
                 (() => {
                   const cap = (s?: string | null) =>
                     s ? s.charAt(0).toUpperCase() + s.slice(1) : "";
-                  return assignments.map((asn) => (
+                  const activeAssignments = assignments.filter(
+                    (a) => a.status !== "complete"
+                  );
+                  const completedAssignments = assignments
+                    .filter((a) => a.status === "complete")
+                    .sort((a, b) => {
+                      const dateA = a.completed_at ? new Date(a.completed_at).getTime() : 0;
+                      const dateB = b.completed_at ? new Date(b.completed_at).getTime() : 0;
+                      return dateB - dateA; // Newest first
+                    });
+
+                  const renderAssignmentRow = (asn: Assignment) => (
                     <View
                       key={asn.id}
                       style={[
@@ -444,7 +457,37 @@ export default function ChildHomeScreen() {
                         </View>
                       </View>
                     </View>
-                  ));
+                  );
+
+                  return (
+                    <>
+                      {/* Active Assignments */}
+                      {activeAssignments.length > 0 ? (
+                        activeAssignments.map(renderAssignmentRow)
+                      ) : (
+                        <Text style={styles.emptyItemText}>No homework assigned</Text>
+                      )}
+
+                      {/* Completed Assignments Toggle */}
+                      {completedAssignments.length > 0 && (
+                        <>
+                          <TouchableOpacity
+                            style={styles.completedToggle}
+                            onPress={() =>
+                              setShowCompletedAssignments(!showCompletedAssignments)
+                            }
+                          >
+                            <Text style={styles.completedToggleText}>
+                              {showCompletedAssignments ? "▼" : "▶"} Completed ({completedAssignments.length})
+                            </Text>
+                          </TouchableOpacity>
+
+                          {showCompletedAssignments &&
+                            completedAssignments.map(renderAssignmentRow)}
+                        </>
+                      )}
+                    </>
+                  );
                 })()
               )}
             </View>
@@ -1018,6 +1061,19 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: "#f44336",
     fontWeight: "700",
+  },
+  completedToggle: {
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    backgroundColor: "#f9f9f9",
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
+    marginBottom: 8,
+  },
+  completedToggleText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#666",
   },
   emptyItemText: {
     fontSize: 13,
