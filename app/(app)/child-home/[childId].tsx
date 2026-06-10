@@ -163,8 +163,27 @@ export default function ChildHomeScreen() {
           const userId = authData.user?.id;
           if (!userId) return;
 
-          const { createConjugationSession } = await import("@/lib/conjugation");
-          const session = await createConjugationSession(childId, userId, 10);
+          // Fetch child grade level
+          const { data: childData, error: childErr } = await supabase
+            .from("children")
+            .select("grade_level")
+            .eq("id", childId)
+            .single();
+
+          if (childErr) throw childErr;
+          const gradeLevel = childData?.grade_level || "CE1";
+
+          // Fetch pool first to ensure questions are available
+          const { fetchConjugationPool, createConjugationSession } = await import("@/lib/conjugation");
+          const pool = await fetchConjugationPool(childId, gradeLevel);
+
+          if (pool.length === 0) {
+            alert("No conjugation questions available for this grade level");
+            return;
+          }
+
+          // Only create session if pool is non-empty
+          const session = await createConjugationSession(childId, userId, Math.min(10, pool.length));
 
           router.push({
             pathname: "/conjugation/[sessionId]",

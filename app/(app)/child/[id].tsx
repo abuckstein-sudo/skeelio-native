@@ -949,6 +949,17 @@ export default function ChildHomeScreen() {
               })}
             </View>
 
+            {/* Conjugation Section */}
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>French Conjugation</Text>
+              <View style={styles.operationRow}>
+                <View style={styles.operationInfo}>
+                  <Text style={styles.topicName}>Conjugation Practice</Text>
+                  <Text style={styles.operationStatus}>Ready for 10-question session</Text>
+                </View>
+              </View>
+            </View>
+
           </>
         )}
 

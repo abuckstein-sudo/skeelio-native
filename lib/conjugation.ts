@@ -48,32 +48,45 @@ export async function fetchConjugationPool(
   try {
     console.log("[fetchConjugationPool] fetching for grade:", gradeLevel);
 
-    // Try to fetch questions for the child's grade level
-    let { data, error } = await supabase
+    // Fetch all French conjugation questions
+    const { data, error } = await supabase
       .from("conjugation_questions")
       .select("*")
-      .eq("language", "fr-FR")
-      .filter("grade_levels", "cs", `["${gradeLevel}"]`);
+      .eq("language", "fr-FR");
 
     if (error) {
       console.error("[fetchConjugationPool] error:", error);
       throw error;
     }
 
-    if (!data || data.length === 0) {
-      console.log("[fetchConjugationPool] no questions for grade", gradeLevel, "fetching all");
-      // Fallback: fetch all French conjugation questions
-      const { data: allData, error: allError } = await supabase
-        .from("conjugation_questions")
-        .select("*")
-        .eq("language", "fr-FR");
+    // Filter in JS: check if grade_levels includes the child's grade
+    let pool = (data ?? []).filter((q) => {
+      let gl: any = q.grade_levels;
+      // Handle both parsed array and stringified versions
+      if (typeof gl === "string") {
+        try {
+          gl = JSON.parse(gl);
+        } catch {
+          gl = [];
+        }
+      }
+      return Array.isArray(gl) && gl.includes(gradeLevel);
+    });
 
-      if (allError) throw allError;
-      data = allData || [];
+    // If no questions for this grade, use all fetched questions
+    if (pool.length === 0) {
+      console.log("[fetchConjugationPool] no questions for grade", gradeLevel, "using all questions");
+      pool = (data ?? []);
     }
 
-    console.log("[fetchConjugationPool] fetched", data.length, "questions");
-    return data as ConjugationQuestion[];
+    // Shuffle the pool
+    for (let i = pool.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [pool[i], pool[j]] = [pool[j], pool[i]];
+    }
+
+    console.log("[fetchConjugationPool] fetched", pool.length, "questions for grade", gradeLevel);
+    return pool as ConjugationQuestion[];
   } catch (err) {
     console.error("[fetchConjugationPool] failed:", err);
     throw err;
