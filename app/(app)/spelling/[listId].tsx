@@ -13,6 +13,7 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { setAudioModeAsync } from "expo-audio";
 import { supabase } from "@/lib/supabase";
 import { addStars } from "@/lib/addStars";
 import {
@@ -65,6 +66,19 @@ export default function SpellingPracticeScreen() {
 
   const inputRef = useRef<TextInput>(null);
 
+  // Configure audio to play in silent mode (iOS)
+  useEffect(() => {
+    const configureAudio = async () => {
+      try {
+        await setAudioModeAsync({ playsInSilentMode: true });
+        console.log("[SpellingPracticeScreen] audio mode configured for silent mode");
+      } catch (err) {
+        console.error("[SpellingPracticeScreen] audio mode setup failed:", err);
+      }
+    };
+    configureAudio();
+  }, []);
+
   // Load list and items
   useEffect(() => {
     if (!listId || !childId) return;
@@ -98,6 +112,7 @@ export default function SpellingPracticeScreen() {
 
         // Speak first word
         setTimeout(() => {
+          console.log("[SpellingPracticeScreen] speaking first word:", data.items[0].item_text);
           speakWord(data.items[0].item_text, data.list.language);
         }, 250);
 
@@ -116,6 +131,7 @@ export default function SpellingPracticeScreen() {
 
   const handleReplay = async () => {
     if (currentItem) {
+      console.log("[handleReplay] speaking word:", currentItem.item_text);
       await speakWord(currentItem.item_text, language);
     }
   };

@@ -194,12 +194,15 @@ export async function speakWord(
   language: SpellingLanguage
 ): Promise<void> {
   try {
+    console.log("[speakWord] starting - word:", word, "language:", language);
     await Speech.stop();
     await Speech.speak(word, {
       language: speechLangCode(language),
       rate: 0.9,
       onError: (error) => console.error("[speech] error:", error),
     });
+    const isSpeaking = await Speech.isSpeakingAsync();
+    console.log("[speakWord] after speak - isSpeaking:", isSpeaking);
   } catch (error) {
     console.error("[speech] speak failed:", error);
   }
