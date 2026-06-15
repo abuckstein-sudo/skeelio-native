@@ -54,9 +54,11 @@ ${conceptScope}
 
 CRITICAL TASK-TYPE RULE:
 - Match the ACTUAL task type on the worksheet, not merely the broad topic.
-- If the worksheet is conjugation, every item MUST ask the learner to conjugate a verb for a given subject/person/tense.
+- If the worksheet is conjugation, every item MUST ask the learner to write the conjugated verb for a concrete pronoun and tense.
 - For conjugation, expected_answer MUST be the conjugated verb form or requested conjugated phrase, never a subject pronoun such as je/tu/il/elle/nous/vous/ils/elles.
-- Do NOT ask the learner to identify a subject pronoun, infinitive, tense name, or grammar category unless the original worksheet explicitly asks that.
+- Do NOT ask the learner to identify a subject pronoun, infinitive, tense name, grammar category, stem/radical, or ending/terminaison.
+- For conjugation, do NOT use abstract grammar wording like "1ère personne du singulier". Use the actual pronoun in a short sentence.
+- For conjugation, prefer fill-in-the-blank prompts a 7-year-old can answer, such as "Demain, je ___ . Mets « marcher » au futur simple.".
 - For French regular future tense of -er verbs, use regular -er verbs and expected answers like "regardera", not "elle".
 
 CRITICAL WORDING RULE:
@@ -86,7 +88,9 @@ ${conceptScope}
 CRITICAL TASK-TYPE RULE:
 - Match the ACTUAL worksheet task type.
 - If this is conjugation practice, ask for the conjugated verb/form.
-- Do NOT ask for a subject pronoun, infinitive, tense name, or grammar category unless the worksheet explicitly asks that.
+- Do NOT ask for a subject pronoun, infinitive, tense name, grammar category, stem/radical, or ending/terminaison.
+- For conjugation, do NOT use abstract grammar wording like "1ère personne du singulier". Use the actual pronoun in a short sentence.
+- For conjugation, prefer fill-in-the-blank prompts a 7-year-old can answer, such as "Demain, je ___ . Mets « marcher » au futur simple.".
 - For French regular future tense of -er verbs, expected answers should be forms like "regardera", not pronouns like "elle".
 
 CRITICAL WORDING RULE:
@@ -627,6 +631,23 @@ function isLikelyConjugationPractice(worksheet: Record<string, unknown>): boolea
   );
 }
 
+function getLanguageSubSkills(worksheet: Record<string, unknown>, isConjugationPractice: boolean): string[] {
+  if (isConjugationPractice) {
+    const scope = buildConceptScope(worksheet)
+      .normalize("NFD")
+      .replace(/\p{Diacritic}/gu, "")
+      .toLowerCase();
+
+    if (scope.includes("futur")) return ["Conjuguer au futur simple"];
+    if (scope.includes("present")) return ["Conjuguer au present"];
+    if (scope.includes("imparfait")) return ["Conjuguer a l'imparfait"];
+    if (scope.includes("passe compose")) return ["Conjuguer au passe compose"];
+    return ["Conjuguer le verbe"];
+  }
+
+  return (worksheet.concept?.sub_skills as Array<{ label: string }>)?.map((s) => s.label) || ["grammar"];
+}
+
 function shouldRejectLanguageItem(item: Record<string, unknown>, isConjugationPractice: boolean): boolean {
   if (!isConjugationPractice) return false;
 
@@ -660,6 +681,12 @@ function shouldRejectLanguageItem(item: Record<string, unknown>, isConjugationPr
 
   if (pronounAnswers.has(expected)) return true;
 
+  const asksForMetaGrammar =
+    /(radical|terminaison|ending|stem|infinitif|infinitive|temps|tense|categorie|category)/.test(question) ||
+    /(1ere|1re|2e|3e|premiere|deuxieme|troisieme|personne|singulier|pluriel)/.test(question);
+
+  if (asksForMetaGrammar) return true;
+
   const asksForPronoun =
     /(quel|quelle|identify|which|choisis|choose|trouve|find).{0,60}(pronom|subject pronoun)/.test(question) ||
     /(pronom|subject pronoun).{0,60}(sujet|subject)/.test(question);
@@ -671,9 +698,10 @@ function shouldRejectLanguageItem(item: Record<string, unknown>, isConjugationPr
 
 // Handle language/grammar practice: generate, verify by re-solving, filter
 async function handleLanguagePractice(worksheet: Record<string, unknown>, language: string, domainRaw: string): Promise<Response> {
-  const subSkillsList = (worksheet.concept?.sub_skills as Array<{label: string}>)?.map((s) => s.label).join(", ") || "grammar";
   const conceptScope = buildConceptScope(worksheet);
   const isConjugationPractice = isLikelyConjugationPractice(worksheet);
+  const allSubSkills = getLanguageSubSkills(worksheet, isConjugationPractice);
+  const subSkillsList = allSubSkills.join(", ");
 
   // Generate 8 candidate language items
   const genRes = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -774,8 +802,6 @@ async function handleLanguagePractice(worksheet: Record<string, unknown>, langua
   }
 
   const solverAnswerArray = (solverAnswers.answers as Array<{i: number; answer: string}>) || [];
-  const allSubSkills = (worksheet.concept?.sub_skills as Array<{label: string}>)?.map((s) => s.label) || [];
-
   // Match verified items: compare normalized answers
   let verifiedItems: Record<string, unknown>[] = [];
   const referenceCandidates: Record<string, unknown>[] = [];
