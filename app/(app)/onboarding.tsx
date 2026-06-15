@@ -25,17 +25,21 @@ export default function OnboardingScreen() {
     }
   };
 
-  const handleDone = async () => {
-    if (isPreview) {
-      router.back();
-      return;
-    }
-
-    await markSeen();
+  const goToAddChild = () => {
     router.push({
       pathname: "/child-settings/[childId]",
       params: { childId: "new", mode: "add", fromOnboarding: "1" },
     });
+  };
+
+  const handleDone = async () => {
+    if (isPreview) {
+      goToAddChild();
+      return;
+    }
+
+    await markSeen();
+    goToAddChild();
   };
 
   const handleSkip = async () => {
