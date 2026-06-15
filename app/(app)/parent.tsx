@@ -128,6 +128,10 @@ export default function ParentScreen() {
     });
   };
 
+  const handlePreviewOnboarding = () => {
+    router.push("/(app)/onboarding");
+  };
+
   const handleBack = () => {
     router.back();
   };
@@ -192,6 +196,14 @@ export default function ParentScreen() {
       </View>
 
       {error && <Text style={styles.error}>{error}</Text>}
+
+      {/* TEMP preview - remove in Phase 2. */}
+      <TouchableOpacity
+        style={styles.previewOnboardingButton}
+        onPress={handlePreviewOnboarding}
+      >
+        <Text style={styles.previewOnboardingButtonText}>Preview onboarding</Text>
+      </TouchableOpacity>
 
       {children.length === 0 ? (
         <View style={styles.emptyContainer}>
@@ -439,6 +451,23 @@ const styles = StyleSheet.create({
     marginVertical: 8,
     textAlign: "center",
     fontSize: 13,
+  },
+  previewOnboardingButton: {
+    marginHorizontal: 16,
+    marginTop: 12,
+    marginBottom: 4,
+    paddingVertical: 11,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#2196f3",
+    backgroundColor: "#e3f2fd",
+    alignItems: "center",
+  },
+  previewOnboardingButtonText: {
+    color: "#2196f3",
+    fontSize: 14,
+    fontWeight: "700",
   },
   modalOverlay: {
     flex: 1,
