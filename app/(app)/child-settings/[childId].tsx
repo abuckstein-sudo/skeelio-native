@@ -6,7 +6,7 @@ import ChildSettingsForm from "@/lib/components/ChildSettingsForm";
 export default function ChildSettingsScreen() {
   const router = useRouter();
   const { session } = useAuth();
-  const { childId, mode } = useLocalSearchParams<{ childId?: string; mode?: string }>();
+  const { childId, mode, fromOnboarding } = useLocalSearchParams<{ childId?: string; mode?: string; fromOnboarding?: string }>();
 
   const isAddMode = mode === "add";
 
@@ -16,7 +16,15 @@ export default function ChildSettingsScreen() {
         childId={childId}
         isAddMode={isAddMode}
         userId={session?.user?.id}
-        onSaved={() => {
+        onSaved={(result) => {
+          if (mode === "add" && fromOnboarding === "1" && result?.childId) {
+            router.push({
+              pathname: "/(app)/assign-intro",
+              params: { childId: result.childId, childName: result.childName || "" },
+            });
+            return;
+          }
+
           router.push("/children");
         }}
         onDeleted={() => {

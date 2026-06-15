@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, FlatList, SafeAreaView, Modal, Alert } from "react-native";
 import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
 import { supabase } from "@/lib/supabase";
@@ -66,6 +66,7 @@ export default function ChildHomeScreen() {
   const [pendingEpisodes, setPendingEpisodes] = useState<any[]>([]);
   const [settingsModalVisible, setSettingsModalVisible] = useState(false);
   const [settingsTab, setSettingsTab] = useState<"avatar" | "background">("avatar");
+  const skipNextFocusFeedRefreshRef = useRef(false);
 
   const fetchStars = useCallback(async () => {
     if (!childId) return;
@@ -118,19 +119,31 @@ export default function ChildHomeScreen() {
     }
   }, [childId]);
 
+  const refreshHomeworkFeed = useCallback(async () => {
+    await Promise.all([
+      fetchPendingAssignments(),
+      fetchPendingEpisodes(),
+    ]);
+  }, [fetchPendingAssignments, fetchPendingEpisodes]);
+
   useEffect(() => {
     if (childId) {
+      skipNextFocusFeedRefreshRef.current = true;
       fetchChild();
+      refreshHomeworkFeed();
     }
-  }, [childId]);
+  }, [childId, refreshHomeworkFeed]);
 
   // Re-fetch stars, assignments, and episodes when screen gains focus
   useFocusEffect(
     useCallback(() => {
       fetchStars();
-      fetchPendingAssignments();
-      fetchPendingEpisodes();
-    }, [fetchStars, fetchPendingAssignments, fetchPendingEpisodes])
+      if (skipNextFocusFeedRefreshRef.current) {
+        skipNextFocusFeedRefreshRef.current = false;
+        return;
+      }
+      refreshHomeworkFeed();
+    }, [fetchStars, refreshHomeworkFeed])
   );
 
   const fetchChild = async () => {

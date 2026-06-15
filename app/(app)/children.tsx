@@ -10,7 +10,9 @@ import {
   Modal,
   TextInput,
   Alert,
+  useWindowDimensions,
 } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter } from "expo-router";
 import { supabase } from "@/lib/supabase";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -46,6 +48,7 @@ const formatGrade = (child: Child): string => {
 
 export default function ChildrenScreen() {
   const router = useRouter();
+  const { width } = useWindowDimensions();
   const [children, setChildren] = useState<Child[]>([]);
   const [childrenStars, setChildrenStars] = useState<Record<string, number>>({});
   const [isLoading, setIsLoading] = useState(true);
@@ -55,10 +58,32 @@ export default function ChildrenScreen() {
   const [enteredPin, setEnteredPin] = useState("");
   const [pinError, setPinError] = useState("");
   const pinInputRef = useRef<TextInput>(null);
+  const childTileWidth = Math.max(140, (width - 64) / 2);
 
   useEffect(() => {
     fetchChildren();
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const checkOnboarding = async () => {
+      const { data } = await supabase.auth.getUser();
+      const userId = data.user?.id;
+      if (!userId || cancelled) return;
+
+      const seen = await AsyncStorage.getItem(`skeelio:onboardingSeen:${userId}`);
+      if (!seen && !cancelled) {
+        router.replace("/(app)/onboarding");
+      }
+    };
+
+    checkOnboarding();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [router]);
 
   useEffect(() => {
     if (pinModalVisible) {
@@ -188,7 +213,7 @@ export default function ChildrenScreen() {
               onPress={() =>
                 router.push({
                   pathname: "/child-settings/[childId]",
-                  params: { mode: "add" },
+                  params: { childId: "new", mode: "add" },
                 })
               }
             >
@@ -201,7 +226,7 @@ export default function ChildrenScreen() {
             keyExtractor={(item) => item.id}
             renderItem={({ item }) => (
               <TouchableOpacity
-                style={styles.childTile}
+                style={[styles.childTile, { width: childTileWidth }]}
                 onPress={() => handleSelectChild(item)}
               >
                 {item.selected_avatar && (
@@ -209,7 +234,9 @@ export default function ChildrenScreen() {
                     {AVATAR_EMOJI[item.selected_avatar] || AVATAR_EMOJI.fox}
                   </Text>
                 )}
-                <Text style={styles.childName}>{item.name}</Text>
+                <Text style={styles.childName} numberOfLines={1} ellipsizeMode="tail">
+                  {item.name}
+                </Text>
                 {formatGrade(item) && (
                   <Text style={styles.childGrade}>{formatGrade(item)}</Text>
                 )}
@@ -316,14 +343,13 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   childTile: {
-    flex: 1,
     paddingVertical: 20,
     paddingHorizontal: 12,
     borderRadius: 12,
     backgroundColor: "#fefdfb",
     alignItems: "center",
     justifyContent: "center",
-    minHeight: 160,
+    height: 160,
     margin: 6,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
@@ -336,7 +362,9 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   childName: {
+    width: "100%",
     fontSize: 16,
+    lineHeight: 20,
     fontWeight: "600",
     color: "#333",
     textAlign: "center",
@@ -355,6 +383,7 @@ const styles = StyleSheet.create({
   },
   columnWrapper: {
     gap: 0,
+    justifyContent: "flex-start",
   },
   emptyState: {
     alignItems: "center",
