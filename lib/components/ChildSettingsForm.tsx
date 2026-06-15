@@ -106,7 +106,7 @@ interface ChildSettingsFormProps {
   childId?: string;
   isAddMode?: boolean;
   userId?: string;
-  onSaved?: () => void;
+  onSaved?: (result?: { childId: string; childName?: string }) => void;
   onDeleted?: () => void;
   onCancel?: () => void;
 }
@@ -235,6 +235,7 @@ export default function ChildSettingsForm({
     if (age) updateData.age = age;
 
     let error;
+    let savedChild: { childId: string; childName?: string } | undefined;
 
     if (isAddMode) {
       if (!userId) {
@@ -254,6 +255,7 @@ export default function ChildSettingsForm({
       error = insertError;
       if (!error && insertedData && insertedData.length > 0) {
         const newChildId = insertedData[0].id;
+        savedChild = { childId: newChildId, childName: name.trim() };
         console.log("[child-insert] inserted:", updateData);
 
         // Create rewards row for new child
@@ -288,7 +290,7 @@ export default function ChildSettingsForm({
 
     Alert.alert("Success", isAddMode ? "Child added!" : "Settings saved!");
     setIsSaving(false);
-    onSaved?.();
+    onSaved?.(savedChild);
   };
 
   const handleDelete = () => {

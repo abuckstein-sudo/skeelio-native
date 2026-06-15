@@ -124,12 +124,15 @@ export default function ParentScreen() {
     setShowMenu(false);
     router.push({
       pathname: "/child-settings/[childId]",
-      params: { mode: "add" },
+      params: { childId: "new", mode: "add" },
     });
   };
 
   const handlePreviewOnboarding = () => {
-    router.push("/(app)/onboarding");
+    router.push({
+      pathname: "/(app)/onboarding",
+      params: { preview: "1" },
+    });
   };
 
   const handleBack = () => {

@@ -11,6 +11,7 @@ import {
   TextInput,
   Alert,
 } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter } from "expo-router";
 import { supabase } from "@/lib/supabase";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -59,6 +60,27 @@ export default function ChildrenScreen() {
   useEffect(() => {
     fetchChildren();
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const checkOnboarding = async () => {
+      const { data } = await supabase.auth.getUser();
+      const userId = data.user?.id;
+      if (!userId || cancelled) return;
+
+      const seen = await AsyncStorage.getItem(`skeelio:onboardingSeen:${userId}`);
+      if (!seen && !cancelled) {
+        router.replace("/(app)/onboarding");
+      }
+    };
+
+    checkOnboarding();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [router]);
 
   useEffect(() => {
     if (pinModalVisible) {
@@ -188,7 +210,7 @@ export default function ChildrenScreen() {
               onPress={() =>
                 router.push({
                   pathname: "/child-settings/[childId]",
-                  params: { mode: "add" },
+                  params: { childId: "new", mode: "add" },
                 })
               }
             >

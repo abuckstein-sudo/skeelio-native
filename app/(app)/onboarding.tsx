@@ -1,5 +1,7 @@
-import { useRouter } from "expo-router";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import OnboardingCarousel from "@/components/OnboardingCarousel";
+import { supabase } from "@/lib/supabase";
 
 const SLIDES = [
   { id: "welcome", title: "Welcome to Skeelio", body: "Skeelio turns your child's homework into guided practice, and gives you real proof of what they've learned." },
@@ -12,17 +14,45 @@ const SLIDES = [
 
 export default function OnboardingScreen() {
   const router = useRouter();
+  const { preview } = useLocalSearchParams<{ preview?: string }>();
+  const isPreview = preview === "1";
 
-  const goToParent = () => {
-    // Phase 2: wire first-run trigger + add-child -> assign funnel + 'seen' flag here.
-    router.replace("/(app)/parent");
+  const markSeen = async () => {
+    const { data } = await supabase.auth.getUser();
+    const userId = data.user?.id;
+    if (userId) {
+      await AsyncStorage.setItem(`skeelio:onboardingSeen:${userId}`, "1");
+    }
+  };
+
+  const handleDone = async () => {
+    if (isPreview) {
+      router.back();
+      return;
+    }
+
+    await markSeen();
+    router.push({
+      pathname: "/child-settings/[childId]",
+      params: { childId: "new", mode: "add", fromOnboarding: "1" },
+    });
+  };
+
+  const handleSkip = async () => {
+    if (isPreview) {
+      router.back();
+      return;
+    }
+
+    await markSeen();
+    router.replace("/children");
   };
 
   return (
     <OnboardingCarousel
       slides={SLIDES}
-      onDone={goToParent}
-      onSkip={goToParent}
+      onDone={handleDone}
+      onSkip={handleSkip}
     />
   );
 }
