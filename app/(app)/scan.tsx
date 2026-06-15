@@ -17,6 +17,7 @@ import * as ImageManipulator from "expo-image-manipulator";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { supabase } from "@/lib/supabase";
 import { decode } from "base64-arraybuffer";
+import CameraCaptureModal from "@/components/CameraCaptureModal";
 
 interface Child {
   id: string;
@@ -65,6 +66,7 @@ export default function ScanScreen() {
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [jpegBase64, setJpegBase64] = useState<string | null>(null);
   const [base64Raw, setBase64Raw] = useState<string | null>(null);
+  const [cameraVisible, setCameraVisible] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>("");
 
@@ -170,25 +172,6 @@ export default function ScanScreen() {
       return;
     }
     router.back();
-  };
-
-  const takePhoto = async () => {
-    try {
-      setError("");
-      const result = await ImagePicker.launchCameraAsync({
-        mediaTypes: ["images"],
-        allowsEditing: false,
-        aspect: [4, 3],
-        quality: 1,
-      });
-
-      if (!result.canceled) {
-        await processImage(result.assets[0].uri);
-      }
-    } catch (err) {
-      console.error("[scan] camera error:", err);
-      setError("Failed to access camera");
-    }
   };
 
   const pickImage = async () => {
@@ -579,7 +562,7 @@ export default function ScanScreen() {
           </View>
         ) : (
           <View style={styles.actionButtons}>
-            <TouchableOpacity style={styles.actionButton} onPress={takePhoto}>
+            <TouchableOpacity style={styles.actionButton} onPress={() => setCameraVisible(true)}>
               <MaterialCommunityIcons name="camera" size={32} color="#fff" />
               <Text style={styles.actionButtonText}>Take Photo</Text>
             </TouchableOpacity>
@@ -590,6 +573,14 @@ export default function ScanScreen() {
           </View>
         )}
       </ScrollView>
+      <CameraCaptureModal
+        visible={cameraVisible}
+        onCaptured={(uri) => {
+          setCameraVisible(false);
+          processImage(uri);
+        }}
+        onClose={() => setCameraVisible(false)}
+      />
     </SafeAreaView>
   );
 }
