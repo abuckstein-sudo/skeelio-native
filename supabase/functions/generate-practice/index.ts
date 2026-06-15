@@ -278,6 +278,15 @@ function regularErForm(verb: string, pronoun: string, tense: "future" | "present
   return `${stem}${endings[pronoun] || "e"}`;
 }
 
+function startsWithVowelSound(word: string): boolean {
+  return /^[aeiouyh]/i.test(word);
+}
+
+function subjectBlankForVerb(pronoun: string, verb: string): string {
+  if (pronoun === "je" && startsWithVowelSound(verb)) return "j'___";
+  return `${pronoun} ___`;
+}
+
 function generateConjugationPractice(
   concept: Record<string, unknown>,
   allSubSkills: string[],
@@ -294,13 +303,14 @@ function generateConjugationPractice(
   for (let i = 0; items.length < maxItems && i < verbs.length * pronouns.length; i++) {
     const verb = verbs[i % verbs.length];
     const pronoun = pronouns[i % pronouns.length];
+    const subjectBlank = subjectBlankForVerb(pronoun, verb);
     const answer = regularErForm(verb, pronoun, tense);
     if (avoidSet.has(normalizeAnswerText(answer))) continue;
 
     const prompt =
       tense === "future"
-        ? `Demain, ${pronoun} ___ . Mets « ${verb} » au futur simple.`
-        : `Aujourd'hui, ${pronoun} ___ . Mets « ${verb} » au présent.`;
+        ? `Demain, ${subjectBlank}. Mets « ${verb} » au futur simple.`
+        : `Aujourd'hui, ${subjectBlank}. Mets « ${verb} » au présent.`;
 
     items.push({
       kind: "reference",
