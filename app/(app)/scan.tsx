@@ -576,7 +576,6 @@ export default function ScanScreen() {
       <CameraCaptureModal
         visible={cameraVisible}
         onCaptured={(uri) => {
-          setCameraVisible(false);
           processImage(uri);
         }}
         onClose={() => setCameraVisible(false)}

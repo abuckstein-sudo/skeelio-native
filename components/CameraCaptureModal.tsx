@@ -34,12 +34,16 @@ export default function CameraCaptureModal({
   const [mode, setMode] = useState<CaptureMode>("camera");
   const [capturedUri, setCapturedUri] = useState<string | null>(null);
   const [isCapturing, setIsCapturing] = useState(false);
+  const [isPicking, setIsPicking] = useState(false);
+  const [captureError, setCaptureError] = useState("");
 
   useEffect(() => {
     if (visible && !wasVisibleRef.current) {
       setMode("camera");
       setCapturedUri(null);
       setIsCapturing(false);
+      setIsPicking(false);
+      setCaptureError("");
     }
     wasVisibleRef.current = visible;
   }, [visible]);
@@ -48,26 +52,41 @@ export default function CameraCaptureModal({
     if (!cameraRef.current || isCapturing) return;
 
     try {
+      setCaptureError("");
       setIsCapturing(true);
       const photo = await cameraRef.current.takePictureAsync({ quality: 1 });
       if (photo?.uri) {
         setCapturedUri(photo.uri);
         setMode("preview");
       }
+    } catch (err) {
+      console.error("[CameraCaptureModal] capture error:", err);
+      setCaptureError("Could not take a photo. Please try again.");
     } finally {
       setIsCapturing(false);
     }
   };
 
   const handlePickFromLibrary = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["images"],
-      quality: 1,
-    });
+    if (isPicking) return;
 
-    if (!result.canceled && result.assets[0]?.uri) {
-      onCaptured(result.assets[0].uri);
-      onClose();
+    try {
+      setCaptureError("");
+      setIsPicking(true);
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images"],
+        quality: 1,
+      });
+
+      if (!result.canceled && result.assets[0]?.uri) {
+        onCaptured(result.assets[0].uri);
+        onClose();
+      }
+    } catch (err) {
+      console.error("[CameraCaptureModal] library picker error:", err);
+      setCaptureError("Could not open the photo library. Please try again.");
+    } finally {
+      setIsPicking(false);
     }
   };
 
@@ -126,7 +145,12 @@ export default function CameraCaptureModal({
           </>
         ) : (
           <>
-            <CameraView ref={cameraRef} style={StyleSheet.absoluteFill} facing="back" />
+            <CameraView
+              ref={cameraRef}
+              style={StyleSheet.absoluteFill}
+              facing="back"
+              active={visible}
+            />
             <TouchableOpacity
               style={[styles.closeButton, { top: insets.top + 8 }]}
               onPress={onClose}
@@ -135,7 +159,12 @@ export default function CameraCaptureModal({
               <MaterialCommunityIcons name="close" size={28} color="#fff" />
             </TouchableOpacity>
             <View style={[styles.cameraBar, { paddingBottom: insets.bottom + 20 }]}>
-              <TouchableOpacity style={styles.libraryButton} onPress={handlePickFromLibrary}>
+              {captureError ? <Text style={styles.captureError}>{captureError}</Text> : null}
+              <TouchableOpacity
+                style={[styles.libraryButton, isPicking && styles.libraryButtonDisabled]}
+                onPress={handlePickFromLibrary}
+                disabled={isPicking}
+              >
                 <MaterialCommunityIcons name="image-outline" size={26} color="#fff" />
                 <Text style={styles.libraryText}>Library</Text>
               </TouchableOpacity>
@@ -229,10 +258,23 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 4,
   },
+  libraryButtonDisabled: {
+    opacity: 0.55,
+  },
   libraryText: {
     color: "#fff",
     fontSize: 12,
     fontWeight: "700",
+  },
+  captureError: {
+    position: "absolute",
+    left: 20,
+    right: 20,
+    top: 12,
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "700",
+    textAlign: "center",
   },
   shutterButton: {
     width: 76,
