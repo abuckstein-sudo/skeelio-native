@@ -234,7 +234,9 @@ export default function ChildrenScreen() {
                     {AVATAR_EMOJI[item.selected_avatar] || AVATAR_EMOJI.fox}
                   </Text>
                 )}
-                <Text style={styles.childName}>{item.name}</Text>
+                <Text style={styles.childName} numberOfLines={1} ellipsizeMode="tail">
+                  {item.name}
+                </Text>
                 {formatGrade(item) && (
                   <Text style={styles.childGrade}>{formatGrade(item)}</Text>
                 )}
@@ -347,7 +349,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#fefdfb",
     alignItems: "center",
     justifyContent: "center",
-    minHeight: 160,
+    height: 160,
     margin: 6,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
@@ -360,7 +362,9 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   childName: {
+    width: "100%",
     fontSize: 16,
+    lineHeight: 20,
     fontWeight: "600",
     color: "#333",
     textAlign: "center",
