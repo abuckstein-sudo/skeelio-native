@@ -12,6 +12,7 @@ Review the `feature/embedded-camera` branch before we reuse the new embedded cam
   - `6a27c81` Configure embedded camera permissions
   - `12b8450` Add reusable embedded camera capture modal
   - `924816f` Wire scan screen to embedded camera modal
+  - `8cda53a` Harden embedded camera modal lifecycle
 
 Master onboarding merge:
 
@@ -28,6 +29,11 @@ Master onboarding merge:
 - Added `expo-camera` with the SDK-matching version selected by `npx expo install`.
 - Updated `app.json` with iOS bundle identifier and camera/photo-library permission strings.
 - Configured camera/picker plugins so camera and photo-library usage descriptions are produced, but microphone usage is not.
+- Applied Claude's hardening follow-up:
+  - `CameraView` now receives `active={visible}` so the camera session is not held active while the modal is closed.
+  - Camera capture and library picker async paths now catch failures and show a retryable inline error.
+  - The library picker path is guarded against duplicate launches.
+  - `scan.tsx` now lets the modal own closing after `onCaptured`; the caller only processes the URI.
 
 ## Verification
 
@@ -55,6 +61,10 @@ Master onboarding merge:
 2. Is the permission configuration correct for a photo-only iOS camera flow with no microphone prompt?
 3. Is the `onCaptured(uri); onClose();` contract clean enough before reusing this modal in first-assignment and child flows?
 4. Any UX or architecture concerns before this component becomes the shared photo-capture surface?
+
+## Post-review note
+
+Claude reviewed the first three camera commits and recommended the hardening items now captured in `8cda53a`. The remaining product decision is whether to make `CameraCaptureModal` the single shared photo surface everywhere, including the library shortcut, before wiring assignment and child-dashboard flows.
 
 ## Please do not review
 
