@@ -11,6 +11,7 @@ import {
   View,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 export interface OnboardingSlide {
   id: string;
@@ -29,6 +30,7 @@ const ICONS = ["school-outline", "camera-outline", "lightbulb-on-outline", "trop
 
 export default function OnboardingCarousel({ slides, onDone, onSkip }: OnboardingCarouselProps) {
   const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const [currentIndex, setCurrentIndex] = useState(0);
   const entrance = useRef(new Animated.Value(0)).current;
 
@@ -66,7 +68,11 @@ export default function OnboardingCarousel({ slides, onDone, onSkip }: Onboardin
     return (
       <View style={[styles.slide, { width }]}>
         {!isLast && (
-          <TouchableOpacity style={styles.skipButton} onPress={onSkip} hitSlop={8}>
+          <TouchableOpacity
+            style={[styles.skipButton, { top: insets.top + 8 }]}
+            onPress={onSkip}
+            hitSlop={8}
+          >
             <Text style={styles.skipText}>Skip</Text>
           </TouchableOpacity>
         )}
@@ -131,7 +137,6 @@ const styles = StyleSheet.create({
   },
   skipButton: {
     position: "absolute",
-    top: 18,
     right: 20,
     zIndex: 1,
     paddingVertical: 8,
