@@ -17,8 +17,8 @@ import { useRouter, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/app/_layout";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import * as ImagePicker from "expo-image-picker";
 import * as ImageManipulator from "expo-image-manipulator";
+import CameraCaptureModal from "@/components/CameraCaptureModal";
 import { Operation } from "@/lib/tutorConfig";
 import {
   listAssignmentsForChild,
@@ -93,6 +93,7 @@ export default function AssignScreen() {
   const [reviewTitle, setReviewTitle] = useState("");
   const [reviewLanguage, setReviewLanguage] = useState<SpellingLanguage>("English");
   const [isExtractingPhoto, setIsExtractingPhoto] = useState(false);
+  const [cameraVisible, setCameraVisible] = useState(false);
 
   const fetchAssignments = useCallback(async () => {
     if (!id) return;
@@ -485,27 +486,9 @@ export default function AssignScreen() {
     );
   };
 
-  const handleCaptureImage = async (useCamera: boolean) => {
+  const processCapturedImage = async (uri: string) => {
     try {
-      let result;
-      if (useCamera) {
-        result = await ImagePicker.launchCameraAsync({
-          mediaTypes: ["images"],
-          quality: 0.5,
-          base64: true,
-        });
-      } else {
-        result = await ImagePicker.launchImageLibraryAsync({
-          mediaTypes: ["images"],
-          quality: 0.5,
-          base64: true,
-        });
-      }
-
-      if (result.canceled) return;
-
-      const asset = result.assets[0];
-      if (!asset.uri) {
+      if (!uri) {
         Alert.alert("Error", "Could not read image");
         return;
       }
@@ -513,7 +496,7 @@ export default function AssignScreen() {
       setIsExtractingPhoto(true);
 
       const manipulated = await ImageManipulator.manipulateAsync(
-        asset.uri,
+        uri,
         [{ resize: { width: 1500 } }],
         { compress: 0.5, format: ImageManipulator.SaveFormat.JPEG, base64: true }
       );
@@ -537,7 +520,7 @@ export default function AssignScreen() {
       setReviewTitle("");
       setShowPhotoReview(true);
     } catch (err) {
-      console.error("[handleCaptureImage] error:", err);
+      console.error("[processCapturedImage] error:", err);
       Alert.alert("Error", "Failed to extract words from image");
     } finally {
       setIsExtractingPhoto(false);
@@ -641,8 +624,7 @@ export default function AssignScreen() {
       "Add a spelling list",
       "Choose how to add a list:",
       [
-        { text: "Take photo", onPress: () => handleCaptureImage(true) },
-        { text: "Upload photo", onPress: () => handleCaptureImage(false) },
+        { text: "Take or upload a photo", onPress: () => setCameraVisible(true) },
         { text: "Manual entry", onPress: () => setShowSpellingForm(true) },
         { text: "Skeelio generates", onPress: () => handleGenerateSpellingList() },
         { text: "Cancel", style: "cancel" },
@@ -1324,6 +1306,12 @@ export default function AssignScreen() {
           </KeyboardAvoidingView>
         </SafeAreaView>
       </Modal>
+
+      <CameraCaptureModal
+        visible={cameraVisible}
+        onCaptured={(uri) => processCapturedImage(uri)}
+        onClose={() => setCameraVisible(false)}
+      />
     </SafeAreaView>
   );
 }

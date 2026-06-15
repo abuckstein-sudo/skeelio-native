@@ -18,9 +18,9 @@ import { useRouter, useFocusEffect } from "expo-router";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/app/_layout";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import * as ImagePicker from "expo-image-picker";
 import * as ImageManipulator from "expo-image-manipulator";
 import ParentProofSection from "./ParentProofSection";
+import CameraCaptureModal from "./CameraCaptureModal";
 import { getOperationStatus, OperationStatus } from "@/lib/tutor/status";
 import { Operation } from "@/lib/tutorConfig";
 import {
@@ -116,6 +116,7 @@ export default function ChildDashboardBody({ childId }: { childId: string }) {
   const [reviewTitle, setReviewTitle] = useState("");
   const [reviewLanguage, setReviewLanguage] = useState<SpellingLanguage>("English");
   const [isExtractingPhoto, setIsExtractingPhoto] = useState(false);
+  const [cameraVisible, setCameraVisible] = useState(false);
   const [spellingExpanded, setSpellingExpanded] = useState(false);
 
   const fetchStars = useCallback(async () => {
@@ -547,38 +548,20 @@ export default function ChildDashboardBody({ childId }: { childId: string }) {
     );
   };
 
-  const handleCaptureImage = async (useCamera: boolean) => {
+  const processCapturedImage = async (uri: string) => {
     try {
-      let result;
-      if (useCamera) {
-        result = await ImagePicker.launchCameraAsync({
-          mediaTypes: ["images"],
-          quality: 0.5,
-          base64: true,
-        });
-      } else {
-        result = await ImagePicker.launchImageLibraryAsync({
-          mediaTypes: ["images"],
-          quality: 0.5,
-          base64: true,
-        });
-      }
-
-      if (result.canceled) return;
-
-      const asset = result.assets[0];
-      if (!asset.uri) {
+      if (!uri) {
         Alert.alert("Error", "Could not read image");
         return;
       }
 
       setIsExtractingPhoto(true);
-      console.log("[handleCaptureImage] converting image to JPEG");
+      console.log("[processCapturedImage] converting image to JPEG");
 
       // Convert to JPEG (handles HEIC on iPhone) and resize/compress
       // OpenAI Vision only accepts: png, jpeg, gif, webp
       const manipulated = await ImageManipulator.manipulateAsync(
-        asset.uri,
+        uri,
         [{ resize: { width: 1500 } }],
         { compress: 0.5, format: ImageManipulator.SaveFormat.JPEG, base64: true }
       );
@@ -589,7 +572,7 @@ export default function ChildDashboardBody({ childId }: { childId: string }) {
         return;
       }
 
-      console.log("[handleCaptureImage] extracting words from JPEG image");
+      console.log("[processCapturedImage] extracting words from JPEG image");
       const { words, language } = await extractWordsFromImage(manipulated.base64, "image/jpeg");
 
       if (words.length === 0) {
@@ -604,7 +587,7 @@ export default function ChildDashboardBody({ childId }: { childId: string }) {
       setReviewTitle(""); // User will enter this
       setShowPhotoReview(true);
     } catch (err) {
-      console.error("[handleCaptureImage] error:", err);
+      console.error("[processCapturedImage] error:", err);
       Alert.alert("Error", "Failed to extract words from image");
     } finally {
       setIsExtractingPhoto(false);
@@ -981,8 +964,7 @@ export default function ChildDashboardBody({ childId }: { childId: string }) {
                       "Add a spelling list",
                       "Choose how to add a list:",
                       [
-                        { text: "Take photo", onPress: () => handleCaptureImage(true) },
-                        { text: "Upload photo", onPress: () => handleCaptureImage(false) },
+                        { text: "Take or upload a photo", onPress: () => setCameraVisible(true) },
                         { text: "Manual entry", onPress: () => setShowSpellingForm(true) },
                         { text: "Skeelio generates", onPress: () => handleGenerateSpellingList() },
                         { text: "Cancel", style: "cancel" },
@@ -1760,6 +1742,12 @@ export default function ChildDashboardBody({ childId }: { childId: string }) {
           </KeyboardAvoidingView>
         </SafeAreaView>
       </Modal>
+
+      <CameraCaptureModal
+        visible={cameraVisible}
+        onCaptured={(uri) => processCapturedImage(uri)}
+        onClose={() => setCameraVisible(false)}
+      />
     </View>
   );
 }
