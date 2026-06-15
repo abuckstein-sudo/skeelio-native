@@ -36,6 +36,7 @@ interface PracticeItem {
   sub_skill: string;
   question: string;
   answer: string | number | boolean;
+  expected_answer?: string;
   verified: boolean;
 }
 
@@ -429,7 +430,7 @@ export default function EpisodeScreen() {
         body: {
           item: {
             question: item.question,
-            correct_answer: formatAnswerDisplay(item.answer, item),
+            correct_answer: formatAnswerDisplay(item),
             sub_skill: item.sub_skill,
             answer_type: item.answer_type,
             domain: episodeData?.domain || "math",
