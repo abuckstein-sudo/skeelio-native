@@ -74,15 +74,13 @@ export default function OnboardingCarousel({ slides, onDone, onSkip }: Onboardin
 
     return (
       <View style={[styles.slide, { width }]}>
-        {!isLast && (
-          <TouchableOpacity
-            style={[styles.skipButton, { top: insets.top + 8 }]}
-            onPress={onSkip}
-            hitSlop={8}
-          >
-            <Text style={styles.skipText}>Skip</Text>
-          </TouchableOpacity>
-        )}
+        <TouchableOpacity
+          style={[styles.skipButton, { top: insets.top + 8 }]}
+          onPress={onSkip}
+          hitSlop={8}
+        >
+          <Text style={styles.skipText}>Skip</Text>
+        </TouchableOpacity>
 
         <Animated.View style={[styles.card, animatedStyle]}>
           <View style={styles.iconCircle}>
