@@ -10,6 +10,7 @@ import {
   Modal,
   TextInput,
   Alert,
+  useWindowDimensions,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter } from "expo-router";
@@ -47,6 +48,7 @@ const formatGrade = (child: Child): string => {
 
 export default function ChildrenScreen() {
   const router = useRouter();
+  const { width } = useWindowDimensions();
   const [children, setChildren] = useState<Child[]>([]);
   const [childrenStars, setChildrenStars] = useState<Record<string, number>>({});
   const [isLoading, setIsLoading] = useState(true);
@@ -56,6 +58,7 @@ export default function ChildrenScreen() {
   const [enteredPin, setEnteredPin] = useState("");
   const [pinError, setPinError] = useState("");
   const pinInputRef = useRef<TextInput>(null);
+  const childTileWidth = Math.max(140, (width - 64) / 2);
 
   useEffect(() => {
     fetchChildren();
@@ -223,7 +226,7 @@ export default function ChildrenScreen() {
             keyExtractor={(item) => item.id}
             renderItem={({ item }) => (
               <TouchableOpacity
-                style={styles.childTile}
+                style={[styles.childTile, { width: childTileWidth }]}
                 onPress={() => handleSelectChild(item)}
               >
                 {item.selected_avatar && (
@@ -338,7 +341,6 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   childTile: {
-    flex: 1,
     paddingVertical: 20,
     paddingHorizontal: 12,
     borderRadius: 12,
@@ -377,6 +379,7 @@ const styles = StyleSheet.create({
   },
   columnWrapper: {
     gap: 0,
+    justifyContent: "flex-start",
   },
   emptyState: {
     alignItems: "center",
