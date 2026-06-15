@@ -13,6 +13,7 @@ Review the `feature/embedded-camera` branch before we reuse the new embedded cam
   - `12b8450` Add reusable embedded camera capture modal
   - `924816f` Wire scan screen to embedded camera modal
   - `8cda53a` Harden embedded camera modal lifecycle
+  - `49f6293` Gate embedded camera shutter until ready
 
 Master onboarding merge:
 
@@ -34,6 +35,7 @@ Master onboarding merge:
   - Camera capture and library picker async paths now catch failures and show a retryable inline error.
   - The library picker path is guarded against duplicate launches.
   - `scan.tsx` now lets the modal own closing after `onCaptured`; the caller only processes the URI.
+  - The shutter is disabled until `CameraView` reports `onCameraReady`.
 
 ## Verification
 
@@ -64,7 +66,7 @@ Master onboarding merge:
 
 ## Post-review note
 
-Claude reviewed the first three camera commits and recommended the hardening items now captured in `8cda53a`. The remaining product decision is whether to make `CameraCaptureModal` the single shared photo surface everywhere, including the library shortcut, before wiring assignment and child-dashboard flows.
+Claude reviewed the first three camera commits and recommended the hardening items now captured in `8cda53a` and `49f6293`. The remaining product decision is whether to make `CameraCaptureModal` the single shared photo surface everywhere, including the library shortcut, before wiring assignment and child-dashboard flows.
 
 ## Please do not review
 
