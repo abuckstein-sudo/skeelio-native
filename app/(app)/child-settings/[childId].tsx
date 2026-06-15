@@ -19,7 +19,7 @@ export default function ChildSettingsScreen() {
         onSaved={(result) => {
           if (mode === "add" && fromOnboarding === "1" && result?.childId) {
             router.push({
-              pathname: "/(app)/assign-intro" as any,
+              pathname: "/(app)/assign-intro",
               params: { childId: result.childId, childName: result.childName || "" },
             });
             return;
