@@ -730,15 +730,6 @@ export default function EpisodeScreen() {
           </View>
         )}
 
-        {/* Debug header */}
-        {episodeData && (
-          <View style={styles.debugBanner}>
-            <Text style={styles.debugBannerText}>
-              {episodeData.concept.label} · {episodeData.domain}
-            </Text>
-          </View>
-        )}
-
         <ScrollView style={styles.content} contentContainerStyle={styles.contentInner} keyboardShouldPersistTaps="handled">
           {/* LESSON PHASE */}
           {phase === "lesson" && (
@@ -1230,17 +1221,5 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#333",
     lineHeight: 20,
-  },
-  debugBanner: {
-    backgroundColor: "#e8eaf6",
-    borderBottomWidth: 1,
-    borderBottomColor: "#c5cae9",
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-  },
-  debugBannerText: {
-    fontSize: 11,
-    color: "#3f51b5",
-    fontWeight: "500",
   },
 });
