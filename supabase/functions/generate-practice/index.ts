@@ -208,6 +208,119 @@ function affordabilityAnswer(question: string): boolean | null {
   return total <= budget + 1e-9;
 }
 
+function normalizePlainText(text: string): string {
+  return String(text ?? "")
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase();
+}
+
+function conceptScopeText(concept: Record<string, unknown>, allSubSkills: string[]): string {
+  const subSkillText = allSubSkills.join(" ");
+  const descriptions = ((concept.sub_skills as Array<{ description?: string }>) || [])
+    .map((s) => s.description || "")
+    .join(" ");
+  return normalizePlainText(`${String(concept.label ?? "")} ${String(concept.description ?? "")} ${subSkillText} ${descriptions}`);
+}
+
+function isLikelyConjugationPractice(concept: Record<string, unknown>, allSubSkills: string[]): boolean {
+  const scope = conceptScopeText(concept, allSubSkills);
+  return (
+    scope.includes("conjug") ||
+    scope.includes("verbe") ||
+    scope.includes("verb") ||
+    scope.includes("futur") ||
+    scope.includes("present") ||
+    scope.includes("tense")
+  );
+}
+
+function conjugationSubSkill(concept: Record<string, unknown>, allSubSkills: string[]): string {
+  const scope = conceptScopeText(concept, allSubSkills);
+  if (scope.includes("futur")) return "Conjuguer au futur simple";
+  if (scope.includes("imparfait")) return "Conjuguer a l'imparfait";
+  if (scope.includes("passe compose")) return "Conjuguer au passe compose";
+  if (scope.includes("present")) return "Conjuguer au present";
+  return "Conjuguer le verbe";
+}
+
+function conjugationTense(concept: Record<string, unknown>, allSubSkills: string[]): "future" | "present" {
+  const scope = conceptScopeText(concept, allSubSkills);
+  return scope.includes("futur") ? "future" : "present";
+}
+
+function regularErForm(verb: string, pronoun: string, tense: "future" | "present"): string {
+  const stem = verb.endsWith("er") ? verb.slice(0, -2) : verb;
+  if (tense === "future") {
+    const endings: Record<string, string> = {
+      "je": "ai",
+      "tu": "as",
+      "il": "a",
+      "elle": "a",
+      "nous": "ons",
+      "vous": "ez",
+      "ils": "ont",
+      "elles": "ont",
+    };
+    return `${verb}${endings[pronoun] || "a"}`;
+  }
+
+  const endings: Record<string, string> = {
+    "je": "e",
+    "tu": "es",
+    "il": "e",
+    "elle": "e",
+    "nous": "ons",
+    "vous": "ez",
+    "ils": "ent",
+    "elles": "ent",
+  };
+  return `${stem}${endings[pronoun] || "e"}`;
+}
+
+function generateConjugationPractice(
+  concept: Record<string, unknown>,
+  allSubSkills: string[],
+  maxItems: number,
+  avoid: string[] = []
+): Response {
+  const tense = conjugationTense(concept, allSubSkills);
+  const subSkill = conjugationSubSkill(concept, allSubSkills);
+  const avoidSet = new Set(avoid.map((w) => normalizeAnswerText(w)));
+  const verbs = ["aimer", "marcher", "regarder", "jouer", "chanter", "dessiner", "parler", "danser", "trouver", "porter"];
+  const pronouns = ["je", "tu", "il", "elle", "nous", "vous", "ils", "elles"];
+  const items: Record<string, unknown>[] = [];
+
+  for (let i = 0; items.length < maxItems && i < verbs.length * pronouns.length; i++) {
+    const verb = verbs[i % verbs.length];
+    const pronoun = pronouns[i % pronouns.length];
+    const answer = regularErForm(verb, pronoun, tense);
+    if (avoidSet.has(normalizeAnswerText(answer))) continue;
+
+    const prompt =
+      tense === "future"
+        ? `Demain, ${pronoun} ___ . Mets « ${verb} » au futur simple.`
+        : `Aujourd'hui, ${pronoun} ___ . Mets « ${verb} » au présent.`;
+
+    items.push({
+      kind: "reference",
+      sub_skill: subSkill,
+      question: prompt,
+      answer,
+      verified: true,
+    });
+  }
+
+  return json({
+    practice: items,
+    debug: {
+      generated: items.length,
+      kept: items.length,
+      deterministic: "regular_er_conjugation",
+    },
+  }, 200);
+}
+
 // Check which sub-skills have zero verified items
 function getMissingSubSkills(allSubSkills: string[], verifiedItems: Record<string, unknown>[]): string[] {
   const coveredSubSkills = new Set(verifiedItems.map((item) => item.sub_skill as string));
@@ -286,6 +399,9 @@ Deno.serve(async (req) => {
     if (domain === "math") {
       return await generateMathPractice(concept, language, allSubSkills, count);
     } else if (domain === "language" && (isFrench(language) || isEnglish(language))) {
+      if (isLikelyConjugationPractice(concept, allSubSkills)) {
+        return generateConjugationPractice(concept, allSubSkills, count, avoid);
+      }
       return await generateLanguagePractice(concept, language, allSubSkills, count, avoid);
     } else {
       return json({ practice: [], debug: { generated: 0, kept: 0, error: "unsupported_domain_language" } }, 200);
