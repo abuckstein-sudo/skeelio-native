@@ -9,7 +9,8 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.skeelio.app"
     },
     "android": {
       "adaptiveIcon": {
@@ -38,6 +39,21 @@
           "dark": {
             "backgroundColor": "#000000"
           }
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Skeelio uses the camera to capture photos of worksheets so it can build practice from them.",
+          "microphonePermission": false,
+          "recordAudioAndroid": false
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Skeelio accesses your photo library so you can choose a worksheet image to turn into practice.",
+          "microphonePermission": false
         }
       ],
       "expo-audio",
