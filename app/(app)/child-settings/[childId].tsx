@@ -22,6 +22,9 @@ export default function ChildSettingsScreen() {
         onDeleted={() => {
           router.push("/children");
         }}
+        onCancel={() => {
+          router.back();
+        }}
       />
     </SafeAreaView>
   );

@@ -1,252 +1,596 @@
-import { useState } from "react";
-import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, ScrollView, Alert } from "react-native";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useState, useEffect } from "react";
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  SafeAreaView,
+  ActivityIndicator,
+  Image,
+  Alert,
+  ScrollView,
+  FlatList,
+} from "react-native";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
+import * as ImageManipulator from "expo-image-manipulator";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { supabase } from "@/lib/supabase";
+import { decode } from "base64-arraybuffer";
 
-interface ExtractResult {
-  subject: string;
-  method_name: string;
-  method_description: string;
-  example_observed: string;
-  confidence: number;
+interface Child {
+  id: string;
+  name: string;
+  selected_avatar?: string;
 }
+
+interface PracticeItem {
+  question: string;
+  correct_answer?: string;
+  expected_answer?: string;
+  answer?: string;
+  kind?: string;
+}
+
+interface WorksheetData {
+  concept: { label: string; description?: string };
+  lesson: string;
+  language: string;
+  domain: string;
+  grade_band?: string;
+  practice: PracticeItem[];
+}
+
+const AVATAR_EMOJI: Record<string, string> = {
+  cat: "🐱",
+  owl: "🦉",
+  fox: "🦊",
+  bear: "🐻",
+  rabbit: "🐰",
+  panda: "🐼",
+};
 
 export default function ScanScreen() {
   const router = useRouter();
-  const { childId } = useLocalSearchParams<{ childId: string }>();
-  const [isLoading, setIsLoading] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [result, setResult] = useState<ExtractResult | null>(null);
-  const [error, setError] = useState("");
-  const [saveSuccess, setSaveSuccess] = useState(false);
+  const params = useLocalSearchParams();
+  const routeChildId = (params.childId as string) || null;
 
-  const handlePickImage = async (fromCamera: boolean) => {
-    setError("");
-    setResult(null);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [childId, setChildId] = useState<string | null>(routeChildId);
+  const [childName, setChildName] = useState<string>("");
+  const [children, setChildren] = useState<Child[]>([]);
+  const [showChildPicker, setShowChildPicker] = useState(!routeChildId);
+  const [loadingChildren, setLoadingChildren] = useState(false);
 
+  const [imageUri, setImageUri] = useState<string | null>(null);
+  const [jpegBase64, setJpegBase64] = useState<string | null>(null);
+  const [base64Raw, setBase64Raw] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string>("");
+
+  const [showReview, setShowReview] = useState(false);
+  const [reviewData, setReviewData] = useState<WorksheetData | null>(null);
+  const [assigning, setAssigning] = useState(false);
+
+  const [showConfirmation, setShowConfirmation] = useState(false);
+  const [confirmationData, setConfirmationData] = useState<{ conceptLabel: string; childName: string } | null>(null);
+
+  // Initialize auth and fetch children if needed
+  useEffect(() => {
+    const init = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user?.id) {
+          setError("Not authenticated");
+          return;
+        }
+        setUserId(user.id);
+
+        if (!routeChildId) {
+          await fetchChildren(user.id);
+        } else {
+          // Fetch child name for this childId
+          await fetchChildName(routeChildId);
+        }
+      } catch (err) {
+        console.error("[scan] init error:", err);
+        setError("Failed to initialize");
+      }
+    };
+
+    init();
+  }, [routeChildId]);
+
+  const fetchChildren = async (uid: string) => {
     try {
-      let imageResult;
+      setLoadingChildren(true);
+      const { data, error: dbError } = await supabase
+        .from("children")
+        .select("id, name, selected_avatar")
+        .eq("parent_id", uid);
 
-      if (fromCamera) {
-        imageResult = await ImagePicker.launchCameraAsync({
-          base64: true,
-          quality: 0.6,
-        });
+      if (dbError) {
+        console.error("[scan] children fetch error:", dbError);
+        setChildren([]);
       } else {
-        imageResult = await ImagePicker.launchImageLibraryAsync({
-          base64: true,
-          quality: 0.6,
-        });
+        setChildren((data || []) as Child[]);
+        setShowChildPicker(true);
       }
-
-      if (imageResult.canceled) {
-        return;
-      }
-
-      const asset = imageResult.assets[0];
-      const imageBase64 = asset.base64;
-      const mimeType = asset.mimeType ?? "image/jpeg";
-
-      if (!imageBase64) {
-        setError("Couldn't read the image — try another photo");
-        return;
-      }
-
-      setIsLoading(true);
-
-      const { data, error: invokeError } = await supabase.functions.invoke("extract-method", {
-        body: { imageBase64, mimeType },
-      });
-
-      console.log("[scan] error:", invokeError, "data:", data);
-
-      if (invokeError) {
-        setError("Couldn't read that worksheet — try another photo");
-        console.error("[scan] invoke error:", invokeError);
-        return;
-      }
-
-      setResult(data as ExtractResult);
+    } catch (err) {
+      console.error("[scan] children fetch error:", err);
+      setChildren([]);
     } finally {
-      setIsLoading(false);
+      setLoadingChildren(false);
     }
   };
 
-  const handleScanAgain = () => {
-    setResult(null);
-    setError("");
-    setSaveSuccess(false);
+  const fetchChildName = async (cid: string) => {
+    try {
+      const { data, error: dbError } = await supabase
+        .from("children")
+        .select("name")
+        .eq("id", cid)
+        .single();
+
+      if (!dbError && data?.name) {
+        setChildName(data.name);
+      }
+    } catch {
+      // Ignore error, use default
+    }
   };
 
-  const handleSave = async () => {
-    if (!result || !childId) return;
-
-    setIsSaving(true);
-    setSaveSuccess(false);
-
-    try {
-      const { data: existing, error: selectError } = await supabase
-        .from("child_teaching_methods")
-        .select("id")
-        .eq("child_id", childId)
-        .eq("subject", result.subject)
-        .maybeSingle();
-
-      if (selectError && selectError.code !== "PGRST116") {
-        console.error("[scan] select error:", selectError);
-        Alert.alert("Error", "Couldn't check for existing method");
-        return;
-      }
-
-      if (existing) {
-        const { error: updateError } = await supabase
-          .from("child_teaching_methods")
-          .update({
-            method_name: result.method_name,
-            method_description: result.method_description,
-            example_observed: result.example_observed,
-            confidence: result.confidence,
-            source: "vision",
-            confirmed: true,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", existing.id);
-
-        if (updateError) {
-          console.error("[scan] update error:", updateError);
-          Alert.alert("Error", "Couldn't save the method");
-          return;
-        }
-
-        console.log("[scan] method updated for id:", existing.id);
-      } else {
-        const { error: insertError } = await supabase
-          .from("child_teaching_methods")
-          .insert({
-            child_id: childId,
-            subject: result.subject,
-            method_name: result.method_name,
-            method_description: result.method_description,
-            example_observed: result.example_observed,
-            confidence: result.confidence,
-            source: "vision",
-            confirmed: true,
-          });
-
-        if (insertError) {
-          console.error("[scan] insert error:", insertError);
-          Alert.alert("Error", "Couldn't save the method");
-          return;
-        }
-
-        console.log("[scan] method inserted for child:", childId, "subject:", result.subject);
-      }
-
-      setSaveSuccess(true);
-    } finally {
-      setIsSaving(false);
-    }
+  const handleSelectChild = (child: Child) => {
+    setChildId(child.id);
+    setChildName(child.name);
+    setShowChildPicker(false);
+    setImageUri(null);
+    setJpegBase64(null);
+    setBase64Raw(null);
+    setError("");
   };
 
   const handleBack = () => {
+    if (showConfirmation) {
+      setShowConfirmation(false);
+      setConfirmationData(null);
+      setImageUri(null);
+      setJpegBase64(null);
+      setBase64Raw(null);
+      setReviewData(null);
+      setShowReview(false);
+      return;
+    }
+    if (showReview) {
+      setShowReview(false);
+      setReviewData(null);
+      setImageUri(null);
+      setJpegBase64(null);
+      setBase64Raw(null);
+      return;
+    }
     router.back();
   };
 
-  return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Scan a Worksheet</Text>
-      </View>
+  const takePhoto = async () => {
+    try {
+      setError("");
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ["images"],
+        allowsEditing: false,
+        aspect: [4, 3],
+        quality: 1,
+      });
 
-      {isLoading && (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#0000ff" />
-          <Text style={styles.loadingText}>Reading the worksheet…</Text>
+      if (!result.canceled) {
+        await processImage(result.assets[0].uri);
+      }
+    } catch (err) {
+      console.error("[scan] camera error:", err);
+      setError("Failed to access camera");
+    }
+  };
+
+  const pickImage = async () => {
+    try {
+      setError("");
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images"],
+        allowsEditing: false,
+        aspect: [4, 3],
+        quality: 1,
+      });
+
+      if (!result.canceled) {
+        await processImage(result.assets[0].uri);
+      }
+    } catch (err) {
+      console.error("[scan] image picker error:", err);
+      setError("Failed to access photo library");
+    }
+  };
+
+  const processImage = async (uri: string) => {
+    try {
+      setLoading(true);
+      setImageUri(uri);
+      setError("");
+
+      const manipulated = await ImageManipulator.manipulateAsync(
+        uri,
+        [{ resize: { width: 1500 } }],
+        { compress: 0.5, format: ImageManipulator.SaveFormat.JPEG, base64: true }
+      );
+
+      if (!manipulated.base64) {
+        throw new Error("Failed to convert image to base64");
+      }
+
+      const dataUrl = "data:image/jpeg;base64," + manipulated.base64;
+      setJpegBase64(dataUrl);
+      setBase64Raw(manipulated.base64);
+
+      // Call absorb-worksheet
+      await callAbsorbWorksheet(dataUrl, manipulated.base64);
+    } catch (err) {
+      console.error("[scan] process image error:", err);
+      setError("Failed to process image");
+      setLoading(false);
+    }
+  };
+
+  const callAbsorbWorksheet = async (dataUrl: string, raw: string) => {
+    try {
+      const { data, error: invokeError } = await supabase.functions.invoke(
+        "absorb-worksheet",
+        { body: { image: dataUrl } }
+      );
+
+      console.log("[scan absorb]", JSON.stringify({ err: invokeError?.message ?? null, keys: data ? Object.keys(data) : null }));
+
+      if (invokeError) {
+        console.error("[scan] absorb error:", invokeError);
+        setError("Failed to analyze worksheet");
+        setLoading(false);
+        return;
+      }
+
+      const result = data as WorksheetData;
+
+      // Validate required fields
+      if (!result?.concept?.label || !result?.domain || !result?.language) {
+        throw new Error("Missing required worksheet data");
+      }
+
+      // Show review screen instead of immediately assigning
+      setReviewData(result);
+      setShowReview(true);
+      setLoading(false);
+    } catch (err) {
+      console.error("[scan] absorb error:", err);
+      setError("Failed to analyze worksheet");
+      setLoading(false);
+    }
+  };
+
+  const handleAssign = async () => {
+    try {
+      if (!reviewData || !childId || !userId || !base64Raw) {
+        throw new Error("Missing required data for assignment");
+      }
+
+      setAssigning(true);
+
+      // Normalize domain
+      const rawDomain = reviewData.domain || "";
+      const domainNorm = /math/i.test(rawDomain) ? "math" : "language";
+
+      // Default missing fields
+      const grade_band = reviewData.grade_band || "";
+      const lesson = reviewData.lesson || "";
+
+      // Upload photo to storage
+      let image_path = null;
+      let upErr = null;
+      try {
+        const path = `${userId}/${childId}/${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`;
+        const { error: uploadErr } = await supabase.storage
+          .from("worksheets")
+          .upload(path, decode(base64Raw), { contentType: "image/jpeg", upsert: false });
+        upErr = uploadErr;
+        if (!uploadErr) {
+          image_path = path;
+        }
+      } catch (e) {
+        upErr = e;
+      }
+
+      console.log("[scan precheck]", JSON.stringify({
+        userId: !!userId,
+        childId,
+        hasImage: !!base64Raw,
+        concept: reviewData.concept?.label ?? null,
+        domain: domainNorm,
+        language: reviewData.language ?? null,
+        grade_band: grade_band,
+      }));
+
+      // Create episode row with status 'pending'
+      const { data: ep, error: epErr } = await supabase
+        .from("tutor_episodes")
+        .insert({
+          parent_id: userId,
+          child_id: childId,
+          source: "photo",
+          image_path,
+          domain: domainNorm,
+          language: reviewData.language,
+          grade_band: grade_band,
+          concept: reviewData.concept,
+          lesson: lesson,
+          status: "pending",
+        })
+        .select("id")
+        .single();
+
+      console.log("[episode created]", {
+        id: ep?.id,
+        image_path,
+        epErr: epErr?.message,
+        upErr: typeof upErr !== "undefined" ? (upErr as any)?.message : null,
+        status: "pending",
+      });
+
+      if (epErr || !ep?.id) {
+        throw new Error("Failed to create episode");
+      }
+
+      // Show confirmation screen
+      setConfirmationData({
+        conceptLabel: reviewData.concept.label,
+        childName: childName,
+      });
+      setShowConfirmation(true);
+      setShowReview(false);
+      setReviewData(null);
+      setBase64Raw(null);
+      setJpegBase64(null);
+      setImageUri(null);
+      setAssigning(false);
+    } catch (err) {
+      console.error("[scan] assignment error:", err);
+      setError("Failed to assign episode: " + String(err));
+      setAssigning(false);
+    }
+  };
+
+  // Child picker modal
+  if (showChildPicker && !childId) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={handleBack}>
+            <MaterialCommunityIcons name="arrow-left" size={24} color="#333" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Select Child</Text>
+          <View style={{ width: 24 }} />
         </View>
-      )}
 
-      {error && !isLoading && (
-        <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>{error}</Text>
+        {loadingChildren ? (
+          <View style={styles.centerContainer}>
+            <ActivityIndicator size="large" color="#2196f3" />
+          </View>
+        ) : children.length === 0 ? (
+          <View style={styles.centerContainer}>
+            <Text style={styles.emptyText}>No children found</Text>
+            <TouchableOpacity style={styles.button} onPress={handleBack}>
+              <Text style={styles.buttonText}>Back</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <FlatList
+            data={children}
+            keyExtractor={(item) => item.id}
+            renderItem={({ item }) => (
+              <TouchableOpacity
+                style={styles.childRow}
+                onPress={() => handleSelectChild(item)}
+              >
+                {item.selected_avatar && (
+                  <Text style={styles.avatarEmoji}>
+                    {AVATAR_EMOJI[item.selected_avatar] || AVATAR_EMOJI.fox}
+                  </Text>
+                )}
+                <Text style={styles.childName}>{item.name}</Text>
+              </TouchableOpacity>
+            )}
+            contentContainerStyle={styles.listContent}
+          />
+        )}
+      </SafeAreaView>
+    );
+  }
+
+  // Review screen
+  if (showReview && reviewData) {
+    const practiceItems = (reviewData.practice || []).slice(0, 3);
+
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={handleBack}>
+            <MaterialCommunityIcons name="arrow-left" size={24} color="#333" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Review Worksheet</Text>
+          <View style={{ width: 24 }} />
         </View>
-      )}
 
-      {result && !isLoading && (
-        <>
-          <View style={styles.resultContainer}>
-            <Text style={styles.resultLabel}>Subject</Text>
-            <Text style={styles.resultValue}>{result.subject}</Text>
+        {error && (
+          <View style={styles.errorBanner}>
+            <Text style={styles.errorText}>{error}</Text>
+            <TouchableOpacity onPress={() => setError("")}>
+              <MaterialCommunityIcons name="close" size={20} color="#d32f2f" />
+            </TouchableOpacity>
+          </View>
+        )}
 
-            <Text style={styles.resultLabel}>Method</Text>
-            <Text style={styles.resultValue}>{result.method_name}</Text>
+        <ScrollView contentContainerStyle={styles.reviewContent}>
+          {/* Worksheet thumbnail */}
+          {imageUri && (
+            <View style={styles.reviewThumbnailContainer}>
+              <Image source={{ uri: imageUri }} style={styles.reviewThumbnail} />
+            </View>
+          )}
 
-            <Text style={styles.resultLabel}>Description</Text>
-            <Text style={styles.resultText}>{result.method_description}</Text>
-
-            <Text style={styles.resultLabel}>Example Observed</Text>
-            <Text style={styles.resultText}>{result.example_observed}</Text>
-
-            <Text style={styles.resultLabel}>Confidence</Text>
-            <Text style={styles.resultValue}>{(result.confidence * 100).toFixed(0)}%</Text>
+          {/* Ce que Skeelio va travailler */}
+          <View style={styles.reviewSection}>
+            <Text style={styles.reviewSectionTitle}>Ce que Skeelio va travailler</Text>
+            <Text style={styles.reviewConceptLabel}>{reviewData.concept.label}</Text>
+            {reviewData.concept.description && (
+              <Text style={styles.reviewDescription}>{reviewData.concept.description}</Text>
+            )}
           </View>
 
-          {saveSuccess && (
-            <View style={styles.successContainer}>
-              <Text style={styles.successText}>✓ Method saved!</Text>
+          {/* La leçon */}
+          <View style={styles.reviewSection}>
+            <Text style={styles.reviewSectionTitle}>La leçon</Text>
+            <Text style={styles.reviewLessonText}>{reviewData.lesson || "(No lesson text)"}</Text>
+          </View>
+
+          {/* Exemples de questions */}
+          {practiceItems.length > 0 && (
+            <View style={styles.reviewSection}>
+              <Text style={styles.reviewSectionTitle}>Exemples de questions</Text>
+              {practiceItems.map((item, idx) => {
+                const answer = item.expected_answer || item.correct_answer || item.answer || "(No answer)";
+                return (
+                  <View key={idx} style={styles.reviewQuestionCard}>
+                    <Text style={styles.reviewQuestion}>{item.question}</Text>
+                    <View style={styles.reviewAnswerBox}>
+                      <Text style={styles.reviewAnswerLabel}>Réponse attendue:</Text>
+                      <Text style={styles.reviewAnswer}>{answer}</Text>
+                    </View>
+                  </View>
+                );
+              })}
             </View>
           )}
+        </ScrollView>
 
-          {!saveSuccess && (
-            <View style={styles.actionButtonContainer}>
-              <TouchableOpacity
-                style={[styles.button, styles.primaryButton]}
-                onPress={handleSave}
-                disabled={isSaving}
-              >
-                {isSaving ? (
-                  <ActivityIndicator size="small" color="#fff" />
-                ) : (
-                  <Text style={styles.buttonText}>Yes, save this method</Text>
-                )}
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.button, styles.secondaryButton]}
-                onPress={handleScanAgain}
-                disabled={isSaving}
-              >
-                <Text style={[styles.buttonText, styles.secondaryButtonText]}>Scan again</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-        </>
-      )}
-
-      {!isLoading && !result && (
-        <View style={styles.buttonContainer}>
+        {/* Action buttons */}
+        <View style={styles.reviewButtonContainer}>
           <TouchableOpacity
-            style={[styles.button, styles.primaryButton]}
-            onPress={() => handlePickImage(true)}
-            disabled={isLoading}
+            style={styles.secondaryButton}
+            onPress={handleBack}
+            disabled={assigning}
           >
-            <Text style={styles.buttonText}>Take a photo</Text>
+            <Text style={styles.secondaryButtonText}>Reprendre la photo</Text>
           </TouchableOpacity>
-
           <TouchableOpacity
-            style={[styles.button, styles.primaryButton]}
-            onPress={() => handlePickImage(false)}
-            disabled={isLoading}
+            style={[styles.primaryButton, assigning && styles.buttonDisabled]}
+            onPress={handleAssign}
+            disabled={assigning}
           >
-            <Text style={styles.buttonText}>Choose from library</Text>
+            {assigning ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <Text style={styles.primaryButtonText}>Assigner à {childName}</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // Confirmation screen
+  if (showConfirmation && confirmationData) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={handleBack}>
+            <MaterialCommunityIcons name="arrow-left" size={24} color="#333" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Scan Worksheet</Text>
+          <View style={{ width: 24 }} />
+        </View>
+
+        <ScrollView contentContainerStyle={styles.confirmationContent}>
+          <View style={styles.confirmationBox}>
+            <MaterialCommunityIcons name="check-circle" size={64} color="#4caf50" />
+            <Text style={styles.confirmationTitle}>C'est prêt !</Text>
+            <Text style={styles.confirmationText}>
+              Skeelio a compris : <Text style={styles.boldText}>{confirmationData.conceptLabel}</Text>
+            </Text>
+            <Text style={styles.confirmationSubtext}>
+              Une séance est prête pour <Text style={styles.boldText}>{confirmationData.childName}</Text>.
+            </Text>
+
+            <TouchableOpacity
+              style={[styles.primaryButton, { alignSelf: "center", flex: 0, minWidth: 120 }]}
+              onPress={handleBack}
+            >
+              <Text style={styles.primaryButtonText}>Retour</Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
+  // Main scan screen (capture)
+  return (
+    <SafeAreaView style={styles.container}>
+      <View style={styles.header}>
+        <TouchableOpacity onPress={handleBack}>
+          <MaterialCommunityIcons name="arrow-left" size={24} color="#333" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Scan Worksheet</Text>
+      </View>
+
+      {error && (
+        <View style={styles.errorBanner}>
+          <Text style={styles.errorText}>{error}</Text>
+          <TouchableOpacity onPress={() => setError("")}>
+            <MaterialCommunityIcons name="close" size={20} color="#d32f2f" />
           </TouchableOpacity>
         </View>
       )}
 
-      <TouchableOpacity style={styles.backButton} onPress={handleBack}>
-        <Text style={styles.backButtonText}>Back</Text>
-      </TouchableOpacity>
-    </ScrollView>
+      <ScrollView contentContainerStyle={styles.content}>
+        {loading ? (
+          <View style={styles.centerContainer}>
+            <ActivityIndicator size="large" color="#2196f3" />
+            <Text style={styles.loadingText}>Analyse en cours…</Text>
+          </View>
+        ) : imageUri ? (
+          <View style={styles.previewSection}>
+            <Image source={{ uri: imageUri }} style={styles.previewImage} />
+            <TouchableOpacity
+              style={styles.retakeButton}
+              onPress={() => {
+                setImageUri(null);
+                setJpegBase64(null);
+                setBase64Raw(null);
+              }}
+            >
+              <MaterialCommunityIcons name="camera" size={20} color="#fff" />
+              <Text style={styles.retakeButtonText}>Retake Photo</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <View style={styles.actionButtons}>
+            <TouchableOpacity style={styles.actionButton} onPress={takePhoto}>
+              <MaterialCommunityIcons name="camera" size={32} color="#fff" />
+              <Text style={styles.actionButtonText}>Take Photo</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.actionButton} onPress={pickImage}>
+              <MaterialCommunityIcons name="image" size={32} color="#fff" />
+              <Text style={styles.actionButtonText}>Choose from Library</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
@@ -255,120 +599,274 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#fff",
   },
-  contentContainer: {
-    paddingHorizontal: 20,
-    paddingTop: 24,
-    paddingBottom: 40,
-  },
   header: {
-    marginBottom: 32,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
   },
   headerTitle: {
-    fontSize: 32,
-    fontWeight: "700",
-    color: "#1a1a1a",
-    textAlign: "center",
-  },
-  loadingContainer: {
-    justifyContent: "center",
-    alignItems: "center",
-    paddingVertical: 60,
-  },
-  loadingText: {
-    fontSize: 16,
-    color: "#666",
-    marginTop: 16,
-  },
-  errorContainer: {
-    backgroundColor: "#ffebee",
-    padding: 16,
-    borderRadius: 8,
-    borderLeftWidth: 4,
-    borderLeftColor: "#d32f2f",
-    marginBottom: 24,
-  },
-  errorText: {
-    fontSize: 15,
-    color: "#d32f2f",
-    lineHeight: 22,
-  },
-  resultContainer: {
-    backgroundColor: "#f5f5f5",
-    padding: 16,
-    borderRadius: 8,
-    marginBottom: 24,
-  },
-  resultLabel: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#666",
-    marginBottom: 4,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  resultValue: {
     fontSize: 18,
     fontWeight: "600",
-    color: "#1a1a1a",
-    marginBottom: 16,
-  },
-  resultText: {
-    fontSize: 14,
     color: "#333",
-    lineHeight: 20,
-    marginBottom: 16,
   },
-  buttonContainer: {
-    marginBottom: 24,
-  },
-  actionButtonContainer: {
-    marginBottom: 24,
-  },
-  button: {
-    padding: 16,
-    borderRadius: 8,
+  errorBanner: {
+    flexDirection: "row",
+    justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: "#ffebee",
+    borderBottomWidth: 1,
+    borderBottomColor: "#ffcdd2",
   },
-  primaryButton: {
-    backgroundColor: "#0000ff",
+  errorText: {
+    flex: 1,
+    fontSize: 13,
+    color: "#d32f2f",
   },
-  secondaryButton: {
-    backgroundColor: "#f0f0f0",
-    borderWidth: 1,
-    borderColor: "#ccc",
+  centerContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
   },
-  buttonText: {
-    fontSize: 16,
-    fontWeight: "bold",
+  content: {
+    flexGrow: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 20,
+  },
+  confirmationContent: {
+    flexGrow: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingVertical: 40,
+  },
+  reviewContent: {
+    flexGrow: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 14,
+    color: "#666",
+  },
+  previewSection: {
+    width: "100%",
+    alignItems: "center",
+    gap: 16,
+  },
+  previewImage: {
+    width: 300,
+    height: 300,
+    borderRadius: 8,
+    resizeMode: "contain",
+  },
+  retakeButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    backgroundColor: "#2196f3",
+    borderRadius: 8,
+  },
+  retakeButtonText: {
+    fontSize: 14,
+    fontWeight: "600",
     color: "#fff",
   },
-  secondaryButtonText: {
-    color: "#1a1a1a",
+  actionButtons: {
+    width: "100%",
+    gap: 16,
   },
-  successContainer: {
-    backgroundColor: "#e8f5e9",
-    padding: 16,
-    borderRadius: 8,
-    borderLeftWidth: 4,
-    borderLeftColor: "#4caf50",
-    marginBottom: 24,
+  actionButton: {
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 24,
+    paddingHorizontal: 16,
+    backgroundColor: "#2196f3",
+    borderRadius: 12,
   },
-  successText: {
+  actionButtonText: {
     fontSize: 16,
     fontWeight: "600",
-    color: "#2e7d32",
-    textAlign: "center",
+    color: "#fff",
   },
-  backButton: {
-    backgroundColor: "#e0e0e0",
-    padding: 16,
+  childRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
+    gap: 16,
+  },
+  avatarEmoji: {
+    fontSize: 32,
+  },
+  childName: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#333",
+  },
+  emptyText: {
+    fontSize: 14,
+    color: "#999",
+  },
+  button: {
+    marginTop: 16,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    backgroundColor: "#2196f3",
+    borderRadius: 6,
+  },
+  buttonText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#fff",
+  },
+  listContent: {
+    flexGrow: 1,
+  },
+  // Review screen styles
+  reviewThumbnailContainer: {
+    alignItems: "center",
+    marginBottom: 20,
+  },
+  reviewThumbnail: {
+    width: 200,
+    height: 200,
+    borderRadius: 8,
+    resizeMode: "contain",
+  },
+  reviewSection: {
+    marginBottom: 20,
+    paddingHorizontal: 4,
+  },
+  reviewSectionTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#333",
+    marginBottom: 8,
+  },
+  reviewConceptLabel: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#2196f3",
+    marginBottom: 4,
+  },
+  reviewDescription: {
+    fontSize: 13,
+    color: "#666",
+    lineHeight: 19,
+  },
+  reviewLessonText: {
+    fontSize: 13,
+    color: "#666",
+    lineHeight: 19,
+  },
+  reviewQuestionCard: {
+    backgroundColor: "#f9f9f9",
+    borderLeftWidth: 4,
+    borderLeftColor: "#2196f3",
+    padding: 12,
+    borderRadius: 6,
+    marginBottom: 12,
+  },
+  reviewQuestion: {
+    fontSize: 13,
+    fontWeight: "500",
+    color: "#333",
+    marginBottom: 8,
+  },
+  reviewAnswerBox: {
+    backgroundColor: "#fff",
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 4,
+  },
+  reviewAnswerLabel: {
+    fontSize: 11,
+    color: "#999",
+    fontWeight: "500",
+    marginBottom: 2,
+  },
+  reviewAnswer: {
+    fontSize: 12,
+    color: "#2196f3",
+    fontWeight: "600",
+  },
+  reviewButtonContainer: {
+    flexDirection: "row",
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    backgroundColor: "#fff",
+    borderTopWidth: 1,
+    borderTopColor: "#eee",
+  },
+  primaryButton: {
+    flex: 1,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    backgroundColor: "#4caf50",
     borderRadius: 8,
     alignItems: "center",
+    justifyContent: "center",
   },
-  backButtonText: {
-    color: "#1a1a1a",
+  primaryButtonText: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#fff",
+  },
+  secondaryButton: {
+    flex: 1,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    backgroundColor: "#e0e0e0",
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  secondaryButtonText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#333",
+  },
+  buttonDisabled: {
+    opacity: 0.6,
+  },
+  confirmationBox: {
+    alignItems: "center",
+    gap: 16,
+    paddingHorizontal: 20,
+  },
+  confirmationTitle: {
+    fontSize: 24,
+    fontWeight: "700",
+    color: "#333",
+    textAlign: "center",
+  },
+  confirmationText: {
     fontSize: 16,
-    fontWeight: "bold",
+    color: "#666",
+    textAlign: "center",
+    lineHeight: 24,
+  },
+  confirmationSubtext: {
+    fontSize: 14,
+    color: "#999",
+    textAlign: "center",
+    lineHeight: 20,
+  },
+  boldText: {
+    fontWeight: "700",
+    color: "#333",
   },
 });

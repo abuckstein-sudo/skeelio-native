@@ -2,6 +2,8 @@
 // Tune freely here: tiers, ranges, and gate numbers. The generator, ability
 // logic, selector, and status all READ from this file — nothing hardcodes a number.
 
+import { TIER_GATE } from "./masteryConfig";
+
 export type Operation = "addition" | "subtraction" | "multiplication" | "division";
 export type Constraint = "none" | "required" | "either"; // carry / borrow / remainder
 
@@ -60,8 +62,8 @@ export const LADDERS: Record<Operation, Tier[]> = {
 // - It counts against the rate like a miss: masteryRate = unaided_correct / total_attempts.
 // - This ensures children advance only when they can solve problems independently.
 export const GATE = {
-  minAttemptsToAdvance: 8,   // need at least this many attempts at a tier
-  accuracyToAdvance: 0.85,   // UNAIDED mastery threshold (correct without hints) to be "solid" and advance
+  minAttemptsToAdvance: TIER_GATE.minUnaidedAttempts,   // need at least this many attempts at a tier
+  accuracyToAdvance: TIER_GATE.minUnaidedRate,   // UNAIDED mastery threshold (correct without hints) to be "solid" and advance
   strugglingFloor: 0.60,     // below this UNAIDED rate at a tier → step down a tier
   factCoverageRequired: 1.0, // fraction of a fact-tier's facts that must be seen (1.0 = all; coverage measured by unaided-correct only)
   rangeHardHalfMinAttempts: 2, // for range tiers, min attempts landing in the harder half
@@ -124,4 +126,30 @@ export function startingTier(op: Operation, child: any): string {
   }
   const d: Record<string, string> = { simple: "D1", long: "D5", not_started: "D1" };
   return d[String(child?.math_division_level)] ?? "D1";
+}
+
+// --- Grade-expected tier benchmark ------------------------------------------
+// The tier a child at a given grade should reach to be "on track."
+// STARTER VALUES — tune against real kids. Keyed by children.grade_level.
+export const GRADE_EXPECTED_TIER: Record<string, Record<Operation, string>> = {
+  CP:  { addition: "A2", subtraction: "S2", multiplication: "M1", division: "D1" },
+  CE1: { addition: "A4", subtraction: "S4", multiplication: "M3", division: "D1" },
+  CE2: { addition: "A5", subtraction: "S5", multiplication: "M4", division: "D2" },
+  CM1: { addition: "A6", subtraction: "S6", multiplication: "M6", division: "D5" },
+  CM2: { addition: "A7", subtraction: "S7", multiplication: "M7", division: "D7" },
+};
+
+export function tierIndex(operation: Operation, tierId: string | null | undefined): number {
+  if (!tierId) return -1;
+  return LADDERS[operation].findIndex((t) => t.id === tierId);
+}
+
+export function gradeExpectedTierIndex(
+  operation: Operation,
+  gradeLevel: string | null | undefined
+): number {
+  if (!gradeLevel) return -1;
+  const row = GRADE_EXPECTED_TIER[gradeLevel];
+  if (!row) return -1;
+  return tierIndex(operation, row[operation]);
 }

@@ -36,6 +36,7 @@ import {
   StrategyView,
 } from "@/lib/tutor/visuals";
 import { useAuth } from "../_layout";
+import QuitButton from "@/components/QuitButton";
 
 interface Answer {
   questionIndex: number;
@@ -550,6 +551,7 @@ export default function PracticeScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
+      <QuitButton />
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={{ flex: 1 }}

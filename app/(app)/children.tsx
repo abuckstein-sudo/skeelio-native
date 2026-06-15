@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import {
   View,
   Text,
@@ -9,31 +9,66 @@ import {
   SafeAreaView,
   Modal,
   TextInput,
+  Alert,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { supabase } from "@/lib/supabase";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
+import GiraffeBackground from "@/components/GiraffeBackground";
 
 interface Child {
   id: string;
   name: string;
   grade_level: string;
+  school_system?: string;
   pin: string;
   selected_avatar?: string;
 }
 
+const AVATAR_EMOJI: Record<string, string> = {
+  cat: "🐱",
+  owl: "🦉",
+  fox: "🦊",
+  bear: "🐻",
+  rabbit: "🐰",
+  panda: "🐼",
+};
+
+const formatGrade = (child: Child): string => {
+  const g = String(child.grade_level ?? "").trim();
+  if (!g) return "";
+  const sys = String(child.school_system ?? "").toLowerCase();
+  const frenchCode = /^(cp|ce[12]|cm[12]|6e|5e|4e|3e)$/i.test(g);
+  if (sys.includes("france") || sys.includes("french") || frenchCode) return g.toUpperCase();
+  if (/^grade\b/i.test(g)) return g;
+  return `Grade ${g}`;
+};
+
 export default function ChildrenScreen() {
   const router = useRouter();
   const [children, setChildren] = useState<Child[]>([]);
+  const [childrenStars, setChildrenStars] = useState<Record<string, number>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [pinModalVisible, setPinModalVisible] = useState(false);
   const [selectedChildForPin, setSelectedChildForPin] = useState<Child | null>(null);
   const [enteredPin, setEnteredPin] = useState("");
   const [pinError, setPinError] = useState("");
+  const pinInputRef = useRef<TextInput>(null);
 
   useEffect(() => {
     fetchChildren();
   }, []);
+
+  useEffect(() => {
+    if (pinModalVisible) {
+      // Autofocus the PIN input after modal opens (iOS modals often don't autofocus reliably)
+      const focusTimer = setTimeout(() => {
+        pinInputRef.current?.focus();
+      }, 150);
+      return () => clearTimeout(focusTimer);
+    }
+  }, [pinModalVisible]);
 
   const fetchChildren = async () => {
     setIsLoading(true);
@@ -41,7 +76,7 @@ export default function ChildrenScreen() {
 
     const { data, error: dbError } = await supabase
       .from("children")
-      .select("id, name, grade_level, pin, selected_avatar");
+      .select("id, name, grade_level, school_system, pin, selected_avatar");
 
     if (dbError) {
       console.log("[nav] children fetch error:", dbError.message);
@@ -51,7 +86,20 @@ export default function ChildrenScreen() {
     }
 
     console.log("[nav] children fetched:", data?.length);
-    setChildren(data || []);
+    const childrenData = data || [];
+    setChildren(childrenData);
+
+    // Fetch stars for each child
+    const starsMap: Record<string, number> = {};
+    for (const child of childrenData) {
+      const { data: rewardsData } = await supabase
+        .from("rewards")
+        .select("stars")
+        .eq("child_id", child.id)
+        .maybeSingle();
+      starsMap[child.id] = rewardsData?.stars ?? 0;
+    }
+    setChildrenStars(starsMap);
     setIsLoading(false);
   };
 
@@ -79,6 +127,10 @@ export default function ChildrenScreen() {
       console.log("[nav] PIN incorrect");
       setPinError("Wrong PIN — try again");
       setEnteredPin("");
+      // Refocus the input immediately for retry
+      setTimeout(() => {
+        pinInputRef.current?.focus();
+      }, 100);
     }
   };
 
@@ -98,15 +150,9 @@ export default function ChildrenScreen() {
     });
   };
 
-  const handleLogout = async () => {
-    const { error } = await supabase.auth.signOut();
-    if (error) {
-      console.log("[auth] logout error:", error.message);
-      setError(error.message);
-      return;
-    }
-    console.log("[auth] logged out");
-    // Auth state change will trigger routing back to login
+  const handleParentSection = () => {
+    console.log("[nav] opening parent section");
+    router.push("/(app)/parent");
   };
 
   if (isLoading) {
@@ -119,51 +165,63 @@ export default function ChildrenScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <Text style={styles.title}>Who's Learning?</Text>
+      <GiraffeBackground />
+      <View style={styles.header}>
+        <Text style={styles.title}>Skeelio</Text>
+        <TouchableOpacity
+          style={styles.parentHeaderButton}
+          onPress={handleParentSection}
+        >
+          <MaterialCommunityIcons name="account-circle" size={24} color="#333" />
+          <Text style={styles.parentHeaderText}>Parent</Text>
+        </TouchableOpacity>
+      </View>
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
-      <FlatList
-        data={children}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <View style={styles.childRowContainer}>
+      <View style={styles.contentWrapper}>
+        {children.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyStateText}>No children added yet</Text>
             <TouchableOpacity
-              style={styles.childRow}
-              onPress={() => handleSelectChild(item)}
+              style={styles.addChildButton}
+              onPress={() =>
+                router.push({
+                  pathname: "/child-settings/[childId]",
+                  params: { mode: "add" },
+                })
+              }
             >
-              <View>
-                <Text style={styles.childName}>{item.name}</Text>
-                <Text style={styles.childGrade}>Grade {item.grade_level}</Text>
-              </View>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.parentButton}
-              onPress={() => handleParent(item.id)}
-            >
-              <Text style={styles.parentButtonText}>Parent</Text>
+              <Text style={styles.addChildButtonText}>+ Add a child</Text>
             </TouchableOpacity>
           </View>
+        ) : (
+          <FlatList
+            data={children}
+            keyExtractor={(item) => item.id}
+            renderItem={({ item }) => (
+              <TouchableOpacity
+                style={styles.childTile}
+                onPress={() => handleSelectChild(item)}
+              >
+                {item.selected_avatar && (
+                  <Text style={styles.avatarEmoji}>
+                    {AVATAR_EMOJI[item.selected_avatar] || AVATAR_EMOJI.fox}
+                  </Text>
+                )}
+                <Text style={styles.childName}>{item.name}</Text>
+                {formatGrade(item) && (
+                  <Text style={styles.childGrade}>{formatGrade(item)}</Text>
+                )}
+                <Text style={styles.starsText}>⭐ {childrenStars[item.id] ?? 0}</Text>
+              </TouchableOpacity>
+            )}
+            scrollEnabled={false}
+            numColumns={2}
+            columnWrapperStyle={styles.columnWrapper}
+          />
         )}
-        scrollEnabled={false}
-        ListFooterComponent={
-          <TouchableOpacity
-            style={styles.addChildButton}
-            onPress={() =>
-              router.push({
-                pathname: "/child-settings/[childId]",
-                params: { mode: "add" },
-              })
-            }
-          >
-            <Text style={styles.addChildButtonText}>+ Add a child</Text>
-          </TouchableOpacity>
-        }
-      />
-
-      <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-        <Text style={styles.logoutButtonText}>Log Out</Text>
-      </TouchableOpacity>
+      </View>
 
       {/* PIN Modal */}
       <Modal
@@ -179,6 +237,7 @@ export default function ChildrenScreen() {
             </Text>
 
             <TextInput
+              ref={pinInputRef}
               style={styles.pinInput}
               placeholder="Enter 4–6 digits"
               keyboardType="number-pad"
@@ -186,7 +245,7 @@ export default function ChildrenScreen() {
               maxLength={6}
               value={enteredPin}
               onChangeText={setEnteredPin}
-              editable={!pinError}
+              autoFocus={true}
             />
 
             {pinError && <Text style={styles.pinError}>{pinError}</Text>}
@@ -217,66 +276,110 @@ export default function ChildrenScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  header: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     paddingHorizontal: 20,
-    backgroundColor: "#fff",
+    paddingVertical: 16,
   },
   title: {
-    fontSize: 24,
-    fontWeight: "bold",
-    marginBottom: 20,
-    textAlign: "center",
+    fontSize: 32,
+    fontWeight: "700",
+    color: "#333",
+    fontFamily: "Lora_700Bold",
+  },
+  parentHeaderButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+  },
+  parentHeaderText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#333",
+  },
+  contentWrapper: {
+    flex: 1,
+    paddingHorizontal: 20,
+    justifyContent: "center",
+    maxWidth: "100%",
+    backgroundColor: "transparent",
   },
   error: {
     color: "#d32f2f",
+    marginHorizontal: 20,
     marginBottom: 12,
     textAlign: "center",
   },
-  childRowContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 12,
-    gap: 8,
-  },
-  childRow: {
+  childTile: {
     flex: 1,
-    paddingVertical: 16,
+    paddingVertical: 20,
     paddingHorizontal: 12,
-    borderRadius: 8,
-    backgroundColor: "#f5f5f5",
+    borderRadius: 12,
+    backgroundColor: "#fefdfb",
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 160,
+    margin: 6,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  avatarEmoji: {
+    fontSize: 48,
+    marginBottom: 8,
   },
   childName: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: "600",
+    color: "#333",
+    textAlign: "center",
   },
   childGrade: {
-    fontSize: 14,
+    fontSize: 12,
     color: "#666",
     marginTop: 4,
+    textAlign: "center",
   },
-  parentButton: {
-    backgroundColor: "#2196f3",
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    alignItems: "center",
-  },
-  parentButtonText: {
-    color: "#fff",
-    fontSize: 13,
+  starsText: {
+    fontSize: 14,
     fontWeight: "600",
+    color: "#ffc107",
+    marginTop: 8,
   },
-  logoutButton: {
-    marginTop: "auto",
+  columnWrapper: {
+    gap: 0,
+  },
+  emptyState: {
+    alignItems: "center",
+    justifyContent: "center",
+    flex: 1,
+  },
+  emptyStateText: {
+    fontSize: 18,
+    color: "#666",
     marginBottom: 20,
-    backgroundColor: "#d32f2f",
-    padding: 14,
+  },
+  addChildButton: {
+    paddingVertical: 16,
+    paddingHorizontal: 24,
     borderRadius: 8,
+    backgroundColor: "#f0f8ff",
+    borderWidth: 2,
+    borderColor: "#2196f3",
+    borderStyle: "dashed",
     alignItems: "center",
   },
-  logoutButtonText: {
-    color: "#fff",
+  addChildButtonText: {
     fontSize: 16,
-    fontWeight: "bold",
+    fontWeight: "600",
+    color: "#2196f3",
   },
   pinModalOverlay: {
     flex: 1,
@@ -345,21 +448,5 @@ const styles = StyleSheet.create({
     color: "#666",
     fontSize: 14,
     fontWeight: "700",
-  },
-  addChildButton: {
-    marginTop: 16,
-    paddingVertical: 16,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    backgroundColor: "#f0f8ff",
-    borderWidth: 2,
-    borderColor: "#2196f3",
-    borderStyle: "dashed",
-    alignItems: "center",
-  },
-  addChildButtonText: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#2196f3",
   },
 });

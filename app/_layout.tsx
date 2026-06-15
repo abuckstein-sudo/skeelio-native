@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { Stack } from "expo-router";
 import { ActivityIndicator, View } from "react-native";
+import { useFonts, Lora_700Bold } from "@expo-google-fonts/lora";
 import { supabase } from "@/lib/supabase";
 
 type AuthContextType = {
@@ -28,6 +29,7 @@ function RootLayoutContent() {
 export default function RootLayout() {
   const [session, setSession] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [fontsLoaded] = useFonts({ Lora_700Bold });
 
   useEffect(() => {
     const initAuth = async () => {

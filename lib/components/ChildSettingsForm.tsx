@@ -108,6 +108,7 @@ interface ChildSettingsFormProps {
   userId?: string;
   onSaved?: () => void;
   onDeleted?: () => void;
+  onCancel?: () => void;
 }
 
 export default function ChildSettingsForm({
@@ -116,6 +117,7 @@ export default function ChildSettingsForm({
   userId,
   onSaved,
   onDeleted,
+  onCancel,
 }: ChildSettingsFormProps) {
   const [isLoading, setIsLoading] = useState(!isAddMode);
   const [isSaving, setIsSaving] = useState(false);
@@ -574,6 +576,10 @@ export default function ChildSettingsForm({
         )}
       </TouchableOpacity>
 
+      <TouchableOpacity style={styles.cancelButton} onPress={() => onCancel?.()} disabled={isSaving}>
+        <Text style={styles.cancelButtonText}>Cancel</Text>
+      </TouchableOpacity>
+
       {/* Danger Zone (only in edit mode) */}
       {!isAddMode && (
         <View style={styles.dangerZone}>
@@ -693,7 +699,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     borderRadius: 8,
     alignItems: "center",
+    marginBottom: 12,
+  },
+  cancelButton: {
+    borderWidth: 1,
+    borderColor: "#ddd",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    alignItems: "center",
     marginBottom: 24,
+  },
+  cancelButtonText: {
+    color: "#666",
+    fontSize: 16,
+    fontWeight: "700",
   },
   deleteButton: {
     backgroundColor: "#d32f2f",

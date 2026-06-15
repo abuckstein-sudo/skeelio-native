@@ -14,6 +14,7 @@ import {
   StrategyPlan,
 } from "@/lib/tutor/strategies";
 import { StrategyView } from "@/lib/tutor/visuals";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 
 interface Answer {
   questionIndex: number;
@@ -66,6 +67,8 @@ export default function HomeworkScreen() {
   const [error, setError] = useState("");
   const [sessionUserId, setSessionUserId] = useState<string>("");
   const [isQuizMode, setIsQuizMode] = useState(false);
+  const [restoredCorrect, setRestoredCorrect] = useState(0);
+  const [restoredAnswered, setRestoredAnswered] = useState(0);
 
   // Hint state
   const [currentHintLevel, setCurrentHintLevel] = useState(0);
@@ -107,11 +110,20 @@ export default function HomeworkScreen() {
       return;
     }
 
-    const assignment = data as Assignment;
+    const assignment = data as Assignment & { progress_index?: number; correct_count?: number };
     setAssignment(assignment);
-    setQuestions(assignment.custom_questions || []);
+    const qs = assignment.custom_questions || [];
+    setQuestions(qs);
     setIsQuizMode(assignment.mode === "quiz");
-    setHintUsedPerQuestion(new Array(assignment.custom_questions?.length || 0).fill(false));
+    setHintUsedPerQuestion(new Array(qs.length).fill(false));
+
+    // Resume where the child left off
+    const savedIndex = assignment.progress_index ?? 0;
+    const resumeIndex = savedIndex > 0 && savedIndex < qs.length ? savedIndex : 0;
+    setCurrentQuestionIndex(resumeIndex);
+    setRestoredCorrect(assignment.correct_count ?? 0);
+    setRestoredAnswered(resumeIndex);
+
     setIsLoading(false);
   };
 
@@ -342,7 +354,18 @@ export default function HomeworkScreen() {
     setMulStrategy(null);
 
     if (currentQuestionIndex < questions.length - 1) {
-      setCurrentQuestionIndex(currentQuestionIndex + 1);
+      const nextIndex = currentQuestionIndex + 1;
+      const correctSoFar = restoredCorrect + answers.filter((a) => a.isCorrect).length;
+      if (assignmentId) {
+        supabase
+          .from("assignments")
+          .update({ progress_index: nextIndex, correct_count: correctSoFar })
+          .eq("id", assignmentId)
+          .then(({ error }) => {
+            if (error) console.error("[homework] progress save failed:", error.message);
+          });
+      }
+      setCurrentQuestionIndex(nextIndex);
     } else {
       handleComplete();
     }
@@ -356,7 +379,7 @@ export default function HomeworkScreen() {
       await markAssignmentComplete(assignmentId);
 
       // Award stars: 1 star per correct answer
-      const correctCount = answers.filter((a) => a.isCorrect).length;
+      const correctCount = restoredCorrect + answers.filter((a) => a.isCorrect).length;
       if (correctCount > 0) {
         await addStars(childId, correctCount);
       }
@@ -402,17 +425,36 @@ export default function HomeworkScreen() {
   const canShowHint = !isQuizMode && currentHintLevel < 2 && !isAnswered;
   const showingStrategy = mulStrategy !== null && !isAnswered;
 
+  const sessionCorrect = answers.filter((a) => a.isCorrect).length;
+  const correctCount = restoredCorrect + sessionCorrect;
+  const wrongCount = restoredAnswered - restoredCorrect + (answers.length - sessionCorrect);
+  const headerTitle =
+    (assignment.focus
+      ? assignment.focus.charAt(0).toUpperCase() + assignment.focus.slice(1)
+      : "Practice") + (isQuizMode ? " Quiz" : " Practice");
+
   return (
     <SafeAreaView style={styles.container}>
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.container}>
+        <View style={styles.headerBar}>
+          <TouchableOpacity
+            onPress={() => router.back()}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            accessibilityLabel="Retour"
+            style={styles.headerBack}
+          >
+            <MaterialCommunityIcons name="arrow-left" size={26} color="#333" />
+          </TouchableOpacity>
+          <Text style={styles.headerBarTitle} numberOfLines={1}>{headerTitle}</Text>
+          <View style={styles.tally}>
+            <Text style={styles.tallyCorrect}>{"✓"} {correctCount}</Text>
+            <Text style={styles.tallyWrong}>{"✗"} {wrongCount}</Text>
+          </View>
+        </View>
         {/* Zone 1: Scrollable content (question + hint) — flex: 1 */}
         <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled" onPress={() => Keyboard.dismiss()}>
-          {/* Header */}
+          {/* Progress */}
           <View style={styles.header}>
-            <Text style={styles.headerTitle}>
-              {assignment.focus ? assignment.focus.charAt(0).toUpperCase() + assignment.focus.slice(1) : "Practice"}{" "}
-              {isQuizMode ? "Quiz" : "Practice"}
-            </Text>
             <Text style={styles.progressText}>
               {currentQuestionIndex + 1} of {questions.length}
             </Text>
@@ -515,6 +557,50 @@ const styles = StyleSheet.create({
   },
   header: {
     marginBottom: 24,
+  },
+  backArrow: {
+    alignSelf: "flex-start",
+    marginBottom: 12,
+    marginLeft: -4,
+    padding: 4,
+  },
+  headerBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
+    backgroundColor: "#fff",
+  },
+  headerBack: {
+    padding: 4,
+  },
+  headerBarTitle: {
+    flex: 1,
+    textAlign: "center",
+    fontSize: 17,
+    fontWeight: "700",
+    color: "#1a1a1a",
+  },
+  tally: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "#fff3e0",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 14,
+  },
+  tallyCorrect: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#4caf50",
+  },
+  tallyWrong: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#f44336",
   },
   headerTitle: {
     fontSize: 20,

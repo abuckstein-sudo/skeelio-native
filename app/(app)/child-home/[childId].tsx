@@ -1,17 +1,20 @@
 import { useEffect, useState, useCallback } from "react";
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, FlatList, SafeAreaView } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, FlatList, SafeAreaView, Modal, Alert } from "react-native";
 import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
 import { supabase } from "@/lib/supabase";
 import { getOperationStatus, OperationStatus, getWordProblemsStatus, WordProblemsStatus } from "@/lib/tutor/status";
 import { Operation } from "@/lib/tutorConfig";
 import { listAssignmentsForChild, Assignment } from "@/lib/assignments";
 import { listSpellingListsForChild, type SpellingList } from "@/lib/spelling";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
+import GiraffeBackground from "@/components/GiraffeBackground";
 
 interface Child {
   id: string;
   name: string;
   grade_level: string;
   selected_avatar?: string;
+  home_background?: string;
 }
 
 const AVATAR_EMOJI: Record<string, string> = {
@@ -41,6 +44,14 @@ const SUBJECTS: SubjectTile[] = [
   { topic: "reading", label: "Reading", description: "Read and understand", isActive: false },
 ];
 
+const AVATAR_OPTIONS = ["cat", "owl", "fox", "bear", "rabbit", "panda"];
+const BACKGROUND_OPTIONS = [
+  { id: "giraffe", label: "Giraffe", color: null },
+  { id: "blue", label: "Blue", color: "#6FB0E0" },
+  { id: "red", label: "Red", color: "#E8857E" },
+  { id: "green", label: "Green", color: "#6FC089" },
+];
+
 export default function ChildHomeScreen() {
   const router = useRouter();
   const { childId } = useLocalSearchParams<{ childId: string }>();
@@ -52,6 +63,9 @@ export default function ChildHomeScreen() {
   const [wordProblemsStatus, setWordProblemsStatus] = useState<WordProblemsStatus | null>(null);
   const [pendingAssignments, setPendingAssignments] = useState<Assignment[]>([]);
   const [spellingLists, setSpellingLists] = useState<SpellingList[]>([]);
+  const [pendingEpisodes, setPendingEpisodes] = useState<any[]>([]);
+  const [settingsModalVisible, setSettingsModalVisible] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<"avatar" | "background">("avatar");
 
   const fetchStars = useCallback(async () => {
     if (!childId) return;
@@ -82,18 +96,41 @@ export default function ChildHomeScreen() {
     }
   }, [childId]);
 
+  const fetchPendingEpisodes = useCallback(async () => {
+    if (!childId) return;
+    try {
+      const { data, error: dbError } = await supabase
+        .from("tutor_episodes")
+        .select("id, concept, lesson, domain, language, grade_band, created_at, status")
+        .eq("child_id", childId)
+        .in("status", ["pending", "in_progress"])
+        .order("created_at", { ascending: true });
+
+      if (dbError) {
+        console.error("[child-home] failed to fetch pending episodes:", dbError);
+        setPendingEpisodes([]);
+      } else {
+        setPendingEpisodes(data || []);
+      }
+    } catch (err) {
+      console.error("[child-home] failed to fetch pending episodes:", err);
+      setPendingEpisodes([]);
+    }
+  }, [childId]);
+
   useEffect(() => {
     if (childId) {
       fetchChild();
     }
   }, [childId]);
 
-  // Re-fetch stars and assignments when screen gains focus
+  // Re-fetch stars, assignments, and episodes when screen gains focus
   useFocusEffect(
     useCallback(() => {
       fetchStars();
       fetchPendingAssignments();
-    }, [fetchStars, fetchPendingAssignments])
+      fetchPendingEpisodes();
+    }, [fetchStars, fetchPendingAssignments, fetchPendingEpisodes])
   );
 
   const fetchChild = async () => {
@@ -104,7 +141,7 @@ export default function ChildHomeScreen() {
 
     const { data, error: dbError } = await supabase
       .from("children")
-      .select("id, name, grade_level, selected_avatar, max_addition_number, max_times_table, math_subtraction_level, math_division_level")
+      .select("id, name, grade_level, selected_avatar, home_background, max_addition_number, max_times_table, math_subtraction_level, math_division_level")
       .eq("id", childId)
       .single();
 
@@ -243,6 +280,59 @@ export default function ChildHomeScreen() {
     }
   };
 
+  const handleShopPress = () => {
+    Alert.alert("Coming soon!", "The star shop is coming in a future update!");
+  };
+
+  const handleEpisodeTap = (episode: any) => {
+    console.log("[child-home] episode selected:", episode.id);
+
+    const episodeData = JSON.stringify({
+      concept: episode.concept,
+      lesson: episode.lesson,
+      grade_band: episode.grade_band || "",
+      language: episode.language,
+      domain: episode.domain,
+    });
+
+    router.push({
+      pathname: "/(app)/episode",
+      params: {
+        data: episodeData,
+        episodeId: episode.id,
+        childId: childId,
+      },
+    });
+  };
+
+  const handleAvatarSelect = async (avatarId: string) => {
+    if (!child) return;
+    try {
+      await supabase
+        .from("children")
+        .update({ selected_avatar: avatarId })
+        .eq("id", childId);
+      setChild({ ...child, selected_avatar: avatarId });
+      console.log("[child-home] avatar updated:", avatarId);
+    } catch (err) {
+      console.error("[child-home] failed to update avatar:", err);
+    }
+  };
+
+  const handleBackgroundSelect = async (bgId: string) => {
+    if (!child) return;
+    try {
+      await supabase
+        .from("children")
+        .update({ home_background: bgId })
+        .eq("id", childId);
+      setChild({ ...child, home_background: bgId });
+      console.log("[child-home] background updated:", bgId);
+    } catch (err) {
+      console.error("[child-home] failed to update background:", err);
+    }
+  };
+
   const handleAllDone = () => {
     console.log("[child-home] back to hub");
     router.push("/children");
@@ -268,14 +358,64 @@ export default function ChildHomeScreen() {
     );
   }
 
+  const backgroundKey = child?.home_background || "giraffe";
+  const bgOption = BACKGROUND_OPTIONS.find((bg) => bg.id === backgroundKey);
+
+  // One unified "Homework" feed: worksheet practice sessions (episodes) +
+  // assigned work, ordered by when they were created/assigned.
+  const homeworkFeed = [
+    ...pendingEpisodes.map((e) => ({
+      type: "episode" as const,
+      id: e.id as string,
+      createdAt: (e.created_at as string) || "",
+      title: e.concept?.label || "Practice",
+      subtitle: e.status === "in_progress" ? "Reprendre" : "À faire",
+      episode: e,
+    })),
+    ...pendingAssignments.map((a) => {
+      const isSpelling = a.subject === "spelling";
+      const base = (a.focus || a.subject || "Practice") as string;
+      const title = isSpelling
+        ? `Spelling: ${(a.custom_questions as any)?.title || "Spelling List"}`
+        : base.charAt(0).toUpperCase() + base.slice(1);
+      const count = a.question_count;
+      return {
+        type: "assignment" as const,
+        id: a.id as string,
+        createdAt: ((a as any).created_at as string) || "",
+        title,
+        subtitle: `${count} ${isSpelling ? "word" : "question"}${count !== 1 ? "s" : ""}`,
+        episode: null as any,
+      };
+    }),
+  ].sort((x, y) => (x.createdAt < y.createdAt ? -1 : x.createdAt > y.createdAt ? 1 : 0));
+
   return (
     <SafeAreaView style={styles.container}>
+      {/* Background */}
+      {backgroundKey === "giraffe" ? (
+        <GiraffeBackground />
+      ) : (
+        <View style={[styles.solidBackground, { backgroundColor: bgOption?.color || "#fff" }]} />
+      )}
+
       <ScrollView contentContainerStyle={styles.contentContainer}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={handleAllDone}>
-          <Text style={styles.allDoneText}>All done</Text>
-        </TouchableOpacity>
+        <View style={styles.leftCluster}>
+          <TouchableOpacity onPress={handleAllDone} style={styles.allDoneButton}>
+            <Text style={styles.allDoneText}>All done</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => setSettingsModalVisible(true)}>
+            <MaterialCommunityIcons name="cog" size={24} color="#333" />
+          </TouchableOpacity>
+        </View>
+        <View style={styles.topRightCluster}>
+          <Text style={styles.starsText}>⭐ {stars}</Text>
+          <TouchableOpacity onPress={handleShopPress} style={styles.shopButton}>
+            <Text style={styles.shopIcon}>🛒</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Greeting */}
@@ -285,42 +425,37 @@ export default function ChildHomeScreen() {
             {AVATAR_EMOJI[child.selected_avatar] || AVATAR_EMOJI.fox}
           </Text>
         )}
-        <Text style={styles.greetingText}>Hi {child.name}! Ready to learn?</Text>
-        <Text style={styles.starsText}>⭐ {stars}</Text>
+        <Text style={styles.greetingText}>
+          Hi {child.name}! {pendingAssignments.length > 0 || pendingEpisodes.length > 0 ? "Let's get started!" : "What would you like to work on today?"}
+        </Text>
       </View>
 
-      {/* Homework Section */}
-      {pendingAssignments.length > 0 && (
+      {/* Homework Section (worksheet practice + assigned work, one feed) */}
+      {homeworkFeed.length > 0 && (
         <View style={styles.homeworkSection}>
           <Text style={styles.homeworkSectionTitle}>📋 Homework</Text>
-          {pendingAssignments.map((assignment) => {
-            const isSpelling = assignment.subject === "spelling";
-            const displayTitle = isSpelling
-              ? `📝 Spelling: ${(assignment.custom_questions as any)?.title || "Spelling List"}`
-              : (assignment.focus || assignment.subject || "Practice").charAt(0).toUpperCase() +
-                (assignment.focus || assignment.subject || "Practice").slice(1);
-
-            return (
-              <TouchableOpacity
-                key={assignment.id}
-                style={styles.homeworkCard}
-                onPress={() => handleHomeworkTap(assignment.id)}
-              >
-                <View style={styles.homeworkInfo}>
-                  <Text style={styles.homeworkCardTopic}>{displayTitle}</Text>
-                  <Text style={styles.homeworkCardCount}>
-                    {assignment.question_count} {isSpelling ? "word" : "question"}{assignment.question_count !== 1 ? "s" : ""}
-                  </Text>
-                </View>
-                <Text style={styles.playButton}>▶</Text>
-              </TouchableOpacity>
-            );
-          })}
+          {homeworkFeed.map((item) => (
+            <TouchableOpacity
+              key={`${item.type}-${item.id}`}
+              style={styles.homeworkCard}
+              onPress={() =>
+                item.type === "episode"
+                  ? handleEpisodeTap(item.episode)
+                  : handleHomeworkTap(item.id)
+              }
+            >
+              <View style={styles.homeworkInfo}>
+                <Text style={styles.homeworkCardTopic} numberOfLines={2}>{item.title}</Text>
+                <Text style={styles.homeworkCardCount}>{item.subtitle}</Text>
+              </View>
+              <Text style={styles.playButton}>▶</Text>
+            </TouchableOpacity>
+          ))}
         </View>
       )}
 
-      {/* Show practice tiles only if no pending homework */}
-      {pendingAssignments.length === 0 && (
+      {/* Show practice tiles only if nothing is queued in the homework feed */}
+      {homeworkFeed.length === 0 && (
         <View style={styles.subjectsContainer}>
           {SUBJECTS.map((subject) => {
             const isMathSubject = ["addition", "subtraction", "multiplication", "division"].includes(subject.topic);
@@ -347,6 +482,69 @@ export default function ChildHomeScreen() {
         </View>
       )}
       </ScrollView>
+
+      {/* Settings Modal */}
+      <Modal
+        visible={settingsModalVisible}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setSettingsModalVisible(false)}
+      >
+        <SafeAreaView style={styles.settingsModalContainer}>
+          <View style={styles.settingsHeader}>
+            <Text style={styles.settingsTitle}>Settings</Text>
+            <TouchableOpacity onPress={() => setSettingsModalVisible(false)}>
+              <MaterialCommunityIcons name="close" size={24} color="#333" />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView contentContainerStyle={styles.settingsContent}>
+            {/* Avatar Section */}
+            <View style={styles.settingsSection}>
+              <Text style={styles.settingsSectionTitle}>Pick Your Avatar</Text>
+              <View style={styles.avatarGrid}>
+                {AVATAR_OPTIONS.map((avatar) => (
+                  <TouchableOpacity
+                    key={avatar}
+                    style={[
+                      styles.avatarOption,
+                      child?.selected_avatar === avatar && styles.avatarOptionSelected,
+                    ]}
+                    onPress={() => handleAvatarSelect(avatar)}
+                  >
+                    <Text style={styles.avatarOptionEmoji}>
+                      {AVATAR_EMOJI[avatar] || AVATAR_EMOJI.fox}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+            {/* Background Section */}
+            <View style={styles.settingsSection}>
+              <Text style={styles.settingsSectionTitle}>Pick Your Background</Text>
+              <View style={styles.backgroundGrid}>
+                {BACKGROUND_OPTIONS.map((bg) => (
+                  <TouchableOpacity
+                    key={bg.id}
+                    style={[
+                      styles.backgroundOption,
+                      bg.color ? { backgroundColor: bg.color } : {},
+                      child?.home_background === bg.id && styles.backgroundOptionSelected,
+                    ]}
+                    onPress={() => handleBackgroundSelect(bg.id)}
+                  >
+                    {bg.id === "giraffe" ? (
+                      <View style={styles.giraffePreview} />
+                    ) : null}
+                    <Text style={styles.backgroundLabel}>{bg.label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -356,10 +554,18 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#fff",
   },
+  solidBackground: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
   contentContainer: {
     paddingHorizontal: 16,
     paddingVertical: 16,
     paddingBottom: 40,
+    backgroundColor: "transparent",
   },
   centerContainer: {
     flex: 1,
@@ -369,14 +575,33 @@ const styles = StyleSheet.create({
   },
   header: {
     flexDirection: "row",
-    justifyContent: "flex-start",
+    justifyContent: "space-between",
     alignItems: "center",
     marginBottom: 24,
+  },
+  leftCluster: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  allDoneButton: {
+    paddingVertical: 4,
   },
   allDoneText: {
     fontSize: 14,
     fontWeight: "600",
     color: "#2196f3",
+  },
+  topRightCluster: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  shopButton: {
+    paddingHorizontal: 4,
+  },
+  shopIcon: {
+    fontSize: 20,
   },
   greetingBanner: {
     backgroundColor: "#f0f8ff",
@@ -395,10 +620,9 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: "700",
     color: "#1a1a1a",
-    marginBottom: 6,
   },
   starsText: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: "700",
     color: "#ffc107",
   },
@@ -514,5 +738,136 @@ const styles = StyleSheet.create({
   playButton: {
     fontSize: 20,
     marginLeft: 12,
+  },
+  episodesSection: {
+    backgroundColor: "#e8f5e9",
+    borderLeftWidth: 4,
+    borderLeftColor: "#4caf50",
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 24,
+  },
+  episodesSectionTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#1a1a1a",
+    marginBottom: 12,
+  },
+  episodeCard: {
+    backgroundColor: "#fff",
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 8,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#c8e6c9",
+  },
+  episodeInfo: {
+    flex: 1,
+    gap: 8,
+  },
+  episodeLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#1a1a1a",
+  },
+  episodeBadge: {
+    alignSelf: "flex-start",
+    backgroundColor: "#4caf50",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+  },
+  episodeBadgeText: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#fff",
+  },
+  settingsModalContainer: {
+    flex: 1,
+    backgroundColor: "#fff",
+  },
+  settingsHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
+  },
+  settingsTitle: {
+    fontSize: 24,
+    fontWeight: "700",
+    color: "#333",
+  },
+  settingsContent: {
+    paddingHorizontal: 16,
+    paddingVertical: 24,
+  },
+  settingsSection: {
+    marginBottom: 32,
+  },
+  settingsSectionTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#333",
+    marginBottom: 16,
+  },
+  avatarGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12,
+    justifyContent: "space-between",
+  },
+  avatarOption: {
+    width: "30%",
+    aspectRatio: 1,
+    borderRadius: 12,
+    backgroundColor: "#f5f5f5",
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 3,
+    borderColor: "transparent",
+  },
+  avatarOptionSelected: {
+    borderColor: "#2196f3",
+    backgroundColor: "#e3f2fd",
+  },
+  avatarOptionEmoji: {
+    fontSize: 48,
+  },
+  backgroundGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12,
+    justifyContent: "space-between",
+  },
+  backgroundOption: {
+    width: "48%",
+    height: 100,
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 3,
+    borderColor: "transparent",
+    backgroundColor: "#f5f5f5",
+  },
+  backgroundOptionSelected: {
+    borderColor: "#2196f3",
+  },
+  backgroundLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#333",
+    marginTop: 8,
+  },
+  giraffePreview: {
+    width: "100%",
+    height: "100%",
+    borderRadius: 12,
+    backgroundColor: "#FBF3E1",
   },
 });

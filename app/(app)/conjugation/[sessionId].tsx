@@ -25,6 +25,7 @@ import {
   type ConjugationSession,
   type TeachingPattern,
 } from "@/lib/conjugation";
+import QuitButton from "@/components/QuitButton";
 
 interface Answer {
   questionId: string;
@@ -593,6 +594,7 @@ export default function ConjugationPracticeScreen() {
 
     return (
       <SafeAreaView style={styles.container}>
+        <QuitButton />
         <View style={styles.header}>
           <Text style={styles.progress}>
             Question {currentIndex + 1} of {questions.length}
