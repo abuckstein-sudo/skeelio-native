@@ -69,6 +69,11 @@ export default function HomeworkScreen() {
   const [isQuizMode, setIsQuizMode] = useState(false);
   const [restoredCorrect, setRestoredCorrect] = useState(0);
   const [restoredAnswered, setRestoredAnswered] = useState(0);
+  const [completionStats, setCompletionStats] = useState<{
+    correct: number;
+    total: number;
+    stars: number;
+  } | null>(null);
 
   // Hint state
   const [currentHintLevel, setCurrentHintLevel] = useState(0);
@@ -385,11 +390,10 @@ export default function HomeworkScreen() {
       }
 
       console.log("[homework] assignment completed, stars awarded:", correctCount);
-
-      // Navigate back to child home
-      router.push({
-        pathname: "/child-home/[childId]",
-        params: { childId },
+      setCompletionStats({
+        correct: correctCount,
+        total: questions.length,
+        stars: correctCount,
       });
     } catch (err) {
       console.error("[homework] completion error:", err);
@@ -432,6 +436,38 @@ export default function HomeworkScreen() {
     (assignment.focus
       ? assignment.focus.charAt(0).toUpperCase() + assignment.focus.slice(1)
       : "Practice") + (isQuizMode ? " Quiz" : " Practice");
+
+  if (completionStats) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.completionContainer}>
+          <Text style={styles.completionConfetti}>🎉</Text>
+          <Text style={styles.completionTitle}>Assignment complete!</Text>
+          <Text style={styles.completionSubtitle}>Nice work finishing your homework.</Text>
+          <View style={styles.completionScoreBox}>
+            <Text style={styles.completionScore}>
+              {completionStats.correct} / {completionStats.total}
+            </Text>
+            <Text style={styles.completionScoreLabel}>correct</Text>
+          </View>
+          <View style={styles.completionStarsBox}>
+            <Text style={styles.completionStarsText}>⭐ +{completionStats.stars} stars</Text>
+          </View>
+          <TouchableOpacity
+            style={styles.completionButton}
+            onPress={() =>
+              router.push({
+                pathname: "/child-home/[childId]",
+                params: { childId },
+              })
+            }
+          >
+            <Text style={styles.completionButtonText}>Back home</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -738,6 +774,75 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 16,
     fontWeight: "600",
+  },
+  completionContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 28,
+    backgroundColor: "#fff8e1",
+  },
+  completionConfetti: {
+    fontSize: 64,
+    marginBottom: 16,
+  },
+  completionTitle: {
+    fontSize: 28,
+    fontWeight: "800",
+    color: "#1a1a1a",
+    textAlign: "center",
+    marginBottom: 8,
+  },
+  completionSubtitle: {
+    fontSize: 16,
+    color: "#666",
+    textAlign: "center",
+    marginBottom: 24,
+  },
+  completionScoreBox: {
+    minWidth: 160,
+    paddingVertical: 20,
+    paddingHorizontal: 24,
+    borderRadius: 16,
+    backgroundColor: "#fff",
+    alignItems: "center",
+    borderWidth: 2,
+    borderColor: "#ffe082",
+    marginBottom: 14,
+  },
+  completionScore: {
+    fontSize: 34,
+    fontWeight: "800",
+    color: "#4caf50",
+  },
+  completionScoreLabel: {
+    fontSize: 14,
+    color: "#666",
+    fontWeight: "700",
+    marginTop: 4,
+  },
+  completionStarsBox: {
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+    borderRadius: 24,
+    backgroundColor: "#fff3e0",
+    marginBottom: 28,
+  },
+  completionStarsText: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: "#ff9800",
+  },
+  completionButton: {
+    backgroundColor: "#2196f3",
+    paddingVertical: 14,
+    paddingHorizontal: 28,
+    borderRadius: 10,
+  },
+  completionButtonText: {
+    color: "#fff",
+    fontSize: 17,
+    fontWeight: "800",
   },
   errorText: {
     fontSize: 16,

@@ -62,6 +62,7 @@ export default function ChildHomeScreen() {
   const [operationStatuses, setOperationStatuses] = useState<Record<Operation, OperationStatus>>({});
   const [wordProblemsStatus, setWordProblemsStatus] = useState<WordProblemsStatus | null>(null);
   const [pendingAssignments, setPendingAssignments] = useState<Assignment[]>([]);
+  const [completedAssignments, setCompletedAssignments] = useState<Assignment[]>([]);
   const [spellingLists, setSpellingLists] = useState<SpellingList[]>([]);
   const [pendingEpisodes, setPendingEpisodes] = useState<any[]>([]);
   const [settingsModalVisible, setSettingsModalVisible] = useState(false);
@@ -86,7 +87,16 @@ export default function ChildHomeScreen() {
     if (!childId) return;
     const assignments = await listAssignmentsForChild(childId);
     const pending = assignments.filter((a) => a.status === "pending");
+    const completed = assignments
+      .filter((a) => a.status === "complete")
+      .sort((a, b) => {
+        const dateA = a.completed_at ? new Date(a.completed_at).getTime() : 0;
+        const dateB = b.completed_at ? new Date(b.completed_at).getTime() : 0;
+        return dateB - dateA;
+      })
+      .slice(0, 5);
     setPendingAssignments(pending);
+    setCompletedAssignments(completed);
 
     // Fetch spelling lists
     try {
@@ -403,6 +413,20 @@ export default function ChildHomeScreen() {
     }),
   ].sort((x, y) => (x.createdAt < y.createdAt ? -1 : x.createdAt > y.createdAt ? 1 : 0));
 
+  const completedHomeworkFeed = completedAssignments.map((a) => {
+    const isSpelling = a.subject === "spelling";
+    const base = (a.focus || a.subject || "Practice") as string;
+    const title = isSpelling
+      ? `Spelling: ${(a.custom_questions as any)?.title || "Spelling List"}`
+      : base.charAt(0).toUpperCase() + base.slice(1);
+    return {
+      id: a.id,
+      title,
+      completedAt: a.completed_at,
+      subtitle: `${a.question_count} ${isSpelling ? "word" : "question"}${a.question_count !== 1 ? "s" : ""}`,
+    };
+  });
+
   return (
     <SafeAreaView style={styles.container}>
       {/* Background */}
@@ -463,6 +487,26 @@ export default function ChildHomeScreen() {
               </View>
               <Text style={styles.playButton}>▶</Text>
             </TouchableOpacity>
+          ))}
+        </View>
+      )}
+
+      {completedHomeworkFeed.length > 0 && (
+        <View style={styles.completedHomeworkSection}>
+          <Text style={styles.homeworkSectionTitle}>✅ Finished</Text>
+          {completedHomeworkFeed.map((item) => (
+            <View key={item.id} style={styles.completedHomeworkCard}>
+              <View style={styles.homeworkInfo}>
+                <Text style={styles.homeworkCardTopic} numberOfLines={2}>{item.title}</Text>
+                <Text style={styles.homeworkCardCount}>
+                  {item.subtitle}
+                  {item.completedAt
+                    ? ` • ${new Date(item.completedAt).toLocaleDateString()}`
+                    : ""}
+                </Text>
+              </View>
+              <Text style={styles.completedCheck}>✓</Text>
+            </View>
           ))}
         </View>
       )}
@@ -718,6 +762,14 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginBottom: 24,
   },
+  completedHomeworkSection: {
+    backgroundColor: "#e8f5e9",
+    borderLeftWidth: 4,
+    borderLeftColor: "#4caf50",
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 24,
+  },
   homeworkSectionTitle: {
     fontSize: 16,
     fontWeight: "700",
@@ -735,6 +787,17 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#ffe0b2",
   },
+  completedHomeworkCard: {
+    backgroundColor: "#fff",
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 8,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#c8e6c9",
+  },
   homeworkInfo: {
     flex: 1,
   },
@@ -750,6 +813,12 @@ const styles = StyleSheet.create({
   },
   playButton: {
     fontSize: 20,
+    marginLeft: 12,
+  },
+  completedCheck: {
+    fontSize: 22,
+    fontWeight: "800",
+    color: "#4caf50",
     marginLeft: 12,
   },
   episodesSection: {

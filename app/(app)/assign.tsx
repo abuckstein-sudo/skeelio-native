@@ -67,7 +67,7 @@ export default function AssignScreen() {
   const [dueDate, setDueDate] = useState("");
   const [assignmentMode, setAssignmentMode] = useState<"practice" | "quiz">("practice");
   const [isCreatingAssignment, setIsCreatingAssignment] = useState(false);
-  const [showCompletedAssignments, setShowCompletedAssignments] = useState(false);
+  const [showCompletedAssignments, setShowCompletedAssignments] = useState(true);
   const [selectedSpellingList, setSelectedSpellingList] = useState<SpellingList | null>(null);
   const [conjugationLanguage, setConjugationLanguage] = useState<string>("");
   const [conjugationLanguages, setConjugationLanguages] = useState<Array<{ locale: string; name: string }>>([]);
