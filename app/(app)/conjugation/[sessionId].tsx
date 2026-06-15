@@ -436,7 +436,10 @@ export default function ConjugationPracticeScreen() {
       if (assignmentId) {
         try {
           const { markAssignmentComplete } = await import("@/lib/assignments");
-          await markAssignmentComplete(assignmentId);
+          await markAssignmentComplete(assignmentId, {
+            correctCount,
+            totalCount: questions.length,
+          });
         } catch (err) {
           console.error("[ConjugationPractice] failed to mark assignment complete:", err);
         }

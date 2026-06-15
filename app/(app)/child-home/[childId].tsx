@@ -423,7 +423,9 @@ export default function ChildHomeScreen() {
       id: a.id,
       title,
       completedAt: a.completed_at,
-      subtitle: `${a.question_count} ${isSpelling ? "word" : "question"}${a.question_count !== 1 ? "s" : ""}`,
+      subtitle: typeof a.correct_count === "number"
+        ? `Score: ${a.correct_count}/${a.question_count}`
+        : `${a.question_count} ${isSpelling ? "word" : "question"}${a.question_count !== 1 ? "s" : ""}`,
     };
   });
 

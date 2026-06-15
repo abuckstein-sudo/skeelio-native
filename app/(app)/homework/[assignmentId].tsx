@@ -74,6 +74,7 @@ export default function HomeworkScreen() {
     total: number;
     stars: number;
   } | null>(null);
+  const [isCompleting, setIsCompleting] = useState(false);
 
   // Hint state
   const [currentHintLevel, setCurrentHintLevel] = useState(0);
@@ -377,14 +378,19 @@ export default function HomeworkScreen() {
   };
 
   const handleComplete = async () => {
-    if (!assignmentId || !childId) return;
+    if (!assignmentId || !childId || isCompleting || completionStats) return;
 
+    setIsCompleting(true);
     try {
+      const correctCount = restoredCorrect + answers.filter((a) => a.isCorrect).length;
+
       // Mark assignment as complete
-      await markAssignmentComplete(assignmentId);
+      await markAssignmentComplete(assignmentId, {
+        correctCount,
+        totalCount: questions.length,
+      });
 
       // Award stars: 1 star per correct answer
-      const correctCount = restoredCorrect + answers.filter((a) => a.isCorrect).length;
       if (correctCount > 0) {
         await addStars(childId, correctCount);
       }
@@ -398,6 +404,8 @@ export default function HomeworkScreen() {
     } catch (err) {
       console.error("[homework] completion error:", err);
       setError("Error completing assignment");
+    } finally {
+      setIsCompleting(false);
     }
   };
 
@@ -557,8 +565,14 @@ export default function HomeworkScreen() {
                 <Text style={styles.checkButtonText}>{isSubmitting ? "..." : "Check"}</Text>
               </TouchableOpacity>
             ) : (
-              <TouchableOpacity style={styles.nextButton} onPress={handleNext}>
-                <Text style={styles.nextButtonText}>{isLastQuestion ? "Finish" : "Next"}</Text>
+              <TouchableOpacity
+                style={[styles.nextButton, isCompleting && styles.nextButtonDisabled]}
+                onPress={handleNext}
+                disabled={isCompleting}
+              >
+                <Text style={styles.nextButtonText}>
+                  {isCompleting ? "Finishing..." : isLastQuestion ? "Finish" : "Next"}
+                </Text>
               </TouchableOpacity>
             )}
           </View>
@@ -757,6 +771,9 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 32,
     borderRadius: 8,
+  },
+  nextButtonDisabled: {
+    opacity: 0.65,
   },
   nextButtonText: {
     color: "#fff",

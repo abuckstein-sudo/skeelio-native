@@ -677,6 +677,11 @@ export default function AssignScreen() {
             Completed: {new Date(asn.completed_at).toLocaleDateString()}
           </Text>
         )}
+        {asn.status === "complete" && typeof asn.correct_count === "number" && (
+          <Text style={styles.completedDate}>
+            Score: {asn.correct_count}/{asn.question_count}
+          </Text>
+        )}
       </View>
       <View style={styles.actionButtons}>
         {asn.status !== "complete" && (

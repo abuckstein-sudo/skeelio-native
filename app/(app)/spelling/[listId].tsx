@@ -289,7 +289,10 @@ export default function SpellingPracticeScreen() {
 
         // Mark assignment complete if this is homework
         if (assignmentId) {
-          await markAssignmentComplete(assignmentId);
+          await markAssignmentComplete(assignmentId, {
+            correctCount: finalCorrect,
+            totalCount: items.length,
+          });
         }
 
         // Award stars

@@ -31,6 +31,8 @@ export type Assignment = {
   status: string; // "active" or "completed"
   created_at: string;
   completed_at: string | null;
+  progress_index?: number | null;
+  correct_count?: number | null;
   custom_questions: CustomQuestion[];
 };
 
@@ -223,14 +225,27 @@ export async function createMathAssignment(params: {
   return newAssignment as Assignment;
 }
 
-export async function markAssignmentComplete(assignmentId: string): Promise<void> {
+export async function markAssignmentComplete(
+  assignmentId: string,
+  stats?: { correctCount?: number; totalCount?: number }
+): Promise<void> {
   const now = new Date().toISOString();
+  const updates: Record<string, unknown> = {
+    status: "complete",
+    completed_at: now,
+  };
+
+  if (typeof stats?.correctCount === "number") {
+    updates.correct_count = stats.correctCount;
+  }
+
+  if (typeof stats?.totalCount === "number") {
+    updates.progress_index = stats.totalCount;
+  }
+
   const { error } = await supabase
     .from("assignments")
-    .update({
-      status: "complete",
-      completed_at: now,
-    })
+    .update(updates)
     .eq("id", assignmentId);
 
   if (error) {
