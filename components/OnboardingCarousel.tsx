@@ -18,6 +18,7 @@ export interface OnboardingSlide {
   title: string;
   body: string;
   cta?: string;
+  icon?: keyof typeof MaterialCommunityIcons.glyphMap;
 }
 
 interface OnboardingCarouselProps {
@@ -26,7 +27,13 @@ interface OnboardingCarouselProps {
   onSkip: () => void;
 }
 
-const ICONS = ["school-outline", "camera-outline", "lightbulb-on-outline", "trophy-outline", "rocket-launch-outline"] as const;
+const ICONS: Array<keyof typeof MaterialCommunityIcons.glyphMap> = [
+  "school-outline",
+  "camera-outline",
+  "lightbulb-on-outline",
+  "trophy-outline",
+  "rocket-launch-outline",
+];
 
 export default function OnboardingCarousel({ slides, onDone, onSkip }: OnboardingCarouselProps) {
   const { width } = useWindowDimensions();
@@ -79,7 +86,7 @@ export default function OnboardingCarousel({ slides, onDone, onSkip }: Onboardin
 
         <Animated.View style={[styles.card, animatedStyle]}>
           <View style={styles.iconCircle}>
-            <MaterialCommunityIcons name={ICONS[index % ICONS.length]} size={42} color="#2196f3" />
+            <MaterialCommunityIcons name={item.icon ?? ICONS[index % ICONS.length]} size={42} color="#2196f3" />
           </View>
           <View style={styles.accentPill} />
           <Text style={styles.title}>{item.title}</Text>
