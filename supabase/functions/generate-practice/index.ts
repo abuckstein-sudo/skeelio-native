@@ -168,6 +168,46 @@ function extractNumbersFromExpression(expr: string): Set<number> {
   return numbers;
 }
 
+// Deterministic answer for "do I have enough money?" word problems.
+// true=Oui, false=Non, null=pattern not recognized (fall back to existing check).
+function affordabilityAnswer(question: string): boolean | null {
+  const q = question.toLowerCase().replace(/[\u202f\u00a0]/g, " ");
+  const EURO = "\u20ac";
+  const isAfford =
+    /assez d['\u2019]argent/.test(q) ||
+    /as[- ]tu assez/.test(q) ||
+    /a[- ]t[- ]il assez/.test(q) ||
+    /a[- ]t[- ]elle assez/.test(q) ||
+    /peux[- ]tu (l['\u2019]|les )?ach/.test(q) ||
+    /peux[- ]tu payer/.test(q) ||
+    /peut[- ]il .*ach/.test(q) ||
+    /peut[- ]elle .*ach/.test(q);
+  if (!isAfford) return null;
+
+  const budgetRe = new RegExp(
+    "(?:tu as|j['\u2019]ai|il a|elle a|on a|nous avons|tu disposes de|avec)\\s+(\\d+(?:[.,]\\d+)?)\\s*" + EURO
+  );
+  const budgetMatch = q.match(budgetRe);
+  if (!budgetMatch) return null;
+
+  const budget = parseFloat(budgetMatch[1].replace(",", "."));
+  const costRe = new RegExp("co[u\u00fb]te(?:nt)?\\s+(\\d+(?:[.,]\\d+)?)\\s*" + EURO, "g");
+  const costs: number[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = costRe.exec(q)) !== null) {
+    costs.push(parseFloat(m[1].replace(",", ".")));
+  }
+  if (costs.length === 0) return null;
+
+  const buysAll =
+    costs.length === 1 ||
+    /les deux|tous les deux|ensemble|les trois|\u00e0 la fois/.test(q);
+  if (!buysAll) return null;
+
+  const total = costs.reduce((a, b) => a + b, 0);
+  return total <= budget + 1e-9;
+}
+
 // Check which sub-skills have zero verified items
 function getMissingSubSkills(allSubSkills: string[], verifiedItems: Record<string, unknown>[]): string[] {
   const coveredSubSkills = new Set(verifiedItems.map((item) => item.sub_skill as string));
@@ -299,6 +339,18 @@ async function generateMathPractice(
         const answerType = item.answer_type as string;
         const claimedAnswer = item.claimed_answer;
 
+        // Deterministic affordability override: compute "enough money?" from the
+        // numbers instead of trusting the model.
+        if (answerType === "yesno") {
+          const det = affordabilityAnswer(question);
+          if (det !== null) {
+            item.answer = det ? "Oui" : "Non";
+            item.verified = true;
+            verifiedMathItems.push(item);
+            continue;
+          }
+        }
+
         // GUARD: numeric verification
         const questionNumbers = extractNumbersFromText(question);
         const exprNumbers = extractNumbersFromExpression(checkExpr);
@@ -361,6 +413,18 @@ async function generateMathPractice(
             const checkExpr = item.check_expression as string;
             const answerType = item.answer_type as string;
             const claimedAnswer = item.claimed_answer;
+
+            // Deterministic affordability override: compute "enough money?" from the
+            // numbers instead of trusting the model.
+            if (answerType === "yesno") {
+              const det = affordabilityAnswer(question);
+              if (det !== null) {
+                item.answer = det ? "Oui" : "Non";
+                item.verified = true;
+                verifiedMathItems.push(item);
+                continue;
+              }
+            }
 
             const questionNumbers = extractNumbersFromText(question);
             const exprNumbers = extractNumbersFromExpression(checkExpr);
