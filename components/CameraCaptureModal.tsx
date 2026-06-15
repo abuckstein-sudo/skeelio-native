@@ -35,6 +35,8 @@ export default function CameraCaptureModal({
   const [capturedUri, setCapturedUri] = useState<string | null>(null);
   const [isCapturing, setIsCapturing] = useState(false);
   const [isPicking, setIsPicking] = useState(false);
+  const [isReady, setIsReady] = useState(false);
+  const [cameraSessionKey, setCameraSessionKey] = useState(0);
   const [captureError, setCaptureError] = useState("");
 
   useEffect(() => {
@@ -43,13 +45,15 @@ export default function CameraCaptureModal({
       setCapturedUri(null);
       setIsCapturing(false);
       setIsPicking(false);
+      setIsReady(false);
+      setCameraSessionKey((current) => current + 1);
       setCaptureError("");
     }
     wasVisibleRef.current = visible;
   }, [visible]);
 
   const handleTakePicture = async () => {
-    if (!cameraRef.current || isCapturing) return;
+    if (!cameraRef.current || isCapturing || !isReady) return;
 
     try {
       setCaptureError("");
@@ -96,6 +100,11 @@ export default function CameraCaptureModal({
     onClose();
   };
 
+  const handleRetake = () => {
+    setIsReady(false);
+    setMode("camera");
+  };
+
   const renderPermissionState = () => {
     const permanentlyDenied = permission && !permission.granted && !permission.canAskAgain;
 
@@ -135,7 +144,7 @@ export default function CameraCaptureModal({
           <>
             <Image source={{ uri: capturedUri }} style={styles.previewImage} resizeMode="contain" />
             <View style={[styles.previewBar, { paddingBottom: insets.bottom + 20 }]}>
-              <TouchableOpacity style={styles.secondaryButton} onPress={() => setMode("camera")}>
+              <TouchableOpacity style={styles.secondaryButton} onPress={handleRetake}>
                 <Text style={styles.secondaryButtonText}>Retake</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.primaryButton} onPress={handleUsePhoto}>
@@ -146,10 +155,12 @@ export default function CameraCaptureModal({
         ) : (
           <>
             <CameraView
+              key={cameraSessionKey}
               ref={cameraRef}
               style={StyleSheet.absoluteFill}
               facing="back"
               active={visible}
+              onCameraReady={() => setIsReady(true)}
             />
             <TouchableOpacity
               style={[styles.closeButton, { top: insets.top + 8 }]}
@@ -169,9 +180,12 @@ export default function CameraCaptureModal({
                 <Text style={styles.libraryText}>Library</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.shutterButton, isCapturing && styles.shutterButtonDisabled]}
+                style={[
+                  styles.shutterButton,
+                  (!isReady || isCapturing) && styles.shutterButtonDisabled,
+                ]}
                 onPress={handleTakePicture}
-                disabled={isCapturing}
+                disabled={!isReady || isCapturing}
               >
                 <View style={styles.shutterButtonInner} />
               </TouchableOpacity>
