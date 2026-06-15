@@ -209,8 +209,10 @@ export default function ChildSettingsForm({
     const birthDayInt = birthDay ? parseInt(birthDay, 10) : null;
     const age = birthYearInt ? new Date().getFullYear() - birthYearInt : null;
 
-    const additionValue = additionLevel === "not_started" ? null : (additionLevel === "1000_plus" ? 1000 : parseInt(additionLevel, 10));
-    const multiplicationValue = multiplicationLevel === "not_started" ? null : parseInt(multiplicationLevel, 10);
+    const parsedAdditionValue = additionLevel === "1000_plus" ? 1000 : parseInt(additionLevel, 10);
+    const additionValue = Number.isFinite(parsedAdditionValue) ? parsedAdditionValue : 10;
+    const parsedMultiplicationValue = parseInt(multiplicationLevel, 10);
+    const multiplicationValue = Number.isFinite(parsedMultiplicationValue) ? parsedMultiplicationValue : 0;
 
     const updateData: any = {
       name: name.trim(),
@@ -221,9 +223,9 @@ export default function ChildSettingsForm({
       grade_level: gradeLevel,
       school_grade_level: schoolGradeLevel || null,
       max_addition_number: additionValue,
-      math_subtraction_level: subtractionLevel,
+      math_subtraction_level: subtractionLevel || "not_started",
       max_times_table: multiplicationValue,
-      math_division_level: divisionLevel,
+      math_division_level: divisionLevel || "not_started",
       focus_subjects: focusSubjects,
       child_goal: mainGoal,
       selected_avatar: selectedAvatar,
