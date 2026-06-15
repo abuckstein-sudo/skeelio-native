@@ -47,7 +47,17 @@ const RETRY_PROMPT = (subSkillsList: string, language: string) => `Generate 4 mo
 Include affordability/how-many-can-you-buy items. Return ONLY the JSON array, NO EXPLANATION, ALL TEXT IN ${language}:
 [...]`;
 
-const LANGUAGE_PROMPT = (subSkillsList: string, language: string) => `You are an expert French/English teacher. Generate 8 grammar/language practice items for these sub-skills: ${subSkillsList}. CONSTRAIN each item to the RULE/SCOPE actually taught (NO irregulars, NO exceptions beyond what's taught). Grade-appropriate.
+const LANGUAGE_PROMPT = (subSkillsList: string, language: string, conceptScope: string) => `You are an expert French/English teacher. Generate 8 grammar/language practice items for these sub-skills: ${subSkillsList}. CONSTRAIN each item to the RULE/SCOPE actually taught (NO irregulars, NO exceptions beyond what's taught). Grade-appropriate.
+
+WORKSHEET SCOPE TO PRESERVE:
+${conceptScope}
+
+CRITICAL TASK-TYPE RULE:
+- Match the ACTUAL task type on the worksheet, not merely the broad topic.
+- If the worksheet is conjugation, every item MUST ask the learner to conjugate a verb for a given subject/person/tense.
+- For conjugation, expected_answer MUST be the conjugated verb form or requested conjugated phrase, never a subject pronoun such as je/tu/il/elle/nous/vous/ils/elles.
+- Do NOT ask the learner to identify a subject pronoun, infinitive, tense name, or grammar category unless the original worksheet explicitly asks that.
+- For French regular future tense of -er verbs, use regular -er verbs and expected answers like "regardera", not "elle".
 
 CRITICAL WORDING RULE:
 - ALWAYS wrap the target word/token in « » guillemets (French quotes) or double-quotes if unavailable.
@@ -68,7 +78,16 @@ Return ONLY the JSON array, NO EXPLANATION, ALL TEXT IN ${language}:
 const MATH_TOPUP_PROMPT = (subSkill: string, language: string) => `Generate 4 more math practice items (${language}) focused ONLY on the sub-skill: "${subSkill}". EACH ITEM MUST BE SELF-CONTAINED — every number the child needs must be IN THE QUESTION TEXT. Vary contexts (school supplies, toys, snacks, sports, clothing, books). Return ONLY the JSON array with structure { "kind":"math", "answer_type":"...", "sub_skill":"${subSkill}", "unit":"€"|"" (€ if money; "" if count), "question":"...", "check_expression":"...", "claimed_answer":... }:
 [...]`;
 
-const LANGUAGE_TOPUP_PROMPT = (subSkill: string, language: string) => `Generate 4 more grammar/language practice items (${language}) focused ONLY on the sub-skill: "${subSkill}". Constrain to the RULE taught (NO irregulars/exceptions beyond scope).
+const LANGUAGE_TOPUP_PROMPT = (subSkill: string, language: string, conceptScope: string) => `Generate 4 more grammar/language practice items (${language}) focused ONLY on the sub-skill: "${subSkill}". Constrain to the RULE taught (NO irregulars/exceptions beyond scope).
+
+WORKSHEET SCOPE TO PRESERVE:
+${conceptScope}
+
+CRITICAL TASK-TYPE RULE:
+- Match the ACTUAL worksheet task type.
+- If this is conjugation practice, ask for the conjugated verb/form.
+- Do NOT ask for a subject pronoun, infinitive, tense name, or grammar category unless the worksheet explicitly asks that.
+- For French regular future tense of -er verbs, expected answers should be forms like "regardera", not pronouns like "elle".
 
 CRITICAL WORDING RULE:
 - ALWAYS wrap the target word/token in « » guillemets (French quotes) or double-quotes if unavailable.
@@ -575,9 +594,86 @@ function selectFinalItems(
   return { final, uncovered };
 }
 
+function buildConceptScope(worksheet: Record<string, unknown>): string {
+  const concept = worksheet.concept as {
+    label?: string;
+    description?: string;
+    sub_skills?: Array<{ label?: string; description?: string }>;
+  } | undefined;
+
+  const lines = [
+    concept?.label ? `Concept: ${concept.label}` : "",
+    concept?.description ? `Description: ${concept.description}` : "",
+    ...(concept?.sub_skills || []).map((skill) =>
+      `Sub-skill: ${skill.label || ""}${skill.description ? ` — ${skill.description}` : ""}`
+    ),
+  ].filter(Boolean);
+
+  return lines.join("\n") || "Use only the specific grammar/language scope identified from the worksheet.";
+}
+
+function isLikelyConjugationPractice(worksheet: Record<string, unknown>): boolean {
+  const scope = buildConceptScope(worksheet)
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase();
+
+  return (
+    scope.includes("conjug") ||
+    scope.includes("verbe") ||
+    scope.includes("verb") ||
+    scope.includes("futur") ||
+    scope.includes("tense")
+  );
+}
+
+function shouldRejectLanguageItem(item: Record<string, unknown>, isConjugationPractice: boolean): boolean {
+  if (!isConjugationPractice) return false;
+
+  const question = String(item.question || "")
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase();
+  const expected = normalizeAnswerText(String(item.expected_answer || ""))
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase();
+
+  const pronounAnswers = new Set([
+    "je",
+    "j'",
+    "tu",
+    "il",
+    "elle",
+    "on",
+    "nous",
+    "vous",
+    "ils",
+    "elles",
+    "i",
+    "you",
+    "he",
+    "she",
+    "we",
+    "they",
+  ]);
+
+  if (pronounAnswers.has(expected)) return true;
+
+  const asksForPronoun =
+    /(quel|quelle|identify|which|choisis|choose|trouve|find).{0,60}(pronom|subject pronoun)/.test(question) ||
+    /(pronom|subject pronoun).{0,60}(sujet|subject)/.test(question);
+
+  const asksToConjugate = /(conjug|mets|mettez|ecris|write|complete|complet)/.test(question);
+
+  return asksForPronoun && !asksToConjugate;
+}
+
 // Handle language/grammar practice: generate, verify by re-solving, filter
 async function handleLanguagePractice(worksheet: Record<string, unknown>, language: string, domainRaw: string): Promise<Response> {
   const subSkillsList = (worksheet.concept?.sub_skills as Array<{label: string}>)?.map((s) => s.label).join(", ") || "grammar";
+  const conceptScope = buildConceptScope(worksheet);
+  const isConjugationPractice = isLikelyConjugationPractice(worksheet);
 
   // Generate 8 candidate language items
   const genRes = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -586,7 +682,7 @@ async function handleLanguagePractice(worksheet: Record<string, unknown>, langua
     body: JSON.stringify({
       model: "gpt-4o",
       messages: [
-        { role: "user", content: LANGUAGE_PROMPT(subSkillsList, language) },
+        { role: "user", content: LANGUAGE_PROMPT(subSkillsList, language, conceptScope) },
       ],
     }),
   });
@@ -701,7 +797,7 @@ async function handleLanguagePractice(worksheet: Record<string, unknown>, langua
       matched,
     });
 
-    if (matched) {
+    if (matched && !shouldRejectLanguageItem(item, isConjugationPractice)) {
       item.verified = true;
       item.answer = item.expected_answer;
       verifiedItems.push(item);
@@ -723,7 +819,7 @@ async function handleLanguagePractice(worksheet: Record<string, unknown>, langua
       body: JSON.stringify({
         model: "gpt-4o",
         messages: [
-          { role: "user", content: LANGUAGE_TOPUP_PROMPT(missingSkill, language) },
+          { role: "user", content: LANGUAGE_TOPUP_PROMPT(missingSkill, language, conceptScope) },
         ],
       }),
     });
@@ -784,7 +880,7 @@ async function handleLanguagePractice(worksheet: Record<string, unknown>, langua
         const expectedNorm = normalizeAnswerText(item.expected_answer as string);
         const solverNorm = normalizeAnswerText(solverAnswer);
 
-        if (expectedNorm === solverNorm) {
+        if (expectedNorm === solverNorm && !shouldRejectLanguageItem(item, isConjugationPractice)) {
           item.verified = true;
           item.answer = item.expected_answer;
           verifiedItems.push(item);
