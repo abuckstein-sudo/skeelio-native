@@ -440,6 +440,7 @@ export default function PracticeScreen() {
           isCorrect,
           message: isCorrect ? COPY[appLanguage].correctFeedback : COPY[appLanguage].wrongFeedback(question.answer),
         });
+        setTimeout(() => inputRef.current?.focus(), 50);
 
         const newAnswer: Answer = {
           questionIndex: currentQuestionIndex,
@@ -683,7 +684,7 @@ export default function PracticeScreen() {
             keyboardType="number-pad"
             value={userAnswer}
             onChangeText={setUserAnswer}
-            editable={!showingFeedback}
+            editable={!isSubmitting}
             maxLength={10}
             ref={inputRef}
             autoFocus={true}
@@ -702,12 +703,18 @@ export default function PracticeScreen() {
             </View>
           )}
 
+          {showingFeedback && (
+            <TouchableOpacity style={styles.nextAboveButton} onPress={handleNext}>
+              <Text style={styles.nextAboveButtonText}>{copy.next}</Text>
+            </TouchableOpacity>
+          )}
+
           <TouchableOpacity
-            style={[styles.button, (isSubmitting || showingFeedback) && styles.buttonDisabled]}
-            onPress={showingFeedback ? handleNext : handleSubmit}
-            disabled={isSubmitting}
+            style={[styles.button, isSubmitting && styles.buttonDisabled]}
+            onPress={handleSubmit}
+            disabled={isSubmitting || showingFeedback}
           >
-            <Text style={styles.buttonText}>{showingFeedback ? copy.next : copy.submit}</Text>
+            <Text style={styles.buttonText}>{copy.submit}</Text>
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
@@ -810,6 +817,18 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: "center",
     marginBottom: 0,
+  },
+  nextAboveButton: {
+    backgroundColor: "#4caf50",
+    padding: 14,
+    borderRadius: 8,
+    alignItems: "center",
+    marginBottom: 10,
+  },
+  nextAboveButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "800",
   },
   buttonDisabled: {
     opacity: 0.6,

@@ -393,6 +393,7 @@ export default function HomeworkScreen() {
           isCorrect,
           message: isCorrect ? COPY[appLanguage].correct : COPY[appLanguage].wrong(question.correct_answer),
         });
+        setTimeout(() => inputRef.current?.focus(), 50);
 
         const newAnswer: Answer = {
           questionIndex: currentQuestionIndex,
@@ -596,12 +597,12 @@ export default function HomeworkScreen() {
         {/* Zone 2: Fixed footer (input + button) — outside ScrollView, above keyboard */}
         <View style={styles.footer}>
           <TextInput
-            style={[styles.answerInput, isAnswered && styles.answerInputDisabled]}
+            style={styles.answerInput}
             placeholder={copy.answerPlaceholder}
             value={userAnswer}
             onChangeText={setUserAnswer}
             keyboardType="number-pad"
-            editable={!isAnswered}
+            editable={!isSubmitting}
             ref={inputRef}
             autoFocus={true}
             showSoftInputOnFocus={true}
@@ -617,23 +618,23 @@ export default function HomeworkScreen() {
             </View>
           )}
 
+          {isAnswered && (
+            <TouchableOpacity
+              style={[styles.nextAboveButton, isCompleting && styles.nextButtonDisabled]}
+              onPress={handleNext}
+              disabled={isCompleting}
+            >
+              <Text style={styles.nextAboveButtonText}>
+                {isCompleting ? copy.finishing : isLastQuestion ? copy.finish : copy.next}
+              </Text>
+            </TouchableOpacity>
+          )}
+
           {/* Buttons */}
           <View style={styles.buttonContainer}>
-            {!isAnswered ? (
-              <TouchableOpacity style={styles.checkButton} onPress={handleSubmit} disabled={isSubmitting}>
+            <TouchableOpacity style={styles.checkButton} onPress={handleSubmit} disabled={isSubmitting || isAnswered}>
                 <Text style={styles.checkButtonText}>{isSubmitting ? "..." : copy.check}</Text>
               </TouchableOpacity>
-            ) : (
-              <TouchableOpacity
-                style={[styles.nextButton, isCompleting && styles.nextButtonDisabled]}
-                onPress={handleNext}
-                disabled={isCompleting}
-              >
-                <Text style={styles.nextButtonText}>
-                  {isCompleting ? copy.finishing : isLastQuestion ? copy.finish : copy.next}
-                </Text>
-              </TouchableOpacity>
-            )}
           </View>
         </View>
       </KeyboardAvoidingView>
@@ -851,6 +852,19 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 32,
     borderRadius: 8,
+  },
+  nextAboveButton: {
+    backgroundColor: "#4caf50",
+    paddingVertical: 12,
+    paddingHorizontal: 32,
+    borderRadius: 8,
+    alignItems: "center",
+    marginBottom: 10,
+  },
+  nextAboveButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "800",
   },
   nextButtonDisabled: {
     opacity: 0.65,

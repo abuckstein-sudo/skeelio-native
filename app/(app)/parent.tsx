@@ -9,6 +9,8 @@ import {
   Alert,
   Modal,
   ScrollView,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { useRouter, useFocusEffect } from "expo-router";
 import { useAuth } from "@/app/_layout";
@@ -206,7 +208,17 @@ export default function ParentScreen() {
           </TouchableOpacity>
         </View>
       ) : (
-        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          style={styles.content}
+          keyboardVerticalOffset={80}
+        >
+        <ScrollView
+          style={styles.content}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+        >
           {/* Child Switcher */}
           <View style={styles.childSwitcher}>
             <ScrollView
@@ -262,6 +274,7 @@ export default function ParentScreen() {
             </>
           )}
         </ScrollView>
+        </KeyboardAvoidingView>
       )}
 
       {/* Menu Modal */}

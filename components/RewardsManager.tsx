@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Keyboard,
   StyleSheet,
   Text,
   TextInput,
@@ -67,6 +68,7 @@ export default function RewardsManager({ childId, stars }: { childId: string; st
 
     setSaving(true);
     try {
+      Keyboard.dismiss();
       await createShopItemForChild({
         childId,
         title,
@@ -156,6 +158,7 @@ export default function RewardsManager({ childId, stars }: { childId: string; st
           value={title}
           onChangeText={setTitle}
           editable={!saving}
+          returnKeyType="next"
         />
         <TextInput
           style={styles.input}
@@ -163,6 +166,8 @@ export default function RewardsManager({ childId, stars }: { childId: string; st
           value={description}
           onChangeText={setDescription}
           editable={!saving}
+          returnKeyType="done"
+          onSubmitEditing={Keyboard.dismiss}
         />
         <View style={styles.costRow}>
           <TextInput
@@ -172,7 +177,12 @@ export default function RewardsManager({ childId, stars }: { childId: string; st
             onChangeText={setCost}
             keyboardType="number-pad"
             editable={!saving}
+            returnKeyType="done"
+            onSubmitEditing={Keyboard.dismiss}
           />
+          <TouchableOpacity style={styles.doneButton} onPress={Keyboard.dismiss}>
+            <Text style={styles.doneButtonText}>Done</Text>
+          </TouchableOpacity>
           <TouchableOpacity
             style={[styles.addButton, saving && styles.disabledButton]}
             onPress={handleCreate}
@@ -307,6 +317,19 @@ const styles = StyleSheet.create({
     backgroundColor: "#2563eb",
     borderRadius: 10,
     paddingHorizontal: 16,
+  },
+  doneButton: {
+    justifyContent: "center",
+    alignItems: "center",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#cbd5e1",
+    paddingHorizontal: 12,
+    backgroundColor: "#f8fafc",
+  },
+  doneButtonText: {
+    color: "#334155",
+    fontWeight: "800",
   },
   addButtonText: {
     color: "#fff",
