@@ -46,7 +46,18 @@ const REGULAR_ER_VERB_BANK = [
   "visiter",
 ];
 
-const MATH_PROMPT = (subSkillsList: string, language: string) => `You are an expert elementary teacher. Generate 6 math practice items (${language}) for these sub-skills: ${subSkillsList}. Distribute evenly across sub-skills.
+const MATH_PROMPT = (subSkillsList: string, language: string, schoolContext: string) => `You are an expert elementary teacher. Generate 6 math practice items (${language}) for these sub-skills: ${subSkillsList}. Distribute evenly across sub-skills.
+
+WORKSHEET / SCHOOL CONTEXT TO PRESERVE:
+${schoolContext}
+
+CRITICAL SCHOOL-ALIGNMENT RULES:
+- Use the same classroom method/representation when appropriate. If the worksheet uses labels such as c/d/u, number-line jumps, decomposition, columns, tables, grids, or specific grammar terms, reuse those words/labels in same-form and near-transfer items.
+- Generate a mix of practice modes:
+  1. same_form: looks like the worksheet form, but with new values.
+  2. near_transfer: same method, slightly different layout or numbers.
+  3. far_transfer: same underlying skill in a modified context once the method is clear.
+- Do NOT treat the scanned worksheet as proficiency evidence. It is context for tutoring and practice generation.
 
 Each item MUST be SELF-CONTAINED — every number the child needs IN THE QUESTION TEXT. Vary real-world contexts (school supplies, toys, snacks, sports, clothing, books).
 
@@ -56,6 +67,7 @@ STRUCTURE:
   "answer_type":"number"|"yesno",
   "sub_skill":"<which sub_skill>",
   "unit":"€"|"" (€ if the answer is a money amount; "" if a plain count like number of items),
+  "practice_mode":"same_form"|"near_transfer"|"far_transfer",
   "question":"<COMPLETE word problem in ${language} with every numeric value. Use French comma decimals: 5,20 € not 5.20 €. E.g. 'Tu as 15 €. Une paire de chaussures coûte 12 €. As-tu assez d'argent?'>",
   "check_expression":"<expression using exact numbers from question in standard decimal form (5.20 not 5,20); arithmetic or boolean>",
   "claimed_answer":<number or boolean>
@@ -63,21 +75,30 @@ STRUCTURE:
 Return ONLY JSON array:
 [...]`;
 
-const MATH_TOPUP_PROMPT = (subSkill: string, language: string) => `Generate 4 more math practice items (${language}) focused ONLY on: "${subSkill}". Every number the child needs IN THE QUESTION TEXT. Vary contexts (school supplies, toys, snacks, sports, clothing, books). Structure:
+const MATH_TOPUP_PROMPT = (subSkill: string, language: string, schoolContext: string) => `Generate 4 more math practice items (${language}) focused ONLY on: "${subSkill}".
+
+WORKSHEET / SCHOOL CONTEXT TO PRESERVE:
+${schoolContext}
+
+Use the same classroom method/representation where appropriate, then vary slightly. Every number the child needs IN THE QUESTION TEXT. Vary contexts (school supplies, toys, snacks, sports, clothing, books). Structure:
 {
   "kind":"math",
   "answer_type":"number"|"yesno",
   "sub_skill":"${subSkill}",
   "unit":"€"|"" (€ if the answer is money; "" if a count),
+  "practice_mode":"same_form"|"near_transfer"|"far_transfer",
   "question":"<exercise with all numbers stated>",
   "check_expression":"<expression>",
   "claimed_answer":<number or boolean>
 }
 Return ONLY JSON array: [...]`;
 
-const LANGUAGE_PROMPT = (subSkillsList: string, language: string, conceptLabel: string, subSkillStrings: string[], avoid: string[] = []) => {
+const LANGUAGE_PROMPT = (subSkillsList: string, language: string, conceptLabel: string, subSkillStrings: string[], schoolContext: string, avoid: string[] = []) => {
   const avoidStr = avoid.length > 0 ? `Do NOT reuse any word from this avoid list (already shown this episode): ${avoid.join(", ")}.` : "";
   return `You are an expert French/English teacher. Generate 8 grammar/language items for: ${subSkillsList}. Distribute evenly. Constrain to taught RULE/SCOPE (NO irregulars/exceptions beyond scope).
+
+WORKSHEET / SCHOOL CONTEXT TO PRESERVE:
+${schoolContext}
 
 ON-CONCEPT CONSTRAINT (CRITICAL):
 - Every question must practice ONLY this concept: "${conceptLabel}".
@@ -85,6 +106,7 @@ ON-CONCEPT CONSTRAINT (CRITICAL):
 - Do NOT generate any other grammatical transformation — NO gender/féminin, NO conjugation/tense, NO synonyms/antonyms, NO definitions.
 - If the sub_skills are about plural formation, every question must ask to form a plural.
 - Write every question fully in ${language}. NO code-switching or English mixed in.
+- Preserve worksheet form/method where appropriate. If the worksheet uses a conjugation grid, sentence frame, table, labels, or specific school grammar wording, generate some same-form items before modified transfer items.
 
 VOCABULARY CONSTRAINT:
 - Use a WIDE variety of distinct, common CE1 nouns drawn from many categories — animals, objects, food, school, nature, family, clothes, the home, etc.
@@ -101,21 +123,26 @@ STRUCTURE:
 {
   "kind":"reference",
   "sub_skill":"<EXACTLY one of: ${subSkillStrings.join(", ")} — copy the string verbatim>",
+  "practice_mode":"same_form"|"near_transfer"|"far_transfer",
   "question":"<exercise in ${language}: state instruction, then target word in « ». MUST practice ONLY the concept "${conceptLabel}". E.g. 'Mets ce mot au pluriel : « chien »'>",
   "expected_answer":"<ONE WORD, no article, lowercase, no punctuation>"
 }
 Return ONLY JSON array: [...]`};
 
 
-const LANGUAGE_TOPUP_PROMPT = (subSkill: string, language: string, conceptLabel: string, avoid: string[] = []) => {
+const LANGUAGE_TOPUP_PROMPT = (subSkill: string, language: string, conceptLabel: string, schoolContext: string, avoid: string[] = []) => {
   const avoidStr = avoid.length > 0 ? `Do NOT reuse any word from this avoid list (already shown this episode): ${avoid.join(", ")}.` : "";
   return `Generate 4 more grammar/language items (${language}) focused ONLY on: "${subSkill}". Constrain to taught RULE (NO irregulars/exceptions beyond scope).
+
+WORKSHEET / SCHOOL CONTEXT TO PRESERVE:
+${schoolContext}
 
 ON-CONCEPT CONSTRAINT (CRITICAL):
 - Every question must practice ONLY this concept: "${conceptLabel}".
 - Use sub_skill: "${subSkill}" for every item.
 - Do NOT generate any other grammatical transformation — NO gender/féminin, NO conjugation/tense, NO synonyms/antonyms, NO definitions.
 - Write every question fully in ${language}. NO code-switching or English mixed in.
+- Preserve worksheet form/method where appropriate, then vary slightly.
 
 VOCABULARY CONSTRAINT:
 - Use a WIDE variety of distinct, common CE1 nouns drawn from many categories — animals, objects, food, school, nature, family, clothes, the home, etc.
@@ -132,6 +159,7 @@ STRUCTURE:
 {
   "kind":"reference",
   "sub_skill":"${subSkill}",
+  "practice_mode":"same_form"|"near_transfer"|"far_transfer",
   "question":"<exercise in ${language}: state instruction, then target word in « ». MUST practice ONLY the concept "${conceptLabel}". E.g. 'Mets ce mot au pluriel : « chien »'>",
   "expected_answer":"<ONE WORD, no article, lowercase, no punctuation>"
 }
@@ -260,6 +288,47 @@ function conceptScopeText(concept: Record<string, unknown>, allSubSkills: string
     .map((s) => s.description || "")
     .join(" ");
   return normalizePlainText(`${String(concept.label ?? "")} ${String(concept.description ?? "")} ${subSkillText} ${descriptions}`);
+}
+
+function schoolContextText(concept: Record<string, unknown>): string {
+  const schoolMethod = (concept.school_method ?? {}) as {
+    name?: string;
+    labels?: string[];
+    meaning?: Record<string, string>;
+    when_to_use?: string;
+  };
+  const questionForms = Array.isArray(concept.question_forms)
+    ? concept.question_forms as Array<{ name?: string; description?: string; same_form_prompt?: string }>
+    : [];
+  const practiceModes = Array.isArray(concept.practice_modes)
+    ? concept.practice_modes
+    : ["same_form", "near_transfer", "far_transfer"];
+
+  const meaning = schoolMethod.meaning && Object.keys(schoolMethod.meaning).length > 0
+    ? Object.entries(schoolMethod.meaning).map(([label, value]) => `${label}=${value}`).join(", ")
+    : "";
+  const forms = questionForms
+    .map((form) => [
+      form.name ? `Form: ${form.name}` : "",
+      form.description ? `Description: ${form.description}` : "",
+      form.same_form_prompt ? `Same-form generation: ${form.same_form_prompt}` : "",
+    ].filter(Boolean).join(" | "))
+    .filter(Boolean)
+    .join("\n");
+
+  const lines = [
+    `Concept: ${String(concept.label ?? "")}`,
+    concept.description ? `Description: ${String(concept.description)}` : "",
+    schoolMethod.name ? `School method: ${schoolMethod.name}` : "School method: not specified",
+    schoolMethod.labels?.length ? `Visible labels/notation: ${schoolMethod.labels.join(", ")}` : "",
+    meaning ? `Label meanings: ${meaning}` : "",
+    schoolMethod.when_to_use ? `When to use method: ${schoolMethod.when_to_use}` : "",
+    forms ? `Worksheet question forms:\n${forms}` : "Worksheet question forms: not specified",
+    `Practice modes requested: ${practiceModes.join(", ")}`,
+    "Evidence policy: context_only. Use this scan as school context, not mastery/proficiency evidence.",
+  ].filter(Boolean);
+
+  return lines.join("\n");
 }
 
 function isLikelyConjugationPractice(concept: Record<string, unknown>, allSubSkills: string[]): boolean {
@@ -595,6 +664,7 @@ async function generateMathPractice(
   maxItems: number
 ): Promise<Response> {
   const subSkillsList = allSubSkills.join(", ");
+  const schoolContext = schoolContextText(concept);
   const mathjs = await import("https://esm.sh/mathjs@12");
   const evaluate = mathjs.evaluate;
 
@@ -608,7 +678,7 @@ async function generateMathPractice(
     body: JSON.stringify({
       model: "gpt-4o",
       messages: [
-        { role: "user", content: MATH_PROMPT(subSkillsList, language) },
+        { role: "user", content: MATH_PROMPT(subSkillsList, language, schoolContext) },
       ],
     }),
   });
@@ -689,7 +759,7 @@ async function generateMathPractice(
       body: JSON.stringify({
         model: "gpt-4o",
         messages: [
-          { role: "user", content: MATH_TOPUP_PROMPT(missingSkill, language) },
+          { role: "user", content: MATH_TOPUP_PROMPT(missingSkill, language, schoolContext) },
         ],
       }),
     });
@@ -796,6 +866,7 @@ async function generateLanguagePractice(
 ): Promise<Response> {
   const conceptLabel = String(concept.label ?? "");
   const subSkillsList = allSubSkills.join(", ");
+  const schoolContext = schoolContextText(concept);
   const avoidSet = new Set(avoid.map((w) => normalizeAnswerText(w)));
 
   let verifiedItems: Record<string, unknown>[] = [];
@@ -809,7 +880,7 @@ async function generateLanguagePractice(
     body: JSON.stringify({
       model: "gpt-4o",
       messages: [
-        { role: "user", content: LANGUAGE_PROMPT(subSkillsList, language, conceptLabel, allSubSkills, avoid) },
+        { role: "user", content: LANGUAGE_PROMPT(subSkillsList, language, conceptLabel, allSubSkills, schoolContext, avoid) },
       ],
     }),
   });
@@ -902,7 +973,7 @@ async function generateLanguagePractice(
       body: JSON.stringify({
         model: "gpt-4o",
         messages: [
-          { role: "user", content: LANGUAGE_TOPUP_PROMPT(missingSkill, language, conceptLabel, avoid) },
+          { role: "user", content: LANGUAGE_TOPUP_PROMPT(missingSkill, language, conceptLabel, schoolContext, avoid) },
         ],
       }),
     });

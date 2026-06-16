@@ -39,8 +39,28 @@ interface PracticeItem {
   kind?: string;
 }
 
+interface SchoolMethod {
+  name?: string;
+  labels?: string[];
+  meaning?: Record<string, string>;
+  when_to_use?: string;
+}
+
+interface QuestionForm {
+  name?: string;
+  description?: string;
+  same_form_prompt?: string;
+}
+
 interface WorksheetData {
-  concept: { label: string; description?: string };
+  concept: {
+    label: string;
+    description?: string;
+    school_method?: SchoolMethod;
+    question_forms?: QuestionForm[];
+    practice_modes?: string[];
+    evidence_policy?: string;
+  };
   lesson: string;
   language: string;
   domain: string;
@@ -506,6 +526,32 @@ export default function ScanScreen() {
             )}
           </View>
 
+          {reviewData.concept.school_method?.name ? (
+            <View style={styles.reviewSection}>
+              <Text style={styles.reviewSectionTitle}>Méthode repérée</Text>
+              <Text style={styles.reviewMethodName}>{reviewData.concept.school_method.name}</Text>
+              {reviewData.concept.school_method.labels?.length ? (
+                <Text style={styles.reviewDescription}>
+                  Repères: {reviewData.concept.school_method.labels.join(", ")}
+                </Text>
+              ) : null}
+              {reviewData.concept.school_method.when_to_use ? (
+                <Text style={styles.reviewDescription}>{reviewData.concept.school_method.when_to_use}</Text>
+              ) : null}
+            </View>
+          ) : null}
+
+          {reviewData.concept.question_forms?.length ? (
+            <View style={styles.reviewSection}>
+              <Text style={styles.reviewSectionTitle}>Forme des exercices</Text>
+              {reviewData.concept.question_forms.slice(0, 3).map((form, idx) => (
+                <Text key={`${form.name || "form"}-${idx}`} style={styles.reviewDescription}>
+                  {form.name || "Exercice"}{form.description ? `: ${form.description}` : ""}
+                </Text>
+              ))}
+            </View>
+          ) : null}
+
           {isSpellingList && (
             <View style={styles.reviewSection}>
               <Text style={styles.reviewSectionTitle}>Mots détectés</Text>
@@ -887,6 +933,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
     color: "#2196f3",
+    marginBottom: 4,
+  },
+  reviewMethodName: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#333",
     marginBottom: 4,
   },
   reviewDescription: {

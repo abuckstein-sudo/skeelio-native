@@ -17,7 +17,22 @@ const INITIAL_PROMPT = `You are an expert elementary teacher (ages 6–10). You 
  "concept": {
    "label": "<short name in the page's language>",
    "description": "<1–2 sentences in the page's language>",
-   "sub_skills": [ { "label": "<sub-skill name in page's language>", "description": "<1 sentence in page's language>" }, ... ]
+   "sub_skills": [ { "label": "<sub-skill name in page's language>", "description": "<1 sentence in page's language>" }, ... ],
+   "school_method": {
+     "name": "<short name for the classroom method/representation, or empty string if none is visible>",
+     "labels": ["<symbols/labels used on the worksheet, e.g. c, d, u>"],
+     "meaning": { "<label>": "<what it means in the page's language>" },
+     "when_to_use": "<when this method applies>"
+   },
+   "question_forms": [
+     {
+       "name": "<worksheet question form, e.g. fill c-d-u table, compare numbers, conjugation grid>",
+       "description": "<how questions are presented on the page>",
+       "same_form_prompt": "<how to generate another question in the same form>"
+     }
+   ],
+   "practice_modes": ["same_form", "near_transfer", "far_transfer"],
+   "evidence_policy": "context_only"
  },
  "lesson": "<a short, warm, age-appropriate mini-lesson in the page's language; plain text, no markdown>",
  "practice": [ <exactly 6 items, DISTRIBUTED EVENLY across all sub_skills; each tagged with its sub_skill> ]
@@ -37,12 +52,14 @@ Each practice MATH item MUST be SELF-CONTAINED — the question text includes EV
 Other items (reference, open) can use simple text.
 CRITICAL:
 1. Derive sub_skills ONLY from question types on the page (don't invent).
-2. Each math item INVENTS a fresh scenario (different items/prices than the sheet) — NO reuse of sheet values.
-3. VARY the real-world contexts across items — rotate among everyday kid settings: school supplies (pencils, notebooks, erasers), toys (action figures, building blocks, board games), snacks/groceries (fruit, candy, juice, milk), sports gear (balls, skates, bikes), clothing (shoes, jackets, hats), books/comics. Do NOT stay only on the sheet's domain.
-4. EVERY number the child needs MUST appear in the question text itself (use French comma decimals: 5,20 € not 5.20 €).
-5. check_expression uses the SAME numbers as in the question, in standard decimal form (5.20 not 5,20).
-6. Include a "how many can you buy" item where relevant (e.g., "Tu as 10 €. Un stylo coûte 2 €. Combien de stylos peux-tu acheter?").
-7. Each item is distinct, NO duplicates; ALL text in page's language only.`;
+2. Identify the school method/representation from the page when visible: notation, labels, table layout, sentence frame, operation setup, diagram style, grammar terms, or teacher method. Example: if the page uses c/d/u, record c=centaines, d=dizaines, u=unités.
+3. evidence_policy MUST be "context_only": scanning a worksheet gives school context, not proficiency/mastery credit.
+4. Each math item INVENTS a fresh scenario (different items/prices than the sheet) — NO reuse of sheet values.
+5. VARY the real-world contexts across items — rotate among everyday kid settings: school supplies (pencils, notebooks, erasers), toys (action figures, building blocks, board games), snacks/groceries (fruit, candy, juice, milk), sports gear (balls, skates, bikes), clothing (shoes, jackets, hats), books/comics. Do NOT stay only on the sheet's domain.
+6. EVERY number the child needs MUST appear in the question text itself (use French comma decimals: 5,20 € not 5.20 €).
+7. check_expression uses the SAME numbers as in the question, in standard decimal form (5.20 not 5,20).
+8. Include a "how many can you buy" item where relevant (e.g., "Tu as 10 €. Un stylo coûte 2 €. Combien de stylos peux-tu acheter?").
+9. Each item is distinct, NO duplicates; ALL text in page's language only.`;
 
 const RETRY_PROMPT = (subSkillsList: string, language: string) => `Generate 4 more DISTINCT math practice items (${language}) for sub-skills: ${subSkillsList}. Distribute evenly across the sub-skills listed. EACH ITEM MUST BE SELF-CONTAINED — every number the child needs must be IN THE QUESTION TEXT. Vary contexts widely across everyday kid settings: school supplies, toys, snacks/groceries, sports gear, clothing, books. Structure:
 {
@@ -164,6 +181,7 @@ Deno.serve(async (req) => {
     if (!worksheet) {
       return json({ error: "Failed to parse worksheet absorption" }, 502);
     }
+    attachWorksheetContextToConcept(worksheet);
 
     const domainRaw = worksheet.domain as string || "math";
     const languageRaw = worksheet.language as string;
@@ -688,7 +706,8 @@ function normalizeSpellingListWorksheet(worksheet: Record<string, unknown>): Rec
   worksheet.lesson = french
     ? "Lis chaque mot attentivement, écoute ses sons, puis écris-le en gardant les accents et les lettres dans le bon ordre."
     : "Read each word carefully, listen to its sounds, then write it with every letter in the correct order.";
-  worksheet.spelling_words = words;
+    worksheet.spelling_words = words;
+  attachWorksheetContextToConcept(worksheet);
   worksheet.practice = words.slice(0, 6).map((word) => ({
     kind: "spelling",
     sub_skill: conceptLabel,
@@ -702,6 +721,32 @@ function normalizeSpellingListWorksheet(worksheet: Record<string, unknown>): Rec
   };
 
   return worksheet;
+}
+
+function attachWorksheetContextToConcept(worksheet: Record<string, unknown>) {
+  const concept = (worksheet.concept ?? {}) as Record<string, unknown>;
+
+  const schoolMethod = concept.school_method || worksheet.school_method || {
+    name: "",
+    labels: [],
+    meaning: {},
+    when_to_use: "",
+  };
+  const questionForms = concept.question_forms || worksheet.question_forms || [];
+  const practiceModes = concept.practice_modes || worksheet.practice_modes || [
+    "same_form",
+    "near_transfer",
+    "far_transfer",
+  ];
+
+  worksheet.concept = {
+    ...concept,
+    school_method: schoolMethod,
+    question_forms: questionForms,
+    practice_modes: practiceModes,
+    evidence_policy: "context_only",
+  };
+  worksheet.evidence_policy = "context_only";
 }
 
 // Normalize text for language answer comparison: NFC, lowercase, trim, collapse whitespace, replace curly quotes, strip articles, strip punctuation, keep accents
