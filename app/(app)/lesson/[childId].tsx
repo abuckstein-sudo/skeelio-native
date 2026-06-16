@@ -14,7 +14,7 @@ import {
   Platform,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { LADDERS, TEACH_NOTES, Operation, FACT_TIERS } from "@/lib/tutorConfig";
+import { Operation, FACT_TIERS, teachNoteForTier } from "@/lib/tutorConfig";
 import {
   pickAdditionStrategy,
   pickSubtractionStrategy,
@@ -35,7 +35,9 @@ const styles = StyleSheet.create({
   },
   contentScroll: {
     flexGrow: 1,
-    padding: 20,
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+    paddingTop: 64,
   },
   header: {
     fontSize: 22,
@@ -247,7 +249,7 @@ export default function LessonScreen() {
       ? "×"
       : "÷";
 
-  const teachNotes = TEACH_NOTES[tierId] || "";
+  const teachNotes = teachNoteForTier(tierId, appLanguage);
   const isFactTier = FACT_TIERS.has(tierId);
   const copy = COPY[appLanguage];
 

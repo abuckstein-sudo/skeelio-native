@@ -17,7 +17,7 @@ import { supabase } from "@/lib/supabase";
 import { addStars } from "@/lib/addStars";
 import { generateQuestion, pickTeachExample } from "@/lib/tutor/generate";
 import { currentTierAndBand, Attempt, tierStats } from "@/lib/tutor/ability";
-import { LADDERS, GATE, Operation, TEACH_NOTES, FACT_TIERS } from "@/lib/tutorConfig";
+import { LADDERS, GATE, Operation, FACT_TIERS } from "@/lib/tutorConfig";
 import { computeExampleSteps } from "@/lib/tutor/steps";
 import {
   pickMultiplicationStrategy,
