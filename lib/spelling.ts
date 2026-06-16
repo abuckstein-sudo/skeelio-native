@@ -159,8 +159,30 @@ export function gradeSpellingAttempt(
 
 export function fallbackHint(
   errorType: ErrorType,
-  attempt: 1 | 2 | 3
+  attempt: 1 | 2 | 3,
+  language: SpellingLanguage = "English"
 ): string {
+  if (language === "French") {
+    if (attempt === 3)
+      return "Dis le mot lentement et écoute chaque son.";
+    switch (errorType) {
+      case "wrong_ending":
+        return "Vérifie bien la fin du mot.";
+      case "missing_letter":
+        return "Il manque peut-être une lettre qu'on entend peu.";
+      case "extra_letter":
+        return "Relis lentement : il y a peut-être une lettre en trop.";
+      case "wrong_vowel":
+        return "Écoute le son de la voyelle.";
+      case "transposition":
+        return "Deux lettres sont peut-être inversées.";
+      case "wrong_letter":
+        return "Compare chaque lettre avec les sons du mot.";
+      default:
+        return "Dis le mot lentement et vérifie chaque son.";
+    }
+  }
+
   if (attempt === 3)
     return "Say the word slowly and listen to every single sound.";
   switch (errorType) {

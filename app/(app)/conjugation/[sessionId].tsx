@@ -26,6 +26,7 @@ import {
   type TeachingPattern,
 } from "@/lib/conjugation";
 import QuitButton from "@/components/QuitButton";
+import { appLanguageForChild, AppLanguage } from "@/lib/appLanguage";
 
 interface Answer {
   questionId: string;
@@ -42,6 +43,59 @@ type Screen = "loading" | "language" | "selection" | "teaching" | "quiz" | "comp
 type VerbGroupOption = { value: string; label: string };
 type TenseOption = { value: string; label: string };
 
+const COPY = {
+  en: {
+    chooseLanguage: "Choose Language",
+    choosePractice: "Choose Your Practice",
+    tense: "Tense",
+    verbGroup: "Verb Group",
+    continue: "Continue",
+    learnPattern: "Learn the Pattern",
+    endings: "Endings:",
+    example: "Example:",
+    start: "Start",
+    noQuestions: "No questions available",
+    question: "Question",
+    of: "of",
+    conjugate: "Conjugate:",
+    correct: "✓ Correct!",
+    wrong: (answer?: string) => `✗ The answer is: ${answer}`,
+    finish: "Finish",
+    next: "Next",
+    greatJob: "Great job! 🎉",
+    got: (correct: number, total: number) => `You got ${correct} out of ${total} correct`,
+    backHome: "Back Home",
+    selectBoth: "Please select both a tense and a verb group",
+    failedLoad: "Failed to load questions",
+    loading: "Loading...",
+  },
+  fr: {
+    chooseLanguage: "Choisis la langue",
+    choosePractice: "Choisis ton entraînement",
+    tense: "Temps",
+    verbGroup: "Groupe de verbes",
+    continue: "Continuer",
+    learnPattern: "Apprends le modèle",
+    endings: "Terminaisons :",
+    example: "Exemple :",
+    start: "Commencer",
+    noQuestions: "Aucune question disponible",
+    question: "Question",
+    of: "sur",
+    conjugate: "Conjugue :",
+    correct: "✓ Correct !",
+    wrong: (answer?: string) => `✗ La réponse est : ${answer}`,
+    finish: "Terminer",
+    next: "Suivant",
+    greatJob: "Bravo ! 🎉",
+    got: (correct: number, total: number) => `Tu as ${correct} bonnes réponses sur ${total}`,
+    backHome: "Retour à l'accueil",
+    selectBoth: "Choisis un temps et un groupe de verbes",
+    failedLoad: "Impossible de charger les questions",
+    loading: "Chargement...",
+  },
+} as const;
+
 export default function ConjugationPracticeScreen() {
   const router = useRouter();
   const { sessionId, childId, assignmentId } = useLocalSearchParams<{
@@ -56,6 +110,7 @@ export default function ConjugationPracticeScreen() {
   // Language state
   const [availableLanguages, setAvailableLanguages] = useState<Array<{ locale: string; name: string }>>([]);
   const [selectedLanguage, setSelectedLanguage] = useState<string>("");
+  const [appLanguage, setAppLanguage] = useState<AppLanguage>("en");
 
   // Selection state
   const [selectedTense, setSelectedTense] = useState<string>("");
@@ -108,6 +163,7 @@ export default function ConjugationPracticeScreen() {
 
           if (assignErr) throw assignErr;
           const cq = (assignmentData?.custom_questions as any) || {};
+          setAppLanguage((cq.language || "fr-FR") === "fr-FR" ? "fr" : "en");
           setAssignmentFilters({
             language: cq.language || "fr-FR",
             verb_groups: cq.verb_groups || [],
@@ -126,6 +182,7 @@ export default function ConjugationPracticeScreen() {
             .single();
 
           if (childErr) throw childErr;
+          setAppLanguage(appLanguageForChild(childData));
 
           const langs = (childData?.languages as any) || [];
           const langs_array = Array.isArray(langs) ? langs : (typeof langs === "string" ? JSON.parse(langs) : []);
@@ -275,7 +332,7 @@ export default function ConjugationPracticeScreen() {
 
   const handleSelectOptions = async () => {
     if (!selectedTense || !selectedGroup) {
-      setSelectionError("Please select both a tense and a verb group");
+      setSelectionError(COPY[appLanguage].selectBoth);
       return;
     }
 
@@ -307,7 +364,7 @@ export default function ConjugationPracticeScreen() {
       setScreen("teaching");
     } catch (err) {
       console.error("[ConjugationPractice] selection failed:", err);
-      setSelectionError("Failed to load questions");
+        setSelectionError(COPY[appLanguage].failedLoad);
     } finally {
       setIsLoadingTeaching(false);
     }
@@ -451,11 +508,12 @@ export default function ConjugationPracticeScreen() {
 
   // LANGUAGE SELECTION SCREEN
   if (screen === "language") {
+    const copy = COPY[appLanguage];
     return (
       <SafeAreaView style={styles.container}>
         <QuitButton />
         <ScrollView contentContainerStyle={styles.scrollContent}>
-          <Text style={styles.title}>Choose Language</Text>
+          <Text style={styles.title}>{copy.chooseLanguage}</Text>
 
           <View style={styles.buttonGrid}>
             {availableLanguages.map((lang) => (
@@ -477,13 +535,14 @@ export default function ConjugationPracticeScreen() {
 
   // SELECTION SCREEN
   if (screen === "selection") {
+    const copy = COPY[appLanguage];
     return (
       <SafeAreaView style={styles.container}>
         <QuitButton />
         <ScrollView contentContainerStyle={styles.scrollContent}>
-          <Text style={styles.title}>Choose Your Practice</Text>
+          <Text style={styles.title}>{copy.choosePractice}</Text>
 
-          <Text style={styles.label}>Tense</Text>
+          <Text style={styles.label}>{copy.tense}</Text>
           <View style={styles.buttonGrid}>
             {availableTenses.map((tense) => (
               <TouchableOpacity
@@ -498,7 +557,7 @@ export default function ConjugationPracticeScreen() {
             ))}
           </View>
 
-          <Text style={styles.label}>Verb Group</Text>
+          <Text style={styles.label}>{copy.verbGroup}</Text>
           <View style={styles.buttonGrid}>
             {availableGroups.map((group) => (
               <TouchableOpacity
@@ -523,7 +582,7 @@ export default function ConjugationPracticeScreen() {
             {isLoadingTeaching ? (
               <ActivityIndicator size="small" color="#fff" />
             ) : (
-              <Text style={styles.buttonText}>Continue</Text>
+              <Text style={styles.buttonText}>{copy.continue}</Text>
             )}
           </TouchableOpacity>
         </ScrollView>
@@ -533,11 +592,12 @@ export default function ConjugationPracticeScreen() {
 
   // TEACHING SCREEN
   if (screen === "teaching") {
+    const copy = COPY[appLanguage];
     return (
       <SafeAreaView style={styles.container}>
         <QuitButton />
         <ScrollView contentContainerStyle={styles.scrollContent}>
-          <Text style={styles.title}>Learn the Pattern</Text>
+          <Text style={styles.title}>{copy.learnPattern}</Text>
 
           {teachingPattern && (
             <View style={styles.patternCard}>
@@ -545,7 +605,7 @@ export default function ConjugationPracticeScreen() {
                 {teachingPattern.tense} • {teachingPattern.group}
               </Text>
 
-              <Text style={styles.patternSubtitle}>Endings:</Text>
+              <Text style={styles.patternSubtitle}>{copy.endings}</Text>
               <View style={styles.endingsRow}>
                 {teachingPattern.endings.map((ending, idx) => (
                   <View key={idx} style={styles.endingBox}>
@@ -554,7 +614,7 @@ export default function ConjugationPracticeScreen() {
                 ))}
               </View>
 
-              <Text style={styles.patternSubtitle}>Example: {teachingPattern.example.verb}</Text>
+              <Text style={styles.patternSubtitle}>{copy.example} {teachingPattern.example.verb}</Text>
               {teachingPattern.example.conjugations.map((conj, idx) => (
                 <View key={idx} style={styles.conjugationRow}>
                   <Text style={styles.pronounText}>{conj.pronoun}</Text>
@@ -572,7 +632,7 @@ export default function ConjugationPracticeScreen() {
             {isLoadingQuiz ? (
               <ActivityIndicator size="small" color="#fff" />
             ) : (
-              <Text style={styles.buttonText}>Start</Text>
+              <Text style={styles.buttonText}>{copy.start}</Text>
             )}
           </TouchableOpacity>
         </ScrollView>
@@ -582,6 +642,7 @@ export default function ConjugationPracticeScreen() {
 
   // QUIZ SCREEN
   if (screen === "quiz") {
+    const copy = COPY[appLanguage];
     if (error) {
       return (
         <SafeAreaView style={styles.container}>
@@ -593,7 +654,7 @@ export default function ConjugationPracticeScreen() {
     if (!currentQuestion) {
       return (
         <SafeAreaView style={styles.container}>
-          <Text style={styles.error}>No questions available</Text>
+          <Text style={styles.error}>{copy.noQuestions}</Text>
         </SafeAreaView>
       );
     }
@@ -603,7 +664,7 @@ export default function ConjugationPracticeScreen() {
         <QuitButton />
         <View style={styles.header}>
           <Text style={styles.progress}>
-            Question {currentIndex + 1} of {questions.length}
+            {copy.question} {currentIndex + 1} {copy.of} {questions.length}
           </Text>
           <View style={styles.stars}>
             <Text style={styles.starsText}>⭐ {correctCount}</Text>
@@ -611,7 +672,7 @@ export default function ConjugationPracticeScreen() {
         </View>
 
         <View style={styles.questionCard}>
-          <Text style={styles.heading}>Conjugue : {currentQuestion.verb}</Text>
+          <Text style={styles.heading}>{copy.conjugate} {currentQuestion.verb}</Text>
           <View style={styles.tenseBadge}>
             <Text style={styles.tenseBadgeText}>{currentQuestion.tense}</Text>
           </View>
@@ -645,11 +706,11 @@ export default function ConjugationPracticeScreen() {
         {feedback.type !== "idle" && (
           <View style={styles.feedbackContainer}>
             <Text style={[styles.feedbackText, feedback.type === "correct" ? styles.correct : styles.incorrect]}>
-              {feedback.type === "correct" ? "✓ Correct!" : `✗ The answer is: ${feedback.correctAnswer}`}
+              {feedback.type === "correct" ? copy.correct : copy.wrong(feedback.correctAnswer)}
             </Text>
             <TouchableOpacity style={styles.nextButton} onPress={handleNext}>
               <Text style={styles.nextButtonText}>
-                {currentIndex === questions.length - 1 ? "Finish" : "Next"}
+                {currentIndex === questions.length - 1 ? copy.finish : copy.next}
               </Text>
             </TouchableOpacity>
           </View>
@@ -660,18 +721,19 @@ export default function ConjugationPracticeScreen() {
 
   // COMPLETE SCREEN
   if (screen === "complete") {
+    const copy = COPY[appLanguage];
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.endScreen}>
-          <Text style={styles.endTitle}>Great job! 🎉</Text>
+          <Text style={styles.endTitle}>{copy.greatJob}</Text>
           <Text style={styles.endStat}>
-            You got {correctCount} out of {questions.length} correct
+            {copy.got(correctCount, questions.length)}
           </Text>
           <TouchableOpacity
             style={styles.button}
             onPress={() => router.push(`/child-home/${childId}`)}
           >
-            <Text style={styles.buttonText}>Back Home</Text>
+            <Text style={styles.buttonText}>{copy.backHome}</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -683,7 +745,7 @@ export default function ConjugationPracticeScreen() {
     <SafeAreaView style={styles.container}>
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#007AFF" />
-        <Text style={styles.loadingText}>Loading...</Text>
+        <Text style={styles.loadingText}>{COPY[appLanguage].loading}</Text>
       </View>
     </SafeAreaView>
   );

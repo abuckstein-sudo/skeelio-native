@@ -18,6 +18,7 @@ import { supabase } from "@/lib/supabase";
 import { addStars } from "@/lib/addStars";
 import { markAssignmentComplete } from "@/lib/assignments";
 import QuitButton from "@/components/QuitButton";
+import { appLanguageForChild, AppLanguage } from "@/lib/appLanguage";
 import {
   speakWord,
   speakSentence,
@@ -41,6 +42,51 @@ interface Answer {
   attemptNumber: number;
 }
 
+const COPY = {
+  en: {
+    listNotFound: "List not found",
+    noWords: "This list has no words",
+    failedLoad: "Failed to load list",
+    goBack: "Go Back",
+    greatJob: "Great job!",
+    scoreLabel: (total: number) => `of ${total} correct on first try`,
+    stars: "stars",
+    backHome: "Back to Home",
+    listen: "Listen and spell",
+    hearAgain: "Hear it again",
+    sentence: "Sentence",
+    attempt: (attempt: number) => `Attempt ${attempt} of 3`,
+    correct: "Correct!",
+    reveal: "The word is",
+    placeholder: "Type the word...",
+    check: "Check",
+    finish: "Finish",
+    next: "Next",
+    of: "of",
+  },
+  fr: {
+    listNotFound: "Liste introuvable",
+    noWords: "Cette liste n'a pas de mots",
+    failedLoad: "Impossible de charger la liste",
+    goBack: "Retour",
+    greatJob: "Bravo !",
+    scoreLabel: (total: number) => `sur ${total} corrects du premier coup`,
+    stars: "étoiles",
+    backHome: "Retour à l'accueil",
+    listen: "Écoute et écris",
+    hearAgain: "Réécouter",
+    sentence: "Phrase",
+    attempt: (attempt: number) => `Essai ${attempt} sur 3`,
+    correct: "Correct !",
+    reveal: "Le mot est",
+    placeholder: "Écris le mot...",
+    check: "Valider",
+    finish: "Terminer",
+    next: "Suivant",
+    of: "sur",
+  },
+} as const;
+
 export default function SpellingPracticeScreen() {
   const router = useRouter();
   const { listId, childId, assignmentId, mode } = useLocalSearchParams<{
@@ -52,6 +98,7 @@ export default function SpellingPracticeScreen() {
 
   const [listTitle, setListTitle] = useState("");
   const [language, setLanguage] = useState<SpellingLanguage>("English");
+  const [appLanguage, setAppLanguage] = useState<AppLanguage>("en");
   const [items, setItems] = useState<SpellingItem[]>([]);
   const [spellingSession, setSpellingSession] = useState<SpellingSession | null>(
     null
@@ -96,7 +143,7 @@ export default function SpellingPracticeScreen() {
         console.log("[SpellingPracticeScreen] loading list:", listId, "child:", childId, "assignmentId:", assignmentId);
         const data = await getListWithItems(listId);
         if (!data) {
-          setError("List not found");
+          setError(COPY[appLanguage].listNotFound);
           setIsLoading(false);
           return;
         }
@@ -104,10 +151,17 @@ export default function SpellingPracticeScreen() {
         console.log("[SpellingPracticeScreen] list items count:", data.items.length);
 
         if (data.items.length === 0) {
-          setError("This list has no words");
+          setError(COPY[appLanguage].noWords);
           setIsLoading(false);
           return;
         }
+
+        const { data: childData } = await supabase
+          .from("children")
+          .select("languages, preferred_language")
+          .eq("id", childId)
+          .single();
+        setAppLanguage(appLanguageForChild(childData));
 
         setListTitle(data.list.title);
         setLanguage(data.list.language);
@@ -129,7 +183,7 @@ export default function SpellingPracticeScreen() {
 
         setIsLoading(false);
       } catch (err) {
-        const msg = err instanceof Error ? err.message : "Failed to load list";
+        const msg = err instanceof Error ? err.message : COPY[appLanguage].failedLoad;
         setError(msg);
         setIsLoading(false);
       }
@@ -243,7 +297,7 @@ export default function SpellingPracticeScreen() {
           ]);
         } else if (attemptNumber < 3) {
           // Show hint - keep the user's answer visible so they can compare and edit
-          const hint = fallbackHint(error_type, attemptNumber as 1 | 2);
+          const hint = fallbackHint(error_type, attemptNumber as 1 | 2, language);
           setFeedback({ type: "hint", text: hint });
           setAttemptNumber((n) => (n + 1) as 1 | 2 | 3);
           // DO NOT clear setUserAnswer("") — keep their typed text visible for comparison
@@ -327,6 +381,7 @@ export default function SpellingPracticeScreen() {
   }
 
   if (error) {
+    const copy = COPY[appLanguage];
     return (
       <View style={styles.centerContainer}>
         <Text style={styles.errorText}>{error}</Text>
@@ -334,7 +389,7 @@ export default function SpellingPracticeScreen() {
           style={styles.button}
           onPress={() => router.back()}
         >
-          <Text style={styles.buttonText}>Go Back</Text>
+          <Text style={styles.buttonText}>{copy.goBack}</Text>
         </TouchableOpacity>
       </View>
     );
@@ -342,24 +397,25 @@ export default function SpellingPracticeScreen() {
 
   if (sessionComplete) {
     const total = items.length;
+    const copy = COPY[appLanguage];
     return (
       <SafeAreaView style={styles.container} edges={["top"]}>
         <ScrollView contentContainerStyle={styles.contentContainer}>
-          <Text style={styles.title}>Great job!</Text>
+          <Text style={styles.title}>{copy.greatJob}</Text>
           <View style={styles.scoreBox}>
             <Text style={styles.scoreText}>{correctCount}</Text>
             <Text style={styles.scoreLabel}>
-              of {total} correct on first try
+              {copy.scoreLabel(total)}
             </Text>
           </View>
           <View style={styles.starsBox}>
-            <Text style={styles.starsText}>⭐ +{correctCount} stars</Text>
+            <Text style={styles.starsText}>⭐ +{correctCount} {copy.stars}</Text>
           </View>
           <TouchableOpacity
             style={styles.button}
             onPress={() => router.push({ pathname: "/child-home/[childId]", params: { childId } })}
           >
-            <Text style={styles.buttonText}>Back to Home</Text>
+            <Text style={styles.buttonText}>{copy.backHome}</Text>
           </TouchableOpacity>
         </ScrollView>
       </SafeAreaView>
@@ -379,6 +435,7 @@ export default function SpellingPracticeScreen() {
   );
   const awaitingTap =
     feedback.type === "correct" || feedback.type === "reveal";
+  const copy = COPY[appLanguage];
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
@@ -394,13 +451,13 @@ export default function SpellingPracticeScreen() {
           onPress={() => Keyboard.dismiss()}
         >
           <Text style={styles.progress}>
-            {currentIndex + 1} of {items.length}
+            {currentIndex + 1} {copy.of} {items.length}
           </Text>
           <Text style={styles.listTitle}>{listTitle}</Text>
           <Text style={styles.languageLabel}>{language}</Text>
 
           <View style={styles.questionBox}>
-            <Text style={styles.instructionText}>Listen and spell</Text>
+            <Text style={styles.instructionText}>{copy.listen}</Text>
 
             {/* Hear-it-again and sentence buttons */}
             <View style={styles.buttonRow}>
@@ -409,7 +466,7 @@ export default function SpellingPracticeScreen() {
                 onPress={handleReplay}
                 disabled={isSubmitting}
               >
-                <Text style={styles.speakButtonText}>🔊 Hear it again</Text>
+                <Text style={styles.speakButtonText}>🔊 {copy.hearAgain}</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -418,7 +475,7 @@ export default function SpellingPracticeScreen() {
                 disabled={isSubmitting || isSentenceLoading}
               >
                 <Text style={styles.speakButtonText}>
-                  {isSentenceLoading ? "..." : "🔊 Sentence"}
+                  {isSentenceLoading ? "..." : `🔊 ${copy.sentence}`}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -427,14 +484,14 @@ export default function SpellingPracticeScreen() {
             {feedback.type === "hint" && (
               <View style={styles.hintBox}>
                 <Text style={styles.hintText}>💡 {feedback.text}</Text>
-                <Text style={styles.attemptText}>Attempt {attemptNumber} of 3</Text>
+                <Text style={styles.attemptText}>{copy.attempt(attemptNumber)}</Text>
               </View>
             )}
 
             {feedback.type === "correct" && (
               <View style={styles.correctBox}>
                 <Text style={styles.correctEmoji}>⭐</Text>
-                <Text style={styles.correctText}>Correct!</Text>
+                <Text style={styles.correctText}>{copy.correct}</Text>
                 <Text style={styles.correctWord}>{feedback.text}</Text>
               </View>
             )}
@@ -442,7 +499,7 @@ export default function SpellingPracticeScreen() {
             {feedback.type === "reveal" && (
               <View style={styles.revealBox}>
                 <Text style={styles.revealEmoji}>📚</Text>
-                <Text style={styles.revealLabel}>The word is</Text>
+                <Text style={styles.revealLabel}>{copy.reveal}</Text>
                 <Text style={styles.revealWord}>{feedback.text}</Text>
               </View>
             )}
@@ -456,7 +513,7 @@ export default function SpellingPracticeScreen() {
               <TextInput
                 ref={inputRef}
                 style={styles.input}
-                placeholder="Type the word..."
+                placeholder={copy.placeholder}
                 value={userAnswer}
                 onChangeText={setUserAnswer}
                 onSubmitEditing={handleSubmit}
@@ -480,7 +537,7 @@ export default function SpellingPracticeScreen() {
                 disabled={!userAnswer.trim() || isSubmitting}
               >
                 <Text style={styles.buttonText}>
-                  {isSubmitting ? "..." : "Check"}
+                  {isSubmitting ? "..." : copy.check}
                 </Text>
               </TouchableOpacity>
             </>
@@ -492,7 +549,7 @@ export default function SpellingPracticeScreen() {
               onPress={handleNext}
             >
               <Text style={styles.buttonText}>
-                {currentIndex + 1 >= items.length ? "Finish" : "Next"}
+                {currentIndex + 1 >= items.length ? copy.finish : copy.next}
               </Text>
             </TouchableOpacity>
           )}

@@ -76,6 +76,7 @@ const COPY = {
     submit: "Submit",
     next: "Next",
     correctFeedback: "✓ Correct!",
+    saveError: "Error saving attempt",
     wrongFeedback: (answer: number | string) => `✗ Not quite. The answer is ${answer}.`,
     keepWorking: (tier: string) => `Let's keep working on ${tier}.`,
     niceProgress: (tier: string) => `Nice progress on ${tier}!`,
@@ -95,6 +96,7 @@ const COPY = {
     submit: "Valider",
     next: "Suivant",
     correctFeedback: "✓ Correct !",
+    saveError: "Erreur pendant l'enregistrement",
     wrongFeedback: (answer: number | string) => `✗ Pas tout à fait. La réponse est ${answer}.`,
     keepWorking: (tier: string) => `On continue à travailler : ${tier}.`,
     niceProgress: (tier: string) => `Beau progrès sur ${tier} !`,
@@ -340,7 +342,8 @@ export default function PracticeScreen() {
           topic as Operation,
           question.a,
           question.b,
-          question.remainder
+          question.remainder,
+          appLanguage
         );
 
         const method = operationMethods[topic as Operation]?.method_name;
@@ -429,7 +432,7 @@ export default function PracticeScreen() {
         console.error("[practice-insert] ERROR", error);
         setFeedback({
           isCorrect: false,
-          message: `Error saving attempt: ${error.message}`,
+          message: `${COPY[appLanguage].saveError}: ${error.message}`,
         });
       } else {
         console.log("[practice-insert] ok", { tier: tierId, was_correct: isCorrect });
@@ -449,7 +452,7 @@ export default function PracticeScreen() {
       console.error("[practice-insert] ERROR", err);
       setFeedback({
         isCorrect: false,
-        message: "Error saving attempt",
+        message: COPY[appLanguage].saveError,
       });
     } finally {
       setIsSubmitting(false);

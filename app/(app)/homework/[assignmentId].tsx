@@ -14,8 +14,8 @@ import {
   StrategyPlan,
 } from "@/lib/tutor/strategies";
 import { StrategyView } from "@/lib/tutor/visuals";
-import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { appLanguageForChild, AppLanguage } from "@/lib/appLanguage";
+import QuitButton from "@/components/QuitButton";
 
 interface Answer {
   questionIndex: number;
@@ -27,6 +27,7 @@ const COPY = {
   en: {
     loadingHint: "Loading...",
     hint: "Hint",
+    howTo: "Here's how to solve it:",
     correct: "✓ Correct!",
     wrong: (answer: string) => `✗ Not quite. The answer is ${answer}.`,
     assignmentComplete: "Assignment complete!",
@@ -42,12 +43,14 @@ const COPY = {
     finish: "Finish",
     finishing: "Finishing...",
     next: "Next",
+    completeError: "Error completing assignment",
     practice: "Practice",
     quiz: "Quiz",
   },
   fr: {
     loadingHint: "Chargement...",
     hint: "Indice",
+    howTo: "Voici comment résoudre :",
     correct: "✓ Correct !",
     wrong: (answer: string) => `✗ Pas tout à fait. La réponse est ${answer}.`,
     assignmentComplete: "Devoir terminé !",
@@ -63,6 +66,7 @@ const COPY = {
     finish: "Terminer",
     finishing: "Finalisation...",
     next: "Suivant",
+    completeError: "Erreur pendant la fin du devoir",
     practice: "Entraînement",
     quiz: "Quiz",
   },
@@ -288,7 +292,7 @@ export default function HomeworkScreen() {
         }
       } else if (a !== undefined && b !== undefined) {
         // For procedural tiers, try computed example steps first
-        const steps = computeExampleSteps(topic, a, b, undefined);
+        const steps = computeExampleSteps(topic, a, b, undefined, appLanguage);
 
         // If steps are empty, fallback to strategy picker for a visual
         if (steps.length === 0) {
@@ -337,7 +341,7 @@ export default function HomeworkScreen() {
             })
           );
 
-          setCurrentHint(`Here's how to solve it:\n${steps.map((s, i) => `${i + 1}. ${s}`).join("\n")}`);
+          setCurrentHint(`${COPY[appLanguage].howTo}\n${steps.map((s, i) => `${i + 1}. ${s}`).join("\n")}`);
           setCurrentHintLevel(currentHintLevel + 1);
         }
       }
@@ -460,7 +464,7 @@ export default function HomeworkScreen() {
       });
     } catch (err) {
       console.error("[homework] completion error:", err);
-      setError("Error completing assignment");
+      setError(COPY[appLanguage].completeError);
     } finally {
       setIsCompleting(false);
     }
@@ -537,35 +541,28 @@ export default function HomeworkScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
+      <QuitButton />
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.container}>
-        <View style={styles.headerBar}>
-          <TouchableOpacity
-            onPress={() => router.back()}
-            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-            accessibilityLabel="Retour"
-            style={styles.headerBack}
-          >
-            <MaterialCommunityIcons name="arrow-left" size={26} color="#333" />
-          </TouchableOpacity>
-          <Text style={styles.headerBarTitle} numberOfLines={1}>{headerTitle}</Text>
-          <View style={styles.tally}>
-            <Text style={styles.tallyCorrect}>{"✓"} {correctCount}</Text>
-            <Text style={styles.tallyWrong}>{"✗"} {wrongCount}</Text>
-          </View>
-        </View>
         {/* Zone 1: Scrollable content (question + hint) — flex: 1 */}
         <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled" onPress={() => Keyboard.dismiss()}>
           {/* Progress */}
           <View style={styles.header}>
             <Text style={styles.progressText}>
-              {currentQuestionIndex + 1} of {questions.length}
+              {currentQuestionIndex + 1} {appLanguage === "fr" ? "sur" : "of"} {questions.length}
             </Text>
+            <Text style={styles.tierLabel}>{headerTitle}</Text>
+            <View style={styles.tally}>
+              <Text style={styles.tallyCorrect}>{"✓"} {correctCount}</Text>
+              <Text style={styles.tallyWrong}>{"✗"} {wrongCount}</Text>
+            </View>
             {isQuizMode && <Text style={styles.quizModeText}>{copy.quizMode}</Text>}
           </View>
 
           {/* Question */}
           <View style={styles.questionContainer}>
-            <Text style={styles.questionText}>{question.question_text}</Text>
+            <View style={styles.questionBox}>
+              <Text style={styles.questionText}>{question.question_text}</Text>
+            </View>
 
             {/* Strategy View (for fact tiers and fallback strategies in practice mode) */}
             {showingStrategy && mulStrategy && (
@@ -650,8 +647,8 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
   },
   scrollContent: {
-    paddingHorizontal: 16,
-    paddingVertical: 16,
+    paddingHorizontal: 20,
+    paddingTop: 40,
     paddingBottom: 20,
   },
   footer: {
@@ -669,6 +666,7 @@ const styles = StyleSheet.create({
   },
   header: {
     marginBottom: 24,
+    alignItems: "center",
   },
   backArrow: {
     alignSelf: "flex-start",
@@ -722,7 +720,18 @@ const styles = StyleSheet.create({
   },
   progressText: {
     fontSize: 14,
-    color: "#666",
+    color: "#999",
+    textAlign: "center",
+    marginBottom: 8,
+    fontWeight: "500",
+  },
+  tierLabel: {
+    fontSize: 12,
+    color: "#2196f3",
+    textAlign: "center",
+    marginBottom: 12,
+    fontWeight: "600",
+    textTransform: "uppercase",
   },
   quizModeText: {
     fontSize: 12,
@@ -734,11 +743,20 @@ const styles = StyleSheet.create({
   questionContainer: {
     marginBottom: 24,
   },
-  questionText: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#1a1a1a",
+  questionBox: {
+    backgroundColor: "#f0f8ff",
+    padding: 28,
+    borderRadius: 12,
     marginBottom: 16,
+    alignItems: "center",
+    borderLeftWidth: 4,
+    borderLeftColor: "#2196f3",
+  },
+  questionText: {
+    fontSize: 32,
+    fontWeight: "700",
+    color: "#1a1a1a",
+    textAlign: "center",
   },
   strategyContainer: {
     marginBottom: 16,
