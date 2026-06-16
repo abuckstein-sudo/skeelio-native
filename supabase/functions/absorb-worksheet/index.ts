@@ -11,7 +11,8 @@ const INITIAL_PROMPT = `You are an expert elementary teacher (ages 6–10). You 
 {
  "language": "<the page's language>",
  "domain": "math" | "language",
- "source_type": "worksheet" | "textbook" | "explanatory" | "other",
+ "source_type": "worksheet" | "textbook" | "explanatory" | "spelling_list" | "other",
+ "spelling_words": ["<only when source_type is spelling_list: each spelling-list entry exactly as written, preserving accents/articles/apostrophes>"],
  "grade_band": "<best guess, e.g. CP-CE1 or Grade 1-2>",
  "concept": {
    "label": "<short name in the page's language>",
@@ -22,6 +23,12 @@ const INITIAL_PROMPT = `You are an expert elementary teacher (ages 6–10). You 
  "practice": [ <exactly 6 items, DISTRIBUTED EVENLY across all sub_skills; each tagged with its sub_skill> ]
 }
 CRITICAL: Distribute the 6 practice items roughly evenly across ALL sub_skills — if there are 3 sub_skills, generate ~2 items for each. Do NOT cluster on one sub_skill.
+SPELLING LIST RULE:
+- If the page is mainly a list of words for the child to learn, classify it as source_type "spelling_list", domain "language".
+- Do NOT call it "vocabulary" unless the page asks for definitions, synonyms, categories, or meanings.
+- Extract the words/list entries into spelling_words exactly as written, preserving accents, apostrophes, and articles.
+- For spelling_list pages, the concept label should be "Spelling list" in English or "Liste d'orthographe" in French.
+- For spelling_list pages, practice items must be spelling prompts anchored ONLY to spelling_words, never invented vocabulary/meaning questions.
 Each practice MATH item MUST be SELF-CONTAINED — the question text includes EVERY number needed:
 - { "kind":"math", "answer_type":"number"|"yesno", "sub_skill":"<which sub_skill>", "unit":"€"|"" (€ if the answer is a money amount; "" if a plain count), "question":"<COMPLETE word problem in page's language with EVERY numeric value stated explicitly. E.g. 'Un livre coûte 5,20 € et un cahier coûte 3,50 €. Si tu achètes un livre et un cahier, combien dépenses-tu en tout ?' or 'Tu as 15 €. Une paire de chaussures coûte 12 €. As-tu assez d'argent pour les chaussures ?'>", "check_expression":"<arithmetic or boolean expression using the exact numeric values stated in the question text (in standard decimal form, e.g., 5.20 not 5,20); no variable names, only literals>", "claimed_answer":<number for 'number' type, or boolean for 'yesno'> }
 Other items (reference, open) can use simple text.
@@ -160,6 +167,10 @@ Deno.serve(async (req) => {
 
     const isFr = isFrench(languageRaw);
     const isEn = isEnglish(languageRaw);
+    const spellingList = normalizeSpellingListWorksheet(worksheet);
+    if (spellingList) {
+      return json(spellingList, 200);
+    }
 
     let pathTaken = "math";
 
@@ -540,6 +551,72 @@ function isFrench(language: string): boolean {
 function isEnglish(language: string): boolean {
   const lower = (language ?? "").toLowerCase();
   return lower.includes("angl") || lower.includes("engl") || lower.startsWith("en");
+}
+
+function cleanSpellingEntry(value: unknown): string {
+  return String(value ?? "")
+    .normalize("NFC")
+    .replace(/^[\s\d.)\]-]+/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeSpellingListWorksheet(worksheet: Record<string, unknown>): Record<string, unknown> | null {
+  const sourceType = String(worksheet.source_type ?? "")
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase();
+  const conceptText = buildConceptScope(worksheet)
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase();
+  const rawWords = Array.isArray(worksheet.spelling_words) ? worksheet.spelling_words : [];
+  const words = Array.from(new Set(rawWords.map(cleanSpellingEntry).filter((word) => word.length > 0)));
+
+  const looksLikeSpellingList =
+    sourceType === "spelling_list" ||
+    words.length >= 3 ||
+    (
+      conceptText.includes("orthographe") ||
+      conceptText.includes("spelling list") ||
+      conceptText.includes("mots a apprendre") ||
+      conceptText.includes("word list")
+    );
+
+  if (!looksLikeSpellingList || words.length < 3) return null;
+
+  const language = String(worksheet.language ?? "");
+  const french = isFrench(language);
+  const conceptLabel = french ? "Liste d'orthographe" : "Spelling list";
+  const description = french
+    ? "S'entraîner à écrire correctement les mots de la liste."
+    : "Practice spelling the words from the list correctly.";
+  const prompt = french ? "Écris le mot dicté" : "Spell the dictated word";
+
+  worksheet.domain = "language";
+  worksheet.source_type = "spelling_list";
+  worksheet.concept = {
+    label: conceptLabel,
+    description,
+    sub_skills: [{ label: conceptLabel, description }],
+  };
+  worksheet.lesson = french
+    ? "Lis chaque mot attentivement, écoute ses sons, puis écris-le en gardant les accents et les lettres dans le bon ordre."
+    : "Read each word carefully, listen to its sounds, then write it with every letter in the correct order.";
+  worksheet.spelling_words = words;
+  worksheet.practice = words.slice(0, 6).map((word) => ({
+    kind: "spelling",
+    sub_skill: conceptLabel,
+    question: `${prompt} : « ${word} »`,
+    answer: word,
+  }));
+  worksheet.debug = {
+    ...(worksheet.debug as Record<string, unknown> | undefined),
+    path_taken: "spelling_list",
+    spelling_word_count: words.length,
+  };
+
+  return worksheet;
 }
 
 // Normalize text for language answer comparison: NFC, lowercase, trim, collapse whitespace, replace curly quotes, strip articles, strip punctuation, keep accents

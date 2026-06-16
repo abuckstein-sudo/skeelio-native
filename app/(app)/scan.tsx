@@ -17,6 +17,12 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { supabase } from "@/lib/supabase";
 import { decode } from "base64-arraybuffer";
 import CameraCaptureModal from "@/components/CameraCaptureModal";
+import { createSpellingAssignment } from "@/lib/assignments";
+import {
+  createSpellingItems,
+  createSpellingList,
+  type SpellingLanguage,
+} from "@/lib/spelling";
 
 interface Child {
   id: string;
@@ -38,6 +44,8 @@ interface WorksheetData {
   lesson: string;
   language: string;
   domain: string;
+  source_type?: string;
+  spelling_words?: string[];
   grade_band?: string;
   practice: PracticeItem[];
 }
@@ -50,6 +58,32 @@ const AVATAR_EMOJI: Record<string, string> = {
   rabbit: "🐰",
   panda: "🐼",
 };
+
+function uniqueWords(words?: string[]): string[] {
+  const seen = new Set<string>();
+  const cleaned: string[] = [];
+
+  for (const raw of words || []) {
+    const word = String(raw || "").normalize("NFC").replace(/\s+/g, " ").trim();
+    const key = word.toLowerCase();
+    if (!word || seen.has(key)) continue;
+    seen.add(key);
+    cleaned.push(word);
+  }
+
+  return cleaned;
+}
+
+function toSpellingLanguage(language: string): SpellingLanguage {
+  const normalized = (language || "").toLowerCase();
+  return normalized.includes("fr") || normalized.includes("french") || normalized.includes("fran")
+    ? "French"
+    : "English";
+}
+
+function isSpellingListReview(data: WorksheetData): boolean {
+  return data.source_type === "spelling_list" && uniqueWords(data.spelling_words).length > 0;
+}
 
 export default function ScanScreen() {
   const router = useRouter();
@@ -75,7 +109,7 @@ export default function ScanScreen() {
   const [assigning, setAssigning] = useState(false);
 
   const [showConfirmation, setShowConfirmation] = useState(false);
-  const [confirmationData, setConfirmationData] = useState<{ conceptLabel: string; childName: string } | null>(null);
+  const [confirmationData, setConfirmationData] = useState<{ conceptLabel: string; childName: string; kind?: "worksheet" | "spelling" } | null>(null);
 
   // Initialize auth and fetch children if needed
   useEffect(() => {
@@ -275,6 +309,37 @@ export default function ScanScreen() {
 
       setAssigning(true);
 
+      if (isSpellingListReview(reviewData)) {
+        const language = toSpellingLanguage(reviewData.language);
+        const words = uniqueWords(reviewData.spelling_words);
+        if (words.length === 0) {
+          throw new Error("No spelling words found");
+        }
+
+        const today = new Date().toISOString().split("T")[0];
+        const listTitle = `${language === "French" ? "Liste photo" : "Photo list"} · ${today}`;
+        const list = await createSpellingList(childId, listTitle, language, "photo");
+        await createSpellingItems(list.id, childId, words, language);
+        await createSpellingAssignment(childId, list.id, listTitle, words.length, "practice");
+        const countLabel = language === "French"
+          ? `${words.length} ${words.length === 1 ? "mot" : "mots"}`
+          : `${words.length} ${words.length === 1 ? "word" : "words"}`;
+
+        setConfirmationData({
+          conceptLabel: `${listTitle} · ${countLabel}`,
+          childName,
+          kind: "spelling",
+        });
+        setShowConfirmation(true);
+        setShowReview(false);
+        setReviewData(null);
+        setBase64Raw(null);
+        setJpegBase64(null);
+        setImageUri(null);
+        setAssigning(false);
+        return;
+      }
+
       // Normalize domain
       const rawDomain = reviewData.domain || "";
       const domainNorm = /math/i.test(rawDomain) ? "math" : "language";
@@ -343,6 +408,7 @@ export default function ScanScreen() {
       setConfirmationData({
         conceptLabel: reviewData.concept.label,
         childName: childName,
+        kind: "worksheet",
       });
       setShowConfirmation(true);
       setShowReview(false);
@@ -408,6 +474,8 @@ export default function ScanScreen() {
   // Review screen
   if (showReview && reviewData) {
     const practiceItems = (reviewData.practice || []).slice(0, 3);
+    const spellingWords = uniqueWords(reviewData.spelling_words);
+    const isSpellingList = isSpellingListReview(reviewData);
 
     return (
       <SafeAreaView style={styles.container}>
@@ -445,14 +513,29 @@ export default function ScanScreen() {
             )}
           </View>
 
+          {isSpellingList && (
+            <View style={styles.reviewSection}>
+              <Text style={styles.reviewSectionTitle}>Mots détectés</Text>
+              <View style={styles.wordChipContainer}>
+                {spellingWords.map((word, idx) => (
+                  <View key={`${word}-${idx}`} style={styles.wordChip}>
+                    <Text style={styles.wordChipText}>{word}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          )}
+
           {/* La leçon */}
-          <View style={styles.reviewSection}>
-            <Text style={styles.reviewSectionTitle}>La leçon</Text>
-            <Text style={styles.reviewLessonText}>{reviewData.lesson || "(No lesson text)"}</Text>
-          </View>
+          {!isSpellingList && (
+            <View style={styles.reviewSection}>
+              <Text style={styles.reviewSectionTitle}>La leçon</Text>
+              <Text style={styles.reviewLessonText}>{reviewData.lesson || "(No lesson text)"}</Text>
+            </View>
+          )}
 
           {/* Exemples de questions */}
-          {practiceItems.length > 0 && (
+          {!isSpellingList && practiceItems.length > 0 && (
             <View style={styles.reviewSection}>
               <Text style={styles.reviewSectionTitle}>Exemples de questions</Text>
               {practiceItems.map((item, idx) => {
@@ -488,7 +571,9 @@ export default function ScanScreen() {
             {assigning ? (
               <ActivityIndicator size="small" color="#fff" />
             ) : (
-              <Text style={styles.primaryButtonText}>Assigner à {childName}</Text>
+              <Text style={styles.primaryButtonText}>
+                {isSpellingList ? `Créer la liste pour ${childName}` : `Assigner à ${childName}`}
+              </Text>
             )}
           </TouchableOpacity>
         </View>
@@ -820,6 +905,24 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: "#666",
     lineHeight: 19,
+  },
+  wordChipContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  wordChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: "#eef6ff",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#cfe7ff",
+  },
+  wordChipText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#1769aa",
   },
   reviewQuestionCard: {
     backgroundColor: "#f9f9f9",
