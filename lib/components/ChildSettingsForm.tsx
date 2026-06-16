@@ -10,6 +10,7 @@ import {
   Alert,
 } from "react-native";
 import { supabase } from "@/lib/supabase";
+import { ensureParentProfile } from "@/lib/parentProfile";
 
 const SCHOOL_SYSTEMS: Record<string, string> = {
   france: "France",
@@ -199,6 +200,20 @@ export default function ChildSettingsForm({
     if (isAddMode) {
       if (!userId) {
         Alert.alert("Error", "User ID is required");
+        setIsSaving(false);
+        return;
+      }
+
+      const { data: userData, error: userError } = await supabase.auth.getUser();
+      if (userError || !userData.user) {
+        Alert.alert("Error", "Please sign in again before adding a child.");
+        setIsSaving(false);
+        return;
+      }
+
+      const { error: profileError } = await ensureParentProfile(userData.user);
+      if (profileError) {
+        Alert.alert("Error", "Couldn't prepare your parent account. Please try signing out and back in.");
         setIsSaving(false);
         return;
       }

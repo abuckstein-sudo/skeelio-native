@@ -3,6 +3,7 @@ import { Stack } from "expo-router";
 import { ActivityIndicator, View } from "react-native";
 import { useFonts, Lora_700Bold } from "@expo-google-fonts/lora";
 import { supabase } from "@/lib/supabase";
+import { ensureParentProfile } from "@/lib/parentProfile";
 
 type AuthContextType = {
   session: any;
@@ -44,6 +45,9 @@ export default function RootLayout() {
         }
 
         console.log("[auth] getSession resolved, session =", session ? "present" : "null");
+        if (session?.user) {
+          await ensureParentProfile(session.user);
+        }
         setSession(session);
       } catch (err) {
         console.log("[auth] exception during getSession:", err);
@@ -60,6 +64,9 @@ export default function RootLayout() {
     const { data: listener } = supabase.auth.onAuthStateChange(
       (event, session) => {
         console.log("[auth] state changed:", event, session ? "authenticated" : "unauthenticated");
+        if (session?.user) {
+          ensureParentProfile(session.user);
+        }
         setSession(session);
       }
     );
