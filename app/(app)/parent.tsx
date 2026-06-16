@@ -23,6 +23,7 @@ interface Child {
   grade_level: string;
   school_system?: string;
   selected_avatar?: string;
+  intro_seen?: boolean;
 }
 
 const AVATAR_EMOJI: Record<string, string> = {
@@ -73,7 +74,7 @@ export default function ParentScreen() {
 
     const { data, error: dbError } = await supabase
       .from("children")
-      .select("id, name, grade_level, school_system, selected_avatar");
+      .select("id, name, grade_level, school_system, selected_avatar, intro_seen");
 
     if (dbError) {
       console.log("[parent] children fetch error:", dbError.message);
@@ -223,9 +224,11 @@ export default function ParentScreen() {
                   ]}
                   onPress={() => setSelectedChildId(child.id)}
                 >
-                  <Text style={styles.childButtonAvatar}>
-                    {AVATAR_EMOJI[child.selected_avatar!] || AVATAR_EMOJI.fox}
-                  </Text>
+                  {child.intro_seen && child.selected_avatar && (
+                    <Text style={styles.childButtonAvatar}>
+                      {AVATAR_EMOJI[child.selected_avatar] || AVATAR_EMOJI.fox}
+                    </Text>
+                  )}
                   <Text
                     style={[
                       styles.childButtonName,

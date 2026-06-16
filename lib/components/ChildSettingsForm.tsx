@@ -182,7 +182,7 @@ export default function ChildSettingsForm({
   const [multiplicationLevel, setMultiplicationLevel] = useState("not_started");
   const [divisionLevel, setDivisionLevel] = useState("not_started");
   const [focusSubjects, setFocusSubjects] = useState<string[]>([]);
-  const [selectedAvatar, setSelectedAvatar] = useState("fox");
+  const [selectedAvatar, setSelectedAvatar] = useState<string | null>(null);
   const [openDropdown, setOpenDropdown] = useState<"school" | "grade" | null>(null);
 
   useEffect(() => {
@@ -251,7 +251,7 @@ export default function ChildSettingsForm({
     setMultiplicationLevel(data.max_times_table ? String(data.max_times_table) : "not_started");
     setDivisionLevel(data.math_division_level ?? "not_started");
     setFocusSubjects(Array.isArray(data.focus_subjects) ? data.focus_subjects : []);
-    setSelectedAvatar(data.selected_avatar ?? "fox");
+    setSelectedAvatar(data.selected_avatar ?? null);
 
     setIsLoading(false);
   };
@@ -278,7 +278,7 @@ export default function ChildSettingsForm({
     const additionValue = Number.isFinite(parsedAdditionValue) ? parsedAdditionValue : 10;
     const parsedMultiplicationValue = parseInt(multiplicationLevel, 10);
     const multiplicationValue = Number.isFinite(parsedMultiplicationValue) ? parsedMultiplicationValue : 0;
-    const savedPin = isAddMode && !pin ? String(Math.floor(1000 + Math.random() * 9000)) : pin;
+    const savedPin = isAddMode ? String(Math.floor(1000 + Math.random() * 9000)) : pin;
 
     const updateData: any = {
       name: name.trim(),
@@ -294,7 +294,9 @@ export default function ChildSettingsForm({
       math_division_level: divisionLevel || "not_started",
       focus_subjects: focusSubjects,
       child_goal: null,
-      selected_avatar: selectedAvatar,
+      selected_avatar: isAddMode ? null : selectedAvatar,
+      pin_setup_required: isAddMode,
+      intro_seen: !isAddMode,
     };
 
     if (birthYearInt) updateData.birth_year = birthYearInt;

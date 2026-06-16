@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, FlatList, SafeAreaView, Modal } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, SafeAreaView, Modal, TextInput } from "react-native";
 import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
 import { supabase } from "@/lib/supabase";
 import { getOperationStatus, OperationStatus, getWordProblemsStatus, WordProblemsStatus } from "@/lib/tutor/status";
@@ -21,6 +21,9 @@ interface Child {
   grade_level: string;
   selected_avatar?: string;
   home_background?: string;
+  pin?: string;
+  pin_setup_required?: boolean;
+  intro_seen?: boolean;
 }
 
 const AVATAR_EMOJI: Record<string, string> = {
@@ -58,6 +61,33 @@ const BACKGROUND_OPTIONS = [
   { id: "green", label: "Green", color: "#6FC089" },
 ];
 
+const INTRO_SLIDES = [
+  {
+    key: "avatar",
+    icon: "account-star",
+    title: "Choose your avatar",
+    body: "Pick the character you want to see when you come here.",
+  },
+  {
+    key: "background",
+    icon: "palette",
+    title: "Choose your background",
+    body: "Pick the colour or scene that makes this page feel like yours.",
+  },
+  {
+    key: "work",
+    icon: "clipboard-check",
+    title: "Do homework or free play",
+    body: "If an assignment is waiting, start there. If not, choose any practice tile.",
+  },
+  {
+    key: "stars",
+    icon: "star",
+    title: "Earn stars",
+    body: "Practise, finish work, and collect stars for the shop.",
+  },
+] as const;
+
 export default function ChildHomeScreen() {
   const router = useRouter();
   const { childId } = useLocalSearchParams<{ childId: string }>();
@@ -75,7 +105,11 @@ export default function ChildHomeScreen() {
   const [pendingEpisodes, setPendingEpisodes] = useState<any[]>([]);
   const [completedWorksheetSkills, setCompletedWorksheetSkills] = useState<WorksheetSkill[]>([]);
   const [settingsModalVisible, setSettingsModalVisible] = useState(false);
-  const [settingsTab, setSettingsTab] = useState<"avatar" | "background">("avatar");
+  const [newPin, setNewPin] = useState("");
+  const [confirmPin, setConfirmPin] = useState("");
+  const [pinSetupError, setPinSetupError] = useState("");
+  const [introSlideIndex, setIntroSlideIndex] = useState(0);
+  const [introError, setIntroError] = useState("");
   const skipNextFocusFeedRefreshRef = useRef(false);
 
   const fetchStars = useCallback(async () => {
@@ -189,7 +223,7 @@ export default function ChildHomeScreen() {
 
     const { data, error: dbError } = await supabase
       .from("children")
-      .select("id, name, grade_level, selected_avatar, home_background, max_addition_number, max_times_table, math_subtraction_level, math_division_level")
+      .select("id, name, grade_level, selected_avatar, home_background, pin, pin_setup_required, intro_seen, max_addition_number, max_times_table, math_subtraction_level, math_division_level")
       .eq("id", childId)
       .single();
 
@@ -359,11 +393,13 @@ export default function ChildHomeScreen() {
   const handleAvatarSelect = async (avatarId: string) => {
     if (!child) return;
     try {
-      await supabase
+      const { error: updateError } = await supabase
         .from("children")
         .update({ selected_avatar: avatarId })
         .eq("id", childId);
+      if (updateError) throw updateError;
       setChild({ ...child, selected_avatar: avatarId });
+      setIntroError("");
       console.log("[child-home] avatar updated:", avatarId);
     } catch (err) {
       console.error("[child-home] failed to update avatar:", err);
@@ -373,11 +409,13 @@ export default function ChildHomeScreen() {
   const handleBackgroundSelect = async (bgId: string) => {
     if (!child) return;
     try {
-      await supabase
+      const { error: updateError } = await supabase
         .from("children")
         .update({ home_background: bgId })
         .eq("id", childId);
+      if (updateError) throw updateError;
       setChild({ ...child, home_background: bgId });
+      setIntroError("");
       console.log("[child-home] background updated:", bgId);
     } catch (err) {
       console.error("[child-home] failed to update background:", err);
@@ -387,6 +425,83 @@ export default function ChildHomeScreen() {
   const handleAllDone = () => {
     console.log("[child-home] back to hub");
     router.push("/children");
+  };
+
+  const handlePinSetupSubmit = async () => {
+    const pin = newPin.trim();
+    const confirmation = confirmPin.trim();
+
+    if (!/^\d{4,6}$/.test(pin)) {
+      setPinSetupError("Use 4 to 6 numbers");
+      return;
+    }
+
+    if (pin !== confirmation) {
+      setPinSetupError("The two PINs need to match");
+      setConfirmPin("");
+      return;
+    }
+
+    try {
+      const { error: updateError } = await supabase
+        .from("children")
+        .update({ pin, pin_setup_required: false })
+        .eq("id", childId);
+      if (updateError) throw updateError;
+
+      setChild((current) =>
+        current ? { ...current, pin, pin_setup_required: false } : current
+      );
+      setNewPin("");
+      setConfirmPin("");
+      setPinSetupError("");
+    } catch (err: any) {
+      console.error("[child-home] failed to set child PIN:", err);
+      setPinSetupError(err?.message || "Could not save PIN");
+    }
+  };
+
+  const handleIntroNext = async () => {
+    if (!child) return;
+
+    const isAvatarSlide = INTRO_SLIDES[introSlideIndex].key === "avatar";
+    const isBackgroundSlide = INTRO_SLIDES[introSlideIndex].key === "background";
+
+    if (isAvatarSlide && !child.selected_avatar) {
+      setIntroError("Pick an avatar first");
+      return;
+    }
+
+    if (isBackgroundSlide && !child.home_background) {
+      setIntroError("Pick a background first");
+      return;
+    }
+
+    setIntroError("");
+
+    if (introSlideIndex < INTRO_SLIDES.length - 1) {
+      setIntroSlideIndex((current) => current + 1);
+      return;
+    }
+
+    try {
+      const { error: updateError } = await supabase
+        .from("children")
+        .update({ intro_seen: true })
+        .eq("id", childId);
+      if (updateError) throw updateError;
+
+      setChild({ ...child, intro_seen: true });
+      setIntroSlideIndex(0);
+    } catch (err: any) {
+      console.error("[child-home] failed to save intro state:", err);
+      setIntroError(err?.message || "Could not finish setup");
+    }
+  };
+
+  const handleIntroBack = () => {
+    setIntroError("");
+    setIntroSlideIndex((current) => Math.max(0, current - 1));
   };
 
   if (isLoading) {
@@ -469,6 +584,48 @@ export default function ChildHomeScreen() {
     const dateB = b.completedAt ? new Date(b.completedAt).getTime() : 0;
     return dateB - dateA;
   }).slice(0, 5);
+
+  const currentIntroSlide = INTRO_SLIDES[introSlideIndex];
+  const introVisible = !!child && !child.pin_setup_required && !child.intro_seen;
+  const pinSetupVisible = !!child?.pin_setup_required;
+  const renderAvatarChoices = () => (
+    <View style={styles.avatarGrid}>
+      {AVATAR_OPTIONS.map((avatar) => (
+        <TouchableOpacity
+          key={avatar}
+          style={[
+            styles.avatarOption,
+            child?.selected_avatar === avatar && styles.avatarOptionSelected,
+          ]}
+          onPress={() => handleAvatarSelect(avatar)}
+        >
+          <Text style={styles.avatarOptionEmoji}>
+            {AVATAR_EMOJI[avatar] || AVATAR_EMOJI.fox}
+          </Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+  const renderBackgroundChoices = () => (
+    <View style={styles.backgroundGrid}>
+      {BACKGROUND_OPTIONS.map((bg) => (
+        <TouchableOpacity
+          key={bg.id}
+          style={[
+            styles.backgroundOption,
+            bg.color ? { backgroundColor: bg.color } : {},
+            child?.home_background === bg.id && styles.backgroundOptionSelected,
+          ]}
+          onPress={() => handleBackgroundSelect(bg.id)}
+        >
+          {bg.id === "giraffe" ? (
+            <View style={styles.giraffePreview} />
+          ) : null}
+          <Text style={styles.backgroundLabel}>{bg.label}</Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
 
   return (
     <SafeAreaView style={styles.container}>
@@ -583,6 +740,117 @@ export default function ChildHomeScreen() {
       )}
       </ScrollView>
 
+      <Modal
+        visible={pinSetupVisible}
+        transparent={true}
+        animationType="fade"
+      >
+        <View style={styles.setupOverlay}>
+          <View style={styles.setupPanel}>
+            <MaterialCommunityIcons name="lock-check" size={36} color="#2196f3" />
+            <Text style={styles.setupTitle}>Create your PIN</Text>
+            <Text style={styles.setupBody}>
+              You will use this PIN when you come back to Skeelio.
+            </Text>
+            <TextInput
+              style={styles.setupPinInput}
+              value={newPin}
+              onChangeText={setNewPin}
+              placeholder="4-6 numbers"
+              keyboardType="number-pad"
+              secureTextEntry={true}
+              maxLength={6}
+              autoFocus={true}
+            />
+            <TextInput
+              style={styles.setupPinInput}
+              value={confirmPin}
+              onChangeText={setConfirmPin}
+              placeholder="Confirm PIN"
+              keyboardType="number-pad"
+              secureTextEntry={true}
+              maxLength={6}
+            />
+            {pinSetupError ? <Text style={styles.setupError}>{pinSetupError}</Text> : null}
+            <TouchableOpacity
+              style={[
+                styles.setupPrimaryButton,
+                (newPin.length < 4 || confirmPin.length < 4) && styles.setupPrimaryButtonDisabled,
+              ]}
+              onPress={handlePinSetupSubmit}
+              disabled={newPin.length < 4 || confirmPin.length < 4}
+            >
+              <Text style={styles.setupPrimaryButtonText}>Save PIN</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={introVisible}
+        transparent={true}
+        animationType="slide"
+      >
+        <View style={styles.setupOverlay}>
+          <View style={styles.introPanel}>
+            <View style={styles.introProgressRow}>
+              {INTRO_SLIDES.map((slide, index) => (
+                <View
+                  key={slide.key}
+                  style={[
+                    styles.introProgressDot,
+                    index === introSlideIndex && styles.introProgressDotActive,
+                  ]}
+                />
+              ))}
+            </View>
+            <MaterialCommunityIcons name={currentIntroSlide.icon as any} size={40} color="#2196f3" />
+            <Text style={styles.setupTitle}>{currentIntroSlide.title}</Text>
+            <Text style={styles.setupBody}>{currentIntroSlide.body}</Text>
+
+            {currentIntroSlide.key === "avatar" && (
+              <View style={styles.introChoiceBlock}>{renderAvatarChoices()}</View>
+            )}
+            {currentIntroSlide.key === "background" && (
+              <View style={styles.introChoiceBlock}>{renderBackgroundChoices()}</View>
+            )}
+            {currentIntroSlide.key === "work" && (
+              <View style={styles.introExampleRow}>
+                <View style={styles.introMiniCard}>
+                  <Text style={styles.introMiniTitle}>Homework</Text>
+                  <Text style={styles.introMiniText}>Do assigned work first</Text>
+                </View>
+                <View style={styles.introMiniCard}>
+                  <Text style={styles.introMiniTitle}>Free play</Text>
+                  <Text style={styles.introMiniText}>Choose practice tiles</Text>
+                </View>
+              </View>
+            )}
+            {currentIntroSlide.key === "stars" && (
+              <View style={styles.introStarsBadge}>
+                <Text style={styles.introStarsText}>⭐ 0</Text>
+              </View>
+            )}
+
+            {introError ? <Text style={styles.setupError}>{introError}</Text> : null}
+            <View style={styles.introButtonRow}>
+              <TouchableOpacity
+                style={[styles.introSecondaryButton, introSlideIndex === 0 && styles.introButtonHidden]}
+                onPress={handleIntroBack}
+                disabled={introSlideIndex === 0}
+              >
+                <Text style={styles.introSecondaryButtonText}>Back</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.setupPrimaryButton} onPress={handleIntroNext}>
+                <Text style={styles.setupPrimaryButtonText}>
+                  {introSlideIndex === INTRO_SLIDES.length - 1 ? "Start" : "Next"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       {/* Settings Modal */}
       <Modal
         visible={settingsModalVisible}
@@ -602,45 +870,13 @@ export default function ChildHomeScreen() {
             {/* Avatar Section */}
             <View style={styles.settingsSection}>
               <Text style={styles.settingsSectionTitle}>Pick Your Avatar</Text>
-              <View style={styles.avatarGrid}>
-                {AVATAR_OPTIONS.map((avatar) => (
-                  <TouchableOpacity
-                    key={avatar}
-                    style={[
-                      styles.avatarOption,
-                      child?.selected_avatar === avatar && styles.avatarOptionSelected,
-                    ]}
-                    onPress={() => handleAvatarSelect(avatar)}
-                  >
-                    <Text style={styles.avatarOptionEmoji}>
-                      {AVATAR_EMOJI[avatar] || AVATAR_EMOJI.fox}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
+              {renderAvatarChoices()}
             </View>
 
             {/* Background Section */}
             <View style={styles.settingsSection}>
               <Text style={styles.settingsSectionTitle}>Pick Your Background</Text>
-              <View style={styles.backgroundGrid}>
-                {BACKGROUND_OPTIONS.map((bg) => (
-                  <TouchableOpacity
-                    key={bg.id}
-                    style={[
-                      styles.backgroundOption,
-                      bg.color ? { backgroundColor: bg.color } : {},
-                      child?.home_background === bg.id && styles.backgroundOptionSelected,
-                    ]}
-                    onPress={() => handleBackgroundSelect(bg.id)}
-                  >
-                    {bg.id === "giraffe" ? (
-                      <View style={styles.giraffePreview} />
-                    ) : null}
-                    <Text style={styles.backgroundLabel}>{bg.label}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
+              {renderBackgroundChoices()}
             </View>
           </ScrollView>
         </SafeAreaView>
@@ -909,6 +1145,170 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "600",
     color: "#fff",
+  },
+  setupOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.45)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  setupPanel: {
+    width: "100%",
+    maxWidth: 360,
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    padding: 24,
+    alignItems: "center",
+  },
+  introPanel: {
+    width: "100%",
+    maxWidth: 420,
+    maxHeight: "88%",
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    padding: 20,
+    alignItems: "center",
+  },
+  setupTitle: {
+    fontSize: 22,
+    lineHeight: 28,
+    fontWeight: "800",
+    color: "#1a1a1a",
+    textAlign: "center",
+    marginTop: 12,
+    marginBottom: 8,
+  },
+  setupBody: {
+    fontSize: 15,
+    lineHeight: 21,
+    color: "#475569",
+    textAlign: "center",
+    marginBottom: 18,
+  },
+  setupPinInput: {
+    width: "100%",
+    borderWidth: 2,
+    borderColor: "#dbeafe",
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 22,
+    textAlign: "center",
+    letterSpacing: 3,
+    marginBottom: 10,
+    backgroundColor: "#f8fbff",
+  },
+  setupError: {
+    color: "#d32f2f",
+    fontSize: 13,
+    fontWeight: "700",
+    textAlign: "center",
+    marginBottom: 12,
+  },
+  setupPrimaryButton: {
+    minWidth: 120,
+    backgroundColor: "#0000ff",
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+    borderRadius: 8,
+    alignItems: "center",
+  },
+  setupPrimaryButtonDisabled: {
+    opacity: 0.5,
+  },
+  setupPrimaryButtonText: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "800",
+  },
+  introProgressRow: {
+    flexDirection: "row",
+    gap: 6,
+    marginBottom: 18,
+  },
+  introProgressDot: {
+    width: 28,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: "#dbeafe",
+  },
+  introProgressDotActive: {
+    backgroundColor: "#2196f3",
+  },
+  introChoiceBlock: {
+    width: "100%",
+    marginTop: 6,
+    marginBottom: 16,
+  },
+  introExampleRow: {
+    width: "100%",
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 18,
+  },
+  introMiniCard: {
+    flex: 1,
+    minHeight: 86,
+    borderRadius: 8,
+    backgroundColor: "#f5f9ff",
+    borderWidth: 1,
+    borderColor: "#dbeafe",
+    padding: 12,
+    justifyContent: "center",
+  },
+  introMiniTitle: {
+    fontSize: 15,
+    fontWeight: "800",
+    color: "#1a1a1a",
+    marginBottom: 6,
+    textAlign: "center",
+  },
+  introMiniText: {
+    fontSize: 12,
+    lineHeight: 16,
+    color: "#64748b",
+    textAlign: "center",
+  },
+  introStarsBadge: {
+    minWidth: 110,
+    borderRadius: 8,
+    backgroundColor: "#fff7e0",
+    borderWidth: 1,
+    borderColor: "#ffe0a3",
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    marginBottom: 18,
+  },
+  introStarsText: {
+    fontSize: 26,
+    fontWeight: "900",
+    color: "#d99a00",
+    textAlign: "center",
+  },
+  introButtonRow: {
+    width: "100%",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  introSecondaryButton: {
+    minWidth: 92,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#dbeafe",
+    backgroundColor: "#fff",
+  },
+  introSecondaryButtonText: {
+    color: "#2196f3",
+    fontSize: 15,
+    fontWeight: "800",
+  },
+  introButtonHidden: {
+    opacity: 0,
   },
   settingsModalContainer: {
     flex: 1,

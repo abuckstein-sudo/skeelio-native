@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
 import {
   View,
   Text,
@@ -9,11 +9,10 @@ import {
   SafeAreaView,
   Modal,
   TextInput,
-  Alert,
   useWindowDimensions,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { supabase } from "@/lib/supabase";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import GiraffeBackground from "@/components/GiraffeBackground";
@@ -24,17 +23,8 @@ interface Child {
   grade_level: string;
   school_system?: string;
   pin: string;
-  selected_avatar?: string;
+  pin_setup_required?: boolean;
 }
-
-const AVATAR_EMOJI: Record<string, string> = {
-  cat: "🐱",
-  owl: "🦉",
-  fox: "🦊",
-  bear: "🐻",
-  rabbit: "🐰",
-  panda: "🐼",
-};
 
 const formatGrade = (child: Child): string => {
   const g = String(child.grade_level ?? "").trim();
@@ -60,9 +50,11 @@ export default function ChildrenScreen() {
   const pinInputRef = useRef<TextInput>(null);
   const childTileWidth = Math.max(140, (width - 64) / 2);
 
-  useEffect(() => {
-    fetchChildren();
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      fetchChildren();
+    }, [])
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -101,7 +93,7 @@ export default function ChildrenScreen() {
 
     const { data, error: dbError } = await supabase
       .from("children")
-      .select("id, name, grade_level, school_system, pin, selected_avatar");
+      .select("id, name, grade_level, school_system, pin, pin_setup_required");
 
     if (dbError) {
       console.log("[nav] children fetch error:", dbError.message);
@@ -129,6 +121,14 @@ export default function ChildrenScreen() {
   };
 
   const handleSelectChild = (child: Child) => {
+    if (child.pin_setup_required) {
+      router.push({
+        pathname: "/child-home/[childId]",
+        params: { childId: child.id },
+      });
+      return;
+    }
+
     console.log("[nav] opening PIN for:", child.id);
     setSelectedChildForPin(child);
     setPinModalVisible(true);
@@ -229,11 +229,6 @@ export default function ChildrenScreen() {
                 style={[styles.childTile, { width: childTileWidth }]}
                 onPress={() => handleSelectChild(item)}
               >
-                {item.selected_avatar && (
-                  <Text style={styles.avatarEmoji}>
-                    {AVATAR_EMOJI[item.selected_avatar] || AVATAR_EMOJI.fox}
-                  </Text>
-                )}
                 <Text style={styles.childName} numberOfLines={1} ellipsizeMode="tail">
                   {item.name}
                 </Text>
