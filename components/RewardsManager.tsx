@@ -12,6 +12,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import {
   archiveShopItem,
   createShopItemForChild,
+  getStarsForChild,
   listRewardRedemptionsForChild,
   listShopItemsForChild,
   RewardRedemption,
@@ -19,9 +20,10 @@ import {
   updateRedemptionStatus,
 } from "@/lib/rewards";
 
-export default function RewardsManager({ childId, stars }: { childId: string; stars: number }) {
+export default function RewardsManager({ childId, stars }: { childId: string; stars?: number }) {
   const [items, setItems] = useState<ShopItem[]>([]);
   const [redemptions, setRedemptions] = useState<RewardRedemption[]>([]);
+  const [starBalance, setStarBalance] = useState(stars ?? 0);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [title, setTitle] = useState("");
@@ -31,16 +33,22 @@ export default function RewardsManager({ childId, stars }: { childId: string; st
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [shopItems, requests] = await Promise.all([
+      const [shopItems, requests, currentStars] = await Promise.all([
         listShopItemsForChild(childId),
         listRewardRedemptionsForChild(childId),
+        getStarsForChild(childId),
       ]);
       setItems(shopItems);
       setRedemptions(requests);
+      setStarBalance(currentStars);
     } finally {
       setLoading(false);
     }
   }, [childId]);
+
+  useEffect(() => {
+    if (typeof stars === "number") setStarBalance(stars);
+  }, [stars]);
 
   useEffect(() => {
     load();
@@ -105,7 +113,7 @@ export default function RewardsManager({ childId, stars }: { childId: string; st
       <View style={styles.headerRow}>
         <View>
           <Text style={styles.sectionTitle}>Rewards shop</Text>
-          <Text style={styles.sectionSubtitle}>⭐ {stars} available</Text>
+          <Text style={styles.sectionSubtitle}>⭐ {starBalance} available</Text>
         </View>
         {loading && <ActivityIndicator color="#2563eb" />}
       </View>

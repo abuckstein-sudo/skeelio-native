@@ -21,7 +21,6 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as ImageManipulator from "expo-image-manipulator";
 import ParentProofSection from "./ParentProofSection";
 import CameraCaptureModal from "./CameraCaptureModal";
-import RewardsManager from "./RewardsManager";
 import { getOperationStatus, OperationStatus } from "@/lib/tutor/status";
 import { Operation } from "@/lib/tutorConfig";
 import {
@@ -815,8 +814,6 @@ export default function ChildDashboardBody({ childId }: { childId: string }) {
 
       {/* Parent Proof of Learning */}
       <ParentProofSection childId={childId} />
-
-      <RewardsManager childId={childId} stars={stars} />
 
       {!hasAttempts ? (
           <View style={styles.emptySection}>

@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useState, useCallback } from "react";
 import {
   View,
   Text,
@@ -15,6 +15,7 @@ import { useAuth } from "@/app/_layout";
 import { supabase } from "@/lib/supabase";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import ChildSnapshot from "@/components/ChildSnapshot";
+import RewardsManager from "@/components/RewardsManager";
 
 interface Child {
   id: string;
@@ -245,12 +246,17 @@ export default function ParentScreen() {
 
           {/* Child Snapshot */}
           {selectedChild && (
-            <ChildSnapshot
-              childId={selectedChild.id}
-              childName={selectedChild.name}
-              grade={selectedChild.grade_level || ""}
-              avatar={selectedChild.selected_avatar || "fox"}
-            />
+            <>
+              <ChildSnapshot
+                childId={selectedChild.id}
+                childName={selectedChild.name}
+                grade={selectedChild.grade_level || ""}
+                avatar={selectedChild.selected_avatar || "fox"}
+              />
+              <View style={styles.rewardSection}>
+                <RewardsManager childId={selectedChild.id} />
+              </View>
+            </>
           )}
         </ScrollView>
       )}
@@ -414,6 +420,10 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     paddingHorizontal: 20,
+  },
+  rewardSection: {
+    paddingHorizontal: 16,
+    paddingTop: 16,
   },
   emptyText: {
     fontSize: 16,

@@ -51,6 +51,21 @@ export async function listShopItemsForChild(childId: string): Promise<ShopItem[]
   return (data ?? []) as ShopItem[];
 }
 
+export async function getStarsForChild(childId: string): Promise<number> {
+  const { data, error } = await supabase
+    .from("rewards")
+    .select("stars")
+    .eq("child_id", childId)
+    .maybeSingle();
+
+  if (error) {
+    console.error("[rewards] fetch stars failed:", error);
+    return 0;
+  }
+
+  return data?.stars ?? 0;
+}
+
 export async function createShopItemForChild(input: {
   childId: string;
   title: string;
