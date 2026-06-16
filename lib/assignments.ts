@@ -17,6 +17,7 @@ export type CustomQuestion = {
   operandA?: number;
   operandB?: number;
   operator?: string;
+  assignmentTables?: number[];
 };
 
 export type Assignment = {
@@ -115,8 +116,9 @@ export async function createMathAssignment(params: {
   dueDate?: string | null;
   mode?: "practice" | "quiz";
   wordProblemOp?: Operation | "mixed";
+  multiplicationTables?: number[];
 }): Promise<Assignment> {
-  const { childId, topic, count, dueDate, mode = "practice", wordProblemOp } = params;
+  const { childId, topic, count, dueDate, mode = "practice", wordProblemOp, multiplicationTables } = params;
 
   // Get the current authenticated user to ensure parent_id is set correctly
   const { data: authData, error: authError } = await supabase.auth.getUser();
@@ -184,10 +186,16 @@ export async function createMathAssignment(params: {
         hintUsed: row.ai_hint_used || false,
       }));
 
+    const tables = Array.isArray(multiplicationTables)
+      ? multiplicationTables.filter((table) => Number.isInteger(table) && table >= 0 && table <= 12)
+      : [];
     const { tierId } = currentTierAndBand(attempts, topic as Operation, childData || {});
 
     for (let i = 0; i < count; i++) {
-      const genQ = generateQuestion(topic as Operation, tierId, childData?.max_times_table);
+      const genQ =
+        topic === "multiplication" && tables.length > 0
+          ? generateMultiplicationTableQuestion(tables, tierId)
+          : generateQuestion(topic as Operation, tierId, childData?.max_times_table);
       customQuestions.push(questionToCustom(genQ, topic as Operation));
     }
   }
@@ -223,6 +231,19 @@ export async function createMathAssignment(params: {
   }
 
   return newAssignment as Assignment;
+}
+
+function generateMultiplicationTableQuestion(tables: number[], tierId: string): Question {
+  const table = tables[Math.floor(Math.random() * tables.length)];
+  const other = Math.floor(Math.random() * 13);
+  const [a, b] = Math.random() < 0.5 ? [table, other] : [other, table];
+  return {
+    operation: "multiplication",
+    tierId,
+    a,
+    b,
+    answer: a * b,
+  };
 }
 
 export async function markAssignmentComplete(

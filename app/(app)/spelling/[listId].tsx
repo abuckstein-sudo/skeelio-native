@@ -17,6 +17,7 @@ import { setAudioModeAsync } from "expo-audio";
 import { supabase } from "@/lib/supabase";
 import { addStars } from "@/lib/addStars";
 import { markAssignmentComplete } from "@/lib/assignments";
+import QuitButton from "@/components/QuitButton";
 import {
   speakWord,
   speakSentence,
@@ -356,7 +357,7 @@ export default function SpellingPracticeScreen() {
           </View>
           <TouchableOpacity
             style={styles.button}
-            onPress={() => router.push({ pathname: "/" })}
+            onPress={() => router.push({ pathname: "/child-home/[childId]", params: { childId } })}
           >
             <Text style={styles.buttonText}>Back to Home</Text>
           </TouchableOpacity>
@@ -381,6 +382,7 @@ export default function SpellingPracticeScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
+      <QuitButton />
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={{ flex: 1 }}
@@ -463,6 +465,9 @@ export default function SpellingPracticeScreen() {
                 spellCheck={false}
                 editable={!isSubmitting}
                 maxLength={50}
+                autoFocus={true}
+                showSoftInputOnFocus={true}
+                blurOnSubmit={false}
               />
 
               <TouchableOpacity

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -37,6 +37,7 @@ import {
 } from "@/lib/tutor/visuals";
 import { useAuth } from "../_layout";
 import QuitButton from "@/components/QuitButton";
+import { appLanguageForChild, AppLanguage } from "@/lib/appLanguage";
 
 interface Answer {
   questionIndex: number;
@@ -60,10 +61,52 @@ interface TeachData {
   encouragement: string;
 }
 
+const COPY = {
+  en: {
+    sessionComplete: "Session Complete!",
+    allDone: "All Done!",
+    correct: "correct",
+    backHome: "Back to Home",
+    question: "Question",
+    of: "of",
+    hintFirst: "Need a hint?",
+    hintMore: "More help",
+    hintShown: "Hint shown",
+    placeholder: "Enter your answer",
+    submit: "Submit",
+    next: "Next",
+    correctFeedback: "✓ Correct!",
+    wrongFeedback: (answer: number | string) => `✗ Not quite. The answer is ${answer}.`,
+    keepWorking: (tier: string) => `Let's keep working on ${tier}.`,
+    niceProgress: (tier: string) => `Nice progress on ${tier}!`,
+    movingUp: (tier: string, nextTier: string) => `Solid at ${tier} — moving up to ${nextTier}!`,
+  },
+  fr: {
+    sessionComplete: "Séance terminée !",
+    allDone: "Terminé !",
+    correct: "correctes",
+    backHome: "Retour à l'accueil",
+    question: "Question",
+    of: "sur",
+    hintFirst: "Besoin d'un indice ?",
+    hintMore: "Encore de l'aide",
+    hintShown: "Indice affiché",
+    placeholder: "Écris ta réponse",
+    submit: "Valider",
+    next: "Suivant",
+    correctFeedback: "✓ Correct !",
+    wrongFeedback: (answer: number | string) => `✗ Pas tout à fait. La réponse est ${answer}.`,
+    keepWorking: (tier: string) => `On continue à travailler : ${tier}.`,
+    niceProgress: (tier: string) => `Beau progrès sur ${tier} !`,
+    movingUp: (tier: string, nextTier: string) => `Solide sur ${tier} — on passe à ${nextTier} !`,
+  },
+} as const;
+
 export default function PracticeScreen() {
   const router = useRouter();
   const { topic, childId, lessonShown } = useLocalSearchParams<{ topic: string; childId: string; lessonShown?: string }>();
   const { session } = useAuth();
+  const inputRef = useRef<TextInput>(null);
 
   // Adaptive engine state
   const [tierId, setTierId] = useState<string>("");
@@ -82,6 +125,7 @@ export default function PracticeScreen() {
   const [hintLoading, setHintLoading] = useState(false);
   const [hintUsedPerQuestion, setHintUsedPerQuestion] = useState<boolean[]>([]);
   const [childLanguage, setChildLanguage] = useState<string>("English");
+  const [appLanguage, setAppLanguage] = useState<AppLanguage>("en");
   const [operationMethods, setOperationMethods] = useState<Record<string, TeachingMethod | null>>({
     addition: null,
     subtraction: null,
@@ -118,8 +162,10 @@ export default function PracticeScreen() {
           .single();
 
         // Set child language for hints
-        const language = childData?.preferred_language || childData?.languages?.[0] || "English";
+        const appLang = appLanguageForChild(childData);
+        const language = appLang === "fr" ? "French" : "English";
         setChildLanguage(language);
+        setAppLanguage(appLang);
 
         // Fetch attempt log for this operation
         const { data: attemptData, error: attemptError } = await supabase
@@ -389,7 +435,7 @@ export default function PracticeScreen() {
         console.log("[practice-insert] ok", { tier: tierId, was_correct: isCorrect });
         setFeedback({
           isCorrect,
-          message: isCorrect ? "✓ Correct!" : `✗ Not quite. The answer is ${question.answer}.`,
+          message: isCorrect ? COPY[appLanguage].correctFeedback : COPY[appLanguage].wrongFeedback(question.answer),
         });
 
         const newAnswer: Answer = {
@@ -422,6 +468,7 @@ export default function PracticeScreen() {
     setMulStrategy(null);
     if (currentQuestionIndex < questions.length - 1) {
       setCurrentQuestionIndex(currentQuestionIndex + 1);
+      setTimeout(() => inputRef.current?.focus(), 50);
     }
   };
 
@@ -471,11 +518,11 @@ export default function PracticeScreen() {
         const ladder = LADDERS[topic as Operation];
         const nextTierObj = ladder.find((t) => t.id === nextTierId);
         const nextTierLabel = nextTierObj?.label || nextTierId;
-        setOutcomeMessage(`Solid at ${tierLabel} — moving up to ${nextTierLabel}!`);
+        setOutcomeMessage(COPY[appLanguage].movingUp(tierLabel, nextTierLabel));
       } else if (band === "struggling") {
-        setOutcomeMessage(`Let's keep working on ${tierLabel}.`);
+        setOutcomeMessage(COPY[appLanguage].keepWorking(tierLabel));
       } else {
-        setOutcomeMessage(`Nice progress on ${tierLabel}!`);
+        setOutcomeMessage(COPY[appLanguage].niceProgress(tierLabel));
       }
 
       setSessionComplete(true);
@@ -487,6 +534,16 @@ export default function PracticeScreen() {
 
   // Teach screen removed — now handled by deterministic lesson screen at /lesson/[childId]
 
+  const isSessionComplete = questions.length > 0 && answers.length === questions.length;
+  const score = answers.filter((a) => a.isCorrect).length;
+  const copy = COPY[appLanguage];
+
+  useEffect(() => {
+    if (isSessionComplete && !sessionComplete) {
+      handleDone();
+    }
+  }, [isSessionComplete, sessionComplete]);
+
   if (isLoading || questions.length === 0) {
     return (
       <View style={styles.centerContainer}>
@@ -495,18 +552,15 @@ export default function PracticeScreen() {
     );
   }
 
-  const isSessionComplete = answers.length === questions.length;
-  const score = answers.filter((a) => a.isCorrect).length;
-
   if (sessionComplete) {
     return (
       <View style={styles.container}>
         <ScrollView contentContainerStyle={styles.contentContainer}>
-          <Text style={styles.title}>Session Complete!</Text>
+          <Text style={styles.title}>{copy.sessionComplete}</Text>
 
           <View style={styles.scoreBox}>
             <Text style={styles.scoreText}>{score} / {questions.length}</Text>
-            <Text style={styles.scoreLabel}>correct</Text>
+            <Text style={styles.scoreLabel}>{copy.correct}</Text>
           </View>
 
           <View style={styles.summary}>
@@ -519,7 +573,7 @@ export default function PracticeScreen() {
               params: { childId },
             });
           }}>
-            <Text style={styles.buttonText}>Back to Home</Text>
+            <Text style={styles.buttonText}>{copy.backHome}</Text>
           </TouchableOpacity>
         </ScrollView>
       </View>
@@ -530,16 +584,13 @@ export default function PracticeScreen() {
     return (
       <View style={styles.container}>
         <ScrollView contentContainerStyle={styles.contentContainer}>
-          <Text style={styles.title}>All Done!</Text>
+          <Text style={styles.title}>{copy.allDone}</Text>
 
           <View style={styles.scoreBox}>
             <Text style={styles.scoreText}>{score} / {questions.length}</Text>
-            <Text style={styles.scoreLabel}>correct</Text>
+            <Text style={styles.scoreLabel}>{copy.correct}</Text>
           </View>
-
-          <TouchableOpacity style={styles.button} onPress={handleDone}>
-            <Text style={styles.buttonText}>See Results</Text>
-          </TouchableOpacity>
+          <ActivityIndicator size="small" color="#2196f3" />
         </ScrollView>
       </View>
     );
@@ -563,7 +614,7 @@ export default function PracticeScreen() {
           onPress={() => Keyboard.dismiss()}
         >
           <Text style={styles.progress}>
-            Question {questionNumber} of {questions.length}
+            {copy.question} {questionNumber} {copy.of} {questions.length}
           </Text>
           <Text style={styles.tierLabel}>{tierLabel}</Text>
 
@@ -596,10 +647,10 @@ export default function PracticeScreen() {
                 ) : (
                   <Text style={styles.hintButtonText}>
                     {currentHintLevel === 0
-                      ? "Need a hint?"
+                      ? copy.hintFirst
                       : currentHintLevel === 1
-                      ? "More help"
-                      : "Hint shown"}
+                      ? copy.hintMore
+                      : copy.hintShown}
                   </Text>
                 )}
               </TouchableOpacity>
@@ -625,12 +676,16 @@ export default function PracticeScreen() {
         <View style={styles.footer}>
           <TextInput
             style={styles.input}
-            placeholder="Enter your answer"
+            placeholder={copy.placeholder}
             keyboardType="number-pad"
             value={userAnswer}
             onChangeText={setUserAnswer}
             editable={!showingFeedback}
             maxLength={10}
+            ref={inputRef}
+            autoFocus={true}
+            showSoftInputOnFocus={true}
+            blurOnSubmit={false}
           />
 
           {showingFeedback && (
@@ -649,7 +704,7 @@ export default function PracticeScreen() {
             onPress={showingFeedback ? handleNext : handleSubmit}
             disabled={isSubmitting}
           >
-            <Text style={styles.buttonText}>{showingFeedback ? "Next" : "Submit"}</Text>
+            <Text style={styles.buttonText}>{showingFeedback ? copy.next : copy.submit}</Text>
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>

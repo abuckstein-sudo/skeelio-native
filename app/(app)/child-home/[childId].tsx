@@ -13,6 +13,7 @@ import {
 } from "@/lib/worksheetSkills";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import GiraffeBackground from "@/components/GiraffeBackground";
+import { appLanguageForChild } from "@/lib/appLanguage";
 
 interface Child {
   id: string;
@@ -54,6 +55,20 @@ const SUBJECTS: SubjectTile[] = [
   { topic: "reading", label: "Reading", description: "Read and understand", isActive: false },
 ];
 
+const SUBJECT_COPY: Record<ChildHomeLanguage, Record<string, { label: string; description: string }>> = {
+  en: Object.fromEntries(SUBJECTS.map((subject) => [subject.topic, { label: subject.label, description: subject.description }])),
+  fr: {
+    multiplication: { label: "Multiplication", description: "Maîtrise les tables" },
+    division: { label: "Division", description: "Apprends à diviser" },
+    addition: { label: "Addition", description: "Additionne les nombres" },
+    subtraction: { label: "Soustraction", description: "Retire des nombres" },
+    word_problems: { label: "Problèmes", description: "Résous des situations" },
+    spelling: { label: "Orthographe", description: "Écris les mots correctement" },
+    conjugation: { label: "Conjugaison", description: "Travaille les verbes" },
+    reading: { label: "Lecture", description: "Lis et comprends" },
+  },
+};
+
 const AVATAR_OPTIONS = ["cat", "owl", "fox", "bear", "rabbit", "panda"];
 const BACKGROUND_OPTIONS = [
   { id: "giraffe", label: "Giraffe", color: null },
@@ -82,6 +97,9 @@ const SETUP_COPY = {
     start: "Start",
     homework: "Homework",
     homeworkBody: "Do assigned work first",
+    greetingReady: "Let's get started!",
+    greetingChoice: "What would you like to work on today?",
+    completed: "Finished today",
     freePlay: "Free play",
     freePlayBody: "Choose practice tiles",
     settings: "Settings",
@@ -137,6 +155,9 @@ const SETUP_COPY = {
     start: "Commencer",
     homework: "Devoirs",
     homeworkBody: "Fais d'abord le travail assigné",
+    greetingReady: "On commence !",
+    greetingChoice: "Que veux-tu travailler aujourd'hui ?",
+    completed: "Terminé aujourd'hui",
     freePlay: "Jeu libre",
     freePlayBody: "Choisis une activité",
     settings: "Réglages",
@@ -178,9 +199,18 @@ const SETUP_COPY = {
 } as const;
 
 const getChildHomeLanguage = (child: Child | null): ChildHomeLanguage => {
-  const preferred = child?.preferred_language?.toLowerCase();
-  const languages = child?.languages?.map((language) => language.toLowerCase()) ?? [];
-  return preferred === "french" || languages.includes("french") ? "fr" : "en";
+  return appLanguageForChild(child);
+};
+
+const wasCompletedToday = (completedAt?: string | null) => {
+  if (!completedAt) return false;
+  const completed = new Date(completedAt);
+  const now = new Date();
+  return (
+    completed.getFullYear() === now.getFullYear() &&
+    completed.getMonth() === now.getMonth() &&
+    completed.getDate() === now.getDate()
+  );
 };
 
 export default function ChildHomeScreen() {
@@ -224,8 +254,8 @@ export default function ChildHomeScreen() {
     if (!childId) return;
     const assignments = await listAssignmentsForChild(childId);
     const pending = assignments.filter((a) => a.status === "pending");
-    const completed = assignments
-      .filter((a) => a.status === "complete")
+  const completed = assignments
+      .filter((a) => a.status === "complete" && wasCompletedToday(a.completed_at))
       .sort((a, b) => {
         const dateA = a.completed_at ? new Date(a.completed_at).getTime() : 0;
         const dateB = b.completed_at ? new Date(b.completed_at).getTime() : 0;
@@ -675,6 +705,7 @@ export default function ChildHomeScreen() {
   }).slice(0, 5);
 
   const setupCopy = SETUP_COPY[getChildHomeLanguage(child)];
+  const childLanguage = getChildHomeLanguage(child);
   const introSlides = setupCopy.introSlides;
   const currentIntroSlide = introSlides[introSlideIndex];
   const introVisible = !!child && !child.pin_setup_required && !child.intro_seen;
@@ -732,7 +763,7 @@ export default function ChildHomeScreen() {
       <View style={styles.header}>
         <View style={styles.leftCluster}>
           <TouchableOpacity onPress={handleAllDone} style={styles.allDoneButton}>
-            <Text style={styles.allDoneText}>All done</Text>
+            <Text style={styles.allDoneText}>{getChildHomeLanguage(child) === "fr" ? "Terminé" : "All done"}</Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={() => setSettingsModalVisible(true)}>
             <MaterialCommunityIcons name="cog" size={24} color="#333" />
@@ -754,14 +785,15 @@ export default function ChildHomeScreen() {
           </Text>
         )}
         <Text style={styles.greetingText}>
-          Hi {child.name}! {pendingAssignments.length > 0 || pendingEpisodes.length > 0 ? "Let's get started!" : "What would you like to work on today?"}
+          {getChildHomeLanguage(child) === "fr" ? `Salut ${child.name} ! ` : `Hi ${child.name}! `}
+          {pendingAssignments.length > 0 || pendingEpisodes.length > 0 ? setupCopy.greetingReady : setupCopy.greetingChoice}
         </Text>
       </View>
 
       {/* Homework Section (worksheet practice + assigned work, one feed) */}
       {homeworkFeed.length > 0 && (
         <View style={styles.homeworkSection}>
-          <Text style={styles.homeworkSectionTitle}>📋 Homework</Text>
+          <Text style={styles.homeworkSectionTitle}>📋 {setupCopy.homework}</Text>
           {homeworkFeed.map((item) => (
             <TouchableOpacity
               key={`${item.type}-${item.id}`}
@@ -784,7 +816,7 @@ export default function ChildHomeScreen() {
 
       {completedHomeworkFeed.length > 0 && (
         <View style={styles.completedHomeworkSection}>
-          <Text style={styles.homeworkSectionTitle}>✅ Finished</Text>
+          <Text style={styles.homeworkSectionTitle}>✅ {setupCopy.completed}</Text>
           {completedHomeworkFeed.map((item) => (
             <View key={item.id} style={styles.completedHomeworkCard}>
               <View style={styles.homeworkInfo}>
@@ -818,8 +850,8 @@ export default function ChildHomeScreen() {
                 onPress={() => subject.isActive && handleSubjectTap(subject.topic)}
                 disabled={!subject.isActive}
               >
-                <Text style={styles.subjectLabel}>{subject.label}</Text>
-                <Text style={styles.subjectDescription}>{subject.description}</Text>
+                <Text style={styles.subjectLabel}>{SUBJECT_COPY[childLanguage][subject.topic].label}</Text>
+                <Text style={styles.subjectDescription}>{SUBJECT_COPY[childLanguage][subject.topic].description}</Text>
                 {statusText && (
                   <Text style={styles.statusText}>{statusText}</Text>
                 )}

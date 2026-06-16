@@ -453,6 +453,7 @@ export default function ConjugationPracticeScreen() {
   if (screen === "language") {
     return (
       <SafeAreaView style={styles.container}>
+        <QuitButton />
         <ScrollView contentContainerStyle={styles.scrollContent}>
           <Text style={styles.title}>Choose Language</Text>
 
@@ -478,6 +479,7 @@ export default function ConjugationPracticeScreen() {
   if (screen === "selection") {
     return (
       <SafeAreaView style={styles.container}>
+        <QuitButton />
         <ScrollView contentContainerStyle={styles.scrollContent}>
           <Text style={styles.title}>Choose Your Practice</Text>
 
@@ -533,6 +535,7 @@ export default function ConjugationPracticeScreen() {
   if (screen === "teaching") {
     return (
       <SafeAreaView style={styles.container}>
+        <QuitButton />
         <ScrollView contentContainerStyle={styles.scrollContent}>
           <Text style={styles.title}>Learn the Pattern</Text>
 
@@ -807,7 +810,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: 16,
+    paddingRight: 16,
+    paddingLeft: 56,
     paddingTop: 16,
     marginBottom: 16,
   },

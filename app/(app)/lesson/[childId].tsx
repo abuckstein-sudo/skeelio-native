@@ -24,6 +24,7 @@ import {
 import { pickTeachExample } from "@/lib/tutor/generate";
 import { computeExampleSteps } from "@/lib/tutor/steps";
 import { StrategyView } from "@/lib/tutor/visuals";
+import QuitButton from "@/components/QuitButton";
 
 const styles = StyleSheet.create({
   container: {
@@ -230,6 +231,7 @@ export default function LessonScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
+      <QuitButton />
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={styles.container}

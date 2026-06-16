@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, ActivityIndicator, ScrollView, SafeAreaView, KeyboardAvoidingView, Platform, Keyboard } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { supabase } from "@/lib/supabase";
@@ -15,12 +15,58 @@ import {
 } from "@/lib/tutor/strategies";
 import { StrategyView } from "@/lib/tutor/visuals";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { appLanguageForChild, AppLanguage } from "@/lib/appLanguage";
 
 interface Answer {
   questionIndex: number;
   userAnswer: string;
   isCorrect: boolean;
 }
+
+const COPY = {
+  en: {
+    loadingHint: "Loading...",
+    hint: "Hint",
+    correct: "✓ Correct!",
+    wrong: (answer: string) => `✗ Not quite. The answer is ${answer}.`,
+    assignmentComplete: "Assignment complete!",
+    completionSubtitle: "Nice work finishing your homework.",
+    correctLabel: "correct",
+    stars: "stars",
+    backHome: "Back home",
+    noQuestions: "No questions available",
+    back: "Back",
+    quizMode: "Quiz mode — no hints available",
+    answerPlaceholder: "Your answer",
+    check: "Check",
+    finish: "Finish",
+    finishing: "Finishing...",
+    next: "Next",
+    practice: "Practice",
+    quiz: "Quiz",
+  },
+  fr: {
+    loadingHint: "Chargement...",
+    hint: "Indice",
+    correct: "✓ Correct !",
+    wrong: (answer: string) => `✗ Pas tout à fait. La réponse est ${answer}.`,
+    assignmentComplete: "Devoir terminé !",
+    completionSubtitle: "Bravo, tu as fini ton devoir.",
+    correctLabel: "correctes",
+    stars: "étoiles",
+    backHome: "Retour à l'accueil",
+    noQuestions: "Aucune question disponible",
+    back: "Retour",
+    quizMode: "Mode quiz — pas d'indice",
+    answerPlaceholder: "Ta réponse",
+    check: "Valider",
+    finish: "Terminer",
+    finishing: "Finalisation...",
+    next: "Suivant",
+    practice: "Entraînement",
+    quiz: "Quiz",
+  },
+} as const;
 
 // Parser for question text with all operator variants
 const OP_TO_TOPIC: Record<string, Operation> = {
@@ -55,6 +101,7 @@ function parseQuestion(text: string): { a: number; op: string; topic: Operation;
 export default function HomeworkScreen() {
   const router = useRouter();
   const { assignmentId, childId } = useLocalSearchParams<{ assignmentId: string; childId: string }>();
+  const inputRef = useRef<TextInput>(null);
 
   const [assignment, setAssignment] = useState<Assignment | null>(null);
   const [questions, setQuestions] = useState<CustomQuestion[]>([]);
@@ -75,6 +122,7 @@ export default function HomeworkScreen() {
     stars: number;
   } | null>(null);
   const [isCompleting, setIsCompleting] = useState(false);
+  const [appLanguage, setAppLanguage] = useState<AppLanguage>("en");
 
   // Hint state
   const [currentHintLevel, setCurrentHintLevel] = useState(0);
@@ -118,6 +166,14 @@ export default function HomeworkScreen() {
 
     const assignment = data as Assignment & { progress_index?: number; correct_count?: number };
     setAssignment(assignment);
+    if (childId) {
+      const { data: childData } = await supabase
+        .from("children")
+        .select("languages, preferred_language")
+        .eq("id", childId)
+        .single();
+      setAppLanguage(appLanguageForChild(childData));
+    }
     const qs = assignment.custom_questions || [];
     setQuestions(qs);
     setIsQuizMode(assignment.mode === "quiz");
@@ -331,7 +387,7 @@ export default function HomeworkScreen() {
       } else {
         setFeedback({
           isCorrect,
-          message: isCorrect ? "✓ Correct!" : `✗ Not quite. The answer is ${question.correct_answer}.`,
+          message: isCorrect ? COPY[appLanguage].correct : COPY[appLanguage].wrong(question.correct_answer),
         });
 
         const newAnswer: Answer = {
@@ -372,6 +428,7 @@ export default function HomeworkScreen() {
           });
       }
       setCurrentQuestionIndex(nextIndex);
+      setTimeout(() => inputRef.current?.focus(), 50);
     } else {
       handleComplete();
     }
@@ -420,12 +477,12 @@ export default function HomeworkScreen() {
   if (!assignment || questions.length === 0 || error) {
     return (
       <View style={styles.centerContainer}>
-        <Text style={styles.errorText}>{error || "No questions available"}</Text>
+        <Text style={styles.errorText}>{error || COPY[appLanguage].noQuestions}</Text>
         <TouchableOpacity
           style={styles.backButton}
           onPress={() => router.push({ pathname: "/child-home/[childId]", params: { childId } })}
         >
-          <Text style={styles.backButtonText}>Back</Text>
+          <Text style={styles.backButtonText}>{COPY[appLanguage].back}</Text>
         </TouchableOpacity>
       </View>
     );
@@ -436,6 +493,7 @@ export default function HomeworkScreen() {
   const isAnswered = feedback !== null;
   const canShowHint = !isQuizMode && currentHintLevel < 2 && !isAnswered;
   const showingStrategy = mulStrategy !== null && !isAnswered;
+  const copy = COPY[appLanguage];
 
   const sessionCorrect = answers.filter((a) => a.isCorrect).length;
   const correctCount = restoredCorrect + sessionCorrect;
@@ -443,23 +501,23 @@ export default function HomeworkScreen() {
   const headerTitle =
     (assignment.focus
       ? assignment.focus.charAt(0).toUpperCase() + assignment.focus.slice(1)
-      : "Practice") + (isQuizMode ? " Quiz" : " Practice");
+      : copy.practice) + (isQuizMode ? ` ${copy.quiz}` : ` ${copy.practice}`);
 
   if (completionStats) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.completionContainer}>
           <Text style={styles.completionConfetti}>🎉</Text>
-          <Text style={styles.completionTitle}>Assignment complete!</Text>
-          <Text style={styles.completionSubtitle}>Nice work finishing your homework.</Text>
+          <Text style={styles.completionTitle}>{copy.assignmentComplete}</Text>
+          <Text style={styles.completionSubtitle}>{copy.completionSubtitle}</Text>
           <View style={styles.completionScoreBox}>
             <Text style={styles.completionScore}>
               {completionStats.correct} / {completionStats.total}
             </Text>
-            <Text style={styles.completionScoreLabel}>correct</Text>
+            <Text style={styles.completionScoreLabel}>{copy.correctLabel}</Text>
           </View>
           <View style={styles.completionStarsBox}>
-            <Text style={styles.completionStarsText}>⭐ +{completionStats.stars} stars</Text>
+            <Text style={styles.completionStarsText}>⭐ +{completionStats.stars} {copy.stars}</Text>
           </View>
           <TouchableOpacity
             style={styles.completionButton}
@@ -470,7 +528,7 @@ export default function HomeworkScreen() {
               })
             }
           >
-            <Text style={styles.completionButtonText}>Back home</Text>
+            <Text style={styles.completionButtonText}>{copy.backHome}</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -502,7 +560,7 @@ export default function HomeworkScreen() {
             <Text style={styles.progressText}>
               {currentQuestionIndex + 1} of {questions.length}
             </Text>
-            {isQuizMode && <Text style={styles.quizModeText}>Quiz mode — no hints available</Text>}
+            {isQuizMode && <Text style={styles.quizModeText}>{copy.quizMode}</Text>}
           </View>
 
           {/* Question */}
@@ -532,7 +590,7 @@ export default function HomeworkScreen() {
               disabled={!canShowHint || hintLoading}
             >
               <Text style={styles.hintButtonText}>
-                {hintLoading ? "Loading..." : currentHintLevel === 0 ? "💡 Hint" : "💡 Hint " + currentHintLevel}
+                {hintLoading ? copy.loadingHint : currentHintLevel === 0 ? `💡 ${copy.hint}` : `💡 ${copy.hint} ${currentHintLevel}`}
               </Text>
             </TouchableOpacity>
           )}
@@ -542,11 +600,15 @@ export default function HomeworkScreen() {
         <View style={styles.footer}>
           <TextInput
             style={[styles.answerInput, isAnswered && styles.answerInputDisabled]}
-            placeholder="Your answer"
+            placeholder={copy.answerPlaceholder}
             value={userAnswer}
             onChangeText={setUserAnswer}
-            keyboardType="numeric"
+            keyboardType="number-pad"
             editable={!isAnswered}
+            ref={inputRef}
+            autoFocus={true}
+            showSoftInputOnFocus={true}
+            blurOnSubmit={false}
           />
 
           {/* Feedback */}
@@ -562,7 +624,7 @@ export default function HomeworkScreen() {
           <View style={styles.buttonContainer}>
             {!isAnswered ? (
               <TouchableOpacity style={styles.checkButton} onPress={handleSubmit} disabled={isSubmitting}>
-                <Text style={styles.checkButtonText}>{isSubmitting ? "..." : "Check"}</Text>
+                <Text style={styles.checkButtonText}>{isSubmitting ? "..." : copy.check}</Text>
               </TouchableOpacity>
             ) : (
               <TouchableOpacity
@@ -571,7 +633,7 @@ export default function HomeworkScreen() {
                 disabled={isCompleting}
               >
                 <Text style={styles.nextButtonText}>
-                  {isCompleting ? "Finishing..." : isLastQuestion ? "Finish" : "Next"}
+                  {isCompleting ? copy.finishing : isLastQuestion ? copy.finish : copy.next}
                 </Text>
               </TouchableOpacity>
             )}

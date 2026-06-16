@@ -21,3 +21,27 @@ export async function setStoredAppLanguage(userId: string | null | undefined, la
 export function childLanguageForApp(language: AppLanguage) {
   return language === "fr" ? "French" : "English";
 }
+
+export function appLanguageForChild(child?: {
+  languages?: string[] | string | null;
+  preferred_language?: string | null;
+} | null): AppLanguage {
+  const rawLanguages = child?.languages;
+  let languages: string[] = [];
+
+  if (Array.isArray(rawLanguages)) {
+    languages = rawLanguages;
+  } else if (typeof rawLanguages === "string") {
+    try {
+      const parsed = JSON.parse(rawLanguages);
+      languages = Array.isArray(parsed) ? parsed : [rawLanguages];
+    } catch {
+      languages = [rawLanguages];
+    }
+  }
+
+  const normalized = languages.map((language) => language.toLowerCase());
+  const hasOnlyFrench = normalized.length === 1 && normalized[0] === "french";
+
+  return hasOnlyFrench ? "fr" : "en";
+}

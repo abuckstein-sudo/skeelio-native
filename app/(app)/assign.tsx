@@ -18,6 +18,7 @@ import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/app/_layout";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as ImageManipulator from "expo-image-manipulator";
+import * as ImagePicker from "expo-image-picker";
 import CameraCaptureModal from "@/components/CameraCaptureModal";
 import { Operation } from "@/lib/tutorConfig";
 import {
@@ -63,6 +64,7 @@ export default function AssignScreen() {
   const [assignmentSubject, setAssignmentSubject] = useState<"math" | "spelling" | "conjugation">("math");
   const [selectedTopic, setSelectedTopic] = useState<Operation | "word_problems">("addition");
   const [selectedWordProblemOp, setSelectedWordProblemOp] = useState<Operation | "mixed">("mixed");
+  const [selectedMultiplicationTables, setSelectedMultiplicationTables] = useState<number[]>([]);
   const [questionCount, setQuestionCount] = useState(8);
   const [dueDate, setDueDate] = useState("");
   const [assignmentMode, setAssignmentMode] = useState<"practice" | "quiz">("practice");
@@ -199,12 +201,15 @@ export default function AssignScreen() {
           dueDate: dueDate || undefined,
           mode: assignmentMode,
           wordProblemOp: selectedTopic === "word_problems" ? selectedWordProblemOp : undefined,
+          multiplicationTables:
+            selectedTopic === "multiplication" ? selectedMultiplicationTables : undefined,
         });
 
         await fetchAssignments();
 
         setShowAssignmentForm(false);
         setSelectedTopic("addition");
+        setSelectedMultiplicationTables([]);
         setQuestionCount(8);
         setDueDate("");
         setAssignmentMode("practice");
@@ -624,12 +629,29 @@ export default function AssignScreen() {
       "Add a spelling list",
       "Choose how to add a list:",
       [
-        { text: "Take or upload a photo", onPress: () => setCameraVisible(true) },
+        { text: "Take photo", onPress: () => setCameraVisible(true) },
+        { text: "Upload photo", onPress: () => pickPhotoFromLibrary() },
         { text: "Manual entry", onPress: () => setShowSpellingForm(true) },
         { text: "Skeelio generates", onPress: () => handleGenerateSpellingList() },
         { text: "Cancel", style: "cancel" },
       ]
     );
+  };
+
+  const pickPhotoFromLibrary = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images"],
+        quality: 1,
+      });
+
+      if (!result.canceled && result.assets[0]?.uri) {
+        await processCapturedImage(result.assets[0].uri);
+      }
+    } catch (err) {
+      console.error("[assign] image library error:", err);
+      Alert.alert("Error", "Could not open the photo library");
+    }
   };
 
   const displayName = child?.name || paramName || "this child";
@@ -851,7 +873,12 @@ export default function AssignScreen() {
                         <TouchableOpacity
                           key={topic}
                           style={[styles.topicButton, selectedTopic === topic && styles.topicButtonActive]}
-                          onPress={() => setSelectedTopic(topic as Operation | "word_problems")}
+                          onPress={() => {
+                            setSelectedTopic(topic as Operation | "word_problems");
+                            if (topic !== "multiplication") {
+                              setSelectedMultiplicationTables([]);
+                            }
+                          }}
                         >
                           <Text style={[styles.topicButtonText, selectedTopic === topic && styles.topicButtonTextActive]}>
                             {topic === "word_problems" ? "Word Problems" : topic.charAt(0).toUpperCase() + topic.slice(1)}
@@ -872,6 +899,42 @@ export default function AssignScreen() {
                             >
                               <Text style={[styles.topicButtonText, selectedWordProblemOp === op && styles.topicButtonTextActive]}>
                                 {op === "mixed" ? "Mixed" : op.charAt(0).toUpperCase() + op.slice(1)}
+                              </Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      </>
+                    )}
+
+                    {selectedTopic === "multiplication" && (
+                      <>
+                        <Text style={styles.formLabel}>Tables (optional)</Text>
+                        <Text style={styles.smallText}>
+                          Select specific tables for this assignment, or leave blank for the current level.
+                        </Text>
+                        <View style={styles.topicPickerRow}>
+                          {Array.from({ length: 13 }, (_, table) => (
+                            <TouchableOpacity
+                              key={table}
+                              style={[
+                                styles.topicButton,
+                                selectedMultiplicationTables.includes(table) && styles.topicButtonActive,
+                              ]}
+                              onPress={() => {
+                                setSelectedMultiplicationTables((current) =>
+                                  current.includes(table)
+                                    ? current.filter((value) => value !== table)
+                                    : [...current, table].sort((a, b) => a - b)
+                                );
+                              }}
+                            >
+                              <Text
+                                style={[
+                                  styles.topicButtonText,
+                                  selectedMultiplicationTables.includes(table) && styles.topicButtonTextActive,
+                                ]}
+                              >
+                                ×{table}
                               </Text>
                             </TouchableOpacity>
                           ))}
@@ -1101,6 +1164,7 @@ export default function AssignScreen() {
                         setShowAssignmentForm(false);
                         setAssignmentSubject("math");
                         setSelectedTopic("addition");
+                        setSelectedMultiplicationTables([]);
                         setQuestionCount(8);
                         setDueDate("");
                         setAssignmentMode("practice");

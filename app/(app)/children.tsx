@@ -24,7 +24,18 @@ interface Child {
   school_system?: string;
   pin: string;
   pin_setup_required?: boolean;
+  selected_avatar?: string | null;
+  intro_seen?: boolean;
 }
+
+const AVATAR_EMOJI: Record<string, string> = {
+  cat: "🐱",
+  owl: "🦉",
+  fox: "🦊",
+  bear: "🐻",
+  rabbit: "🐰",
+  panda: "🐼",
+};
 
 const formatGrade = (child: Child): string => {
   const g = String(child.grade_level ?? "").trim();
@@ -93,7 +104,7 @@ export default function ChildrenScreen() {
 
     const { data, error: dbError } = await supabase
       .from("children")
-      .select("id, name, grade_level, school_system, pin, pin_setup_required");
+      .select("id, name, grade_level, school_system, pin, pin_setup_required, selected_avatar, intro_seen");
 
     if (dbError) {
       console.log("[nav] children fetch error:", dbError.message);
@@ -221,6 +232,11 @@ export default function ChildrenScreen() {
                 style={[styles.childTile, { width: childTileWidth }]}
                 onPress={() => handleSelectChild(item)}
               >
+                {item.intro_seen && item.selected_avatar && (
+                  <Text style={styles.avatarEmoji}>
+                    {AVATAR_EMOJI[item.selected_avatar] || AVATAR_EMOJI.fox}
+                  </Text>
+                )}
                 <Text style={styles.childName} numberOfLines={1} ellipsizeMode="tail">
                   {item.name}
                 </Text>

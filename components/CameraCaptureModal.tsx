@@ -124,6 +124,15 @@ export default function CameraCaptureModal({
             <Text style={styles.permissionButtonText}>Allow Camera</Text>
           </TouchableOpacity>
         )}
+        <TouchableOpacity
+          style={[styles.permissionButton, styles.libraryPermissionButton]}
+          onPress={handlePickFromLibrary}
+          disabled={isPicking}
+        >
+          <Text style={styles.permissionButtonText}>
+            {isPicking ? "Opening..." : "Upload from Library"}
+          </Text>
+        </TouchableOpacity>
         <TouchableOpacity style={styles.permissionCloseButton} onPress={onClose}>
           <Text style={styles.permissionCloseText}>Close</Text>
         </TouchableOpacity>
@@ -229,6 +238,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 22,
     borderRadius: 8,
     backgroundColor: "#2196f3",
+  },
+  libraryPermissionButton: {
+    marginTop: 10,
+    backgroundColor: "#111827",
   },
   permissionButtonText: {
     color: "#fff",
