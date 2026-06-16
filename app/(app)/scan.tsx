@@ -174,6 +174,17 @@ export default function ScanScreen() {
     router.back();
   };
 
+  const handleConfirmationDone = () => {
+    if (childId) {
+      router.replace({
+        pathname: "/child-home/[childId]",
+        params: { childId },
+      });
+      return;
+    }
+    router.back();
+  };
+
   const pickImage = async () => {
     try {
       setError("");
@@ -498,21 +509,27 @@ export default function ScanScreen() {
         </View>
 
         <ScrollView contentContainerStyle={styles.confirmationContent}>
-          <View style={styles.confirmationBox}>
-            <MaterialCommunityIcons name="check-circle" size={64} color="#4caf50" />
-            <Text style={styles.confirmationTitle}>C'est prêt !</Text>
+          <View style={styles.confirmationCard}>
+            <View style={styles.confirmationIconBadge}>
+              <MaterialCommunityIcons name="check" size={40} color="#fff" />
+            </View>
+            <Text style={styles.confirmationEyebrow}>Worksheet ready</Text>
+            <Text style={styles.confirmationTitle}>Séance prête</Text>
             <Text style={styles.confirmationText}>
-              Skeelio a compris : <Text style={styles.boldText}>{confirmationData.conceptLabel}</Text>
+              <Text style={styles.boldText}>{confirmationData.conceptLabel}</Text>
             </Text>
-            <Text style={styles.confirmationSubtext}>
-              Une séance est prête pour <Text style={styles.boldText}>{confirmationData.childName}</Text>.
-            </Text>
+            <View style={styles.confirmationDetailRow}>
+              <MaterialCommunityIcons name="account-child" size={18} color="#2196f3" />
+              <Text style={styles.confirmationSubtext}>
+                Assignée à <Text style={styles.boldText}>{confirmationData.childName}</Text>
+              </Text>
+            </View>
 
             <TouchableOpacity
-              style={[styles.primaryButton, { alignSelf: "center", flex: 0, minWidth: 120 }]}
-              onPress={handleBack}
+              style={styles.confirmationButton}
+              onPress={handleConfirmationDone}
             >
-              <Text style={styles.primaryButtonText}>Retour</Text>
+              <Text style={styles.primaryButtonText}>Voir la page enfant</Text>
             </TouchableOpacity>
           </View>
         </ScrollView>
@@ -635,6 +652,49 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: 20,
     paddingVertical: 40,
+  },
+  confirmationCard: {
+    width: "100%",
+    maxWidth: 420,
+    alignItems: "center",
+    paddingHorizontal: 24,
+    paddingVertical: 28,
+    backgroundColor: "#fff",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#eee",
+  },
+  confirmationIconBadge: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#4caf50",
+    marginBottom: 16,
+  },
+  confirmationEyebrow: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#2196f3",
+    textTransform: "uppercase",
+    marginBottom: 8,
+  },
+  confirmationDetailRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 14,
+    marginBottom: 22,
+  },
+  confirmationButton: {
+    minWidth: 210,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    backgroundColor: "#2196f3",
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
   },
   reviewContent: {
     flexGrow: 1,

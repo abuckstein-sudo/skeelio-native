@@ -336,6 +336,15 @@ function displayPronoun(pronoun: string): string {
   return pronoun;
 }
 
+function hashString(value: string): number {
+  let hash = 2166136261;
+  for (let i = 0; i < value.length; i++) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return Math.abs(hash);
+}
+
 type ConjugationBankRow = {
   verb: string;
   verb_group: string;
@@ -350,11 +359,13 @@ async function fetchConjugationBankItems(
   tense: "future" | "present",
   subSkill: string,
   maxItems: number,
-  avoid: string[]
+  avoid: string[],
+  sessionSeed: string
 ): Promise<Record<string, unknown>[]> {
   const languageCode = isFrench(language) ? "fr-FR" : "en-CA";
   const tenseLabel = conjugationTenseLabel(tense);
   const avoidSet = new Set(avoid.map((w) => normalizeAnswerText(w)));
+  const seed = hashString(`${languageCode}:${tenseLabel}:${subSkill}:${sessionSeed}`);
 
   const { data, error } = await supabase
     .from("conjugation_questions")
@@ -380,14 +391,14 @@ async function fetchConjugationBankItems(
   const verbs = Array.from(rowsByVerb.keys()).sort((a, b) => a.localeCompare(b));
   const items: Record<string, unknown>[] = [];
   const usedVerbs = new Set<string>();
-  const offset = avoid.length % Math.max(verbs.length, 1);
+  const offset = verbs.length ? (seed + avoid.length) % verbs.length : 0;
 
   for (let i = 0; items.length < maxItems && i < verbs.length * 2; i++) {
     const verb = verbs[(offset + i * 7) % verbs.length];
     if (!verb || usedVerbs.has(verb)) continue;
 
     const rows = rowsByVerb.get(verb) || [];
-    const row = rows[i % rows.length];
+    const row = rows[(seed + i) % rows.length];
     if (!row) continue;
 
     const pronoun = displayPronoun(row.pronoun);
@@ -415,11 +426,15 @@ async function generateConjugationPractice(
   language: string,
   allSubSkills: string[],
   maxItems: number,
-  avoid: string[] = []
+  avoid: string[] = [],
+  sessionSeed = ""
 ): Promise<Response> {
   const tense = conjugationTense(concept, allSubSkills);
   const subSkill = conjugationSubSkill(concept, allSubSkills);
-  const bankItems = await fetchConjugationBankItems(supabase, language, tense, subSkill, maxItems, avoid);
+  const seedValue =
+    sessionSeed ||
+    `${JSON.stringify(concept)}:${new Date().toISOString().slice(0, 10)}`;
+  const bankItems = await fetchConjugationBankItems(supabase, language, tense, subSkill, maxItems, avoid, seedValue);
 
   if (bankItems.length > 0) {
     return json({
@@ -430,6 +445,7 @@ async function generateConjugationPractice(
         deterministic: "conjugation_questions",
         tense: conjugationTenseLabel(tense),
         verb_group: "groupe_1",
+        seed: seedValue,
       },
     }, 200);
   }
@@ -438,11 +454,12 @@ async function generateConjugationPractice(
   const pronouns = ["je", "tu", "il", "elle", "nous", "vous", "ils", "elles"];
   const items: Record<string, unknown>[] = [];
   const usedVerbs = new Set<string>();
+  const fallbackSeed = hashString(seedValue);
 
   for (let i = 0; items.length < maxItems && i < REGULAR_ER_VERB_BANK.length * pronouns.length; i++) {
-    const verb = REGULAR_ER_VERB_BANK[(i * 7) % REGULAR_ER_VERB_BANK.length];
+    const verb = REGULAR_ER_VERB_BANK[(fallbackSeed + i * 7) % REGULAR_ER_VERB_BANK.length];
     if (usedVerbs.has(verb) && usedVerbs.size < REGULAR_ER_VERB_BANK.length) continue;
-    const pronoun = pronouns[i % pronouns.length];
+    const pronoun = pronouns[(fallbackSeed + i) % pronouns.length];
     const subjectBlank = subjectBlankForVerb(pronoun, verb);
     const answer = regularErForm(verb, pronoun, tense);
     if (avoidSet.has(normalizeAnswerText(answer))) continue;
@@ -541,6 +558,7 @@ Deno.serve(async (req) => {
     const domain = input.domain as string || "math";
     const count = input.count as number || 5;
     const avoid = (input.avoid as string[]) || [];
+    const sessionSeed = typeof input.sessionSeed === "string" ? input.sessionSeed : "";
     const authHeader = req.headers.get("authorization") || "";
 
     if (!concept || !language || !domain) {
@@ -558,7 +576,7 @@ Deno.serve(async (req) => {
       return await generateMathPractice(concept, language, allSubSkills, count);
     } else if (domain === "language" && (isFrench(language) || isEnglish(language))) {
       if (isLikelyConjugationPractice(concept, allSubSkills)) {
-        return await generateConjugationPractice(supabase, concept, language, allSubSkills, count, avoid);
+        return await generateConjugationPractice(supabase, concept, language, allSubSkills, count, avoid, sessionSeed);
       }
       return await generateLanguagePractice(concept, language, allSubSkills, count, avoid);
     } else {

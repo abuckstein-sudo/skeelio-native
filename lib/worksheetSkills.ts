@@ -48,7 +48,7 @@ export async function listWorksheetSkillsForChild(childId: string): Promise<Work
       "id, created_at, completed_at, concept, domain, mastered, status, image_path, parent_id, child_id, source, language, grade_band, lesson, items_attempted, first_try_correct, unaided_streak_max"
     )
     .eq("child_id", childId)
-    .not("image_path", "is", null)
+    .eq("source", "photo")
     .order("created_at", { ascending: false });
 
   if (error) {

@@ -29,6 +29,11 @@ export interface ChildAssessment {
   generatedAt: string;
 }
 
+function isConjugationConcept(concept: unknown): boolean {
+  const text = JSON.stringify(concept ?? "").toLowerCase();
+  return text.includes("conjug") || text.includes("verbe") || text.includes("verb");
+}
+
 export async function buildChildAssessment(childId: string): Promise<ChildAssessment> {
   // Map to hold canonical areas: area name → AssessmentArea
   const areaMap: Record<CanonicalArea, AssessmentArea> = {};
@@ -200,16 +205,48 @@ export async function buildChildAssessment(childId: string): Promise<ChildAssess
         .select("was_correct, created_at")
         .eq("child_id", childId);
 
+      const { data: episodeData } = await supabase
+        .from("tutor_episodes")
+        .select("concept, mastered, first_try_correct, items_attempted, created_at")
+        .eq("child_id", childId)
+        .eq("status", "complete")
+        .eq("domain", "language");
+
       const unaidedAttempts = attemptData || [];
       const recentAttempts = (attemptData || []).filter(
         (a) => new Date(a.created_at) >= twoWeeksAgo
       );
+      const worksheetConjugation = (episodeData || []).filter((ep) =>
+        isConjugationConcept(ep.concept)
+      );
+      const worksheetAttempted = worksheetConjugation.reduce(
+        (sum, ep) => sum + (ep.items_attempted || 0),
+        0
+      );
+      const worksheetCorrect = worksheetConjugation.reduce(
+        (sum, ep) => sum + (ep.first_try_correct || 0),
+        0
+      );
+      const worksheetRecent = worksheetConjugation.some(
+        (ep) => new Date(ep.created_at) >= twoWeeksAgo
+      );
+      const worksheetMastered = worksheetConjugation.some((ep) => !!ep.mastered);
 
       let status: "on_track" | "needs_work" | "not_enough_data" | "ready_to_level_up" = "not_enough_data";
       let evidence = "No practice yet";
-      let active = recentAttempts.length > 0;
+      let active = recentAttempts.length > 0 || worksheetRecent;
 
-      if (unaidedAttempts.length < ASSESSMENT.notEnoughDataBelowUnaided) {
+      if (worksheetAttempted > 0) {
+        const totalAttempts = unaidedAttempts.length + worksheetAttempted;
+        const totalCorrect =
+          unaidedAttempts.filter((a) => a.was_correct).length + worksheetCorrect;
+        const masteryRate = totalCorrect / totalAttempts;
+        status =
+          worksheetMastered || masteryRate >= ASSESSMENT.onTrackUnaidedRate
+            ? "on_track"
+            : "needs_work";
+        evidence = `${totalCorrect}/${totalAttempts} first try`;
+      } else if (unaidedAttempts.length < ASSESSMENT.notEnoughDataBelowUnaided) {
         status = "not_enough_data";
         evidence = `${unaidedAttempts.length} attempts`;
       } else {
@@ -241,6 +278,7 @@ export async function buildChildAssessment(childId: string): Promise<ChildAssess
       // Group by concept
       const conceptMap: Record<string, { mastered: boolean[]; created_at: string[] }> = {};
       for (const ep of episodes || []) {
+        if (isConjugationConcept(ep.concept)) continue;
         const label = (ep.concept as any)?.label || "Unknown";
         if (!conceptMap[label]) {
           conceptMap[label] = { mastered: [], created_at: [] };

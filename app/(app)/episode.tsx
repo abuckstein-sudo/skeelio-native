@@ -73,6 +73,7 @@ export default function EpisodeScreen() {
   // Feedback
   const [isCorrect, setIsCorrect] = useState<boolean | null>(null);
   const [feedbackMessage, setFeedbackMessage] = useState<string>("");
+  const [feedbackUserAnswer, setFeedbackUserAnswer] = useState<string>("");
   const [explanation, setExplanation] = useState<string>("");
   const [unairedStreak, setUnairedStreak] = useState(0);
   const [isFirstAttempt, setIsFirstAttempt] = useState(true);
@@ -253,6 +254,7 @@ export default function EpisodeScreen() {
             domain: data.domain,
             count: SKILL_SESSION.sessionCap,
             avoid: Array.from(shownAnswers),
+            sessionSeed: episodeId || params.episodeId || "",
           },
         }
       );
@@ -270,12 +272,12 @@ export default function EpisodeScreen() {
         const rate = hist.length ? hist.filter((h) => h.correct).length / hist.length : 0;
         const supplyMastered =
           distinct >= SKILL_SESSION.masteryMinDistinctItems && rate >= ASSESSMENT.onTrackUnaidedRate;
-        completeEpisode(supplyMastered);
+        await completeEpisode(supplyMastered);
         Alert.alert(
           supplyMastered ? "Bravo ! 🎉" : "À bientôt !",
           supplyMastered ? "Tu maîtrises bien ça !" : "On continue une autre fois 💪"
         );
-        router.back();
+        navigateAfterEpisodeComplete();
         setLoading(false);
         return;
       }
@@ -423,6 +425,27 @@ export default function EpisodeScreen() {
     }
   };
 
+  const maxCorrectRun = () => {
+    let best = 0;
+    let current = 0;
+    for (const entry of firstTryHistoryRef.current) {
+      current = entry.correct ? current + 1 : 0;
+      best = Math.max(best, current);
+    }
+    return best;
+  };
+
+  const navigateAfterEpisodeComplete = () => {
+    if (childId) {
+      router.replace({
+        pathname: "/child-home/[childId]",
+        params: { childId },
+      });
+      return;
+    }
+    router.back();
+  };
+
   const callTeach = async (item: PracticeItem, childAnswer: string, attemptNum: number) => {
     try {
       setTeachLoading(true);
@@ -468,6 +491,7 @@ export default function EpisodeScreen() {
     const correct = gradeAnswer();
     setIsCorrect(correct);
     setExplanation("");
+    setFeedbackUserAnswer(userAnswer.trim());
     setTotalAttempts(totalAttempts + 1);
 
     // Log first-try attempt (if episodeId present)
@@ -483,7 +507,7 @@ export default function EpisodeScreen() {
       setFirstTrySuccesses(firstTrySuccesses + 1);
       // Auto advance after delay
       setTimeout(() => {
-        advanceToNextItem();
+        void advanceToNextItem();
       }, 1500);
       setPhase("feedback");
     } else if (correct && !isFirstAttempt) {
@@ -491,7 +515,7 @@ export default function EpisodeScreen() {
       setFeedbackMessage("Correct ! ✓");
       // Auto advance after delay
       setTimeout(() => {
-        advanceToNextItem();
+        void advanceToNextItem();
       }, 1500);
       setPhase("feedback");
     } else {
@@ -527,6 +551,7 @@ export default function EpisodeScreen() {
   const handleYesNoChoice = (choice: "Oui" | "Non") => {
     setUserAnswer(choice);
     setExplanation("");
+    setFeedbackUserAnswer(choice);
     setTotalAttempts(totalAttempts + 1);
 
     // Map choice to boolean and compare to item's boolean answer
@@ -564,7 +589,7 @@ export default function EpisodeScreen() {
       setFirstTrySuccesses(firstTrySuccesses + 1);
       // Auto advance after delay
       setTimeout(() => {
-        advanceToNextItem();
+        void advanceToNextItem();
       }, 1500);
       setPhase("feedback");
     } else if (correct && !isFirstAttempt) {
@@ -572,7 +597,7 @@ export default function EpisodeScreen() {
       setFeedbackMessage("Correct ! ✓");
       // Auto advance after delay
       setTimeout(() => {
-        advanceToNextItem();
+        void advanceToNextItem();
       }, 1500);
       setPhase("feedback");
     } else {
@@ -614,7 +639,7 @@ export default function EpisodeScreen() {
           mastered,
           items_attempted: firstTryHistoryRef.current.length,
           first_try_correct: firstTryHistoryRef.current.filter((h) => h.correct).length,
-          unaided_streak_max: unaidedStreakMax,
+          unaided_streak_max: Math.max(unaidedStreakMax, maxCorrectRun()),
         }).eq('id', episodeId);
 
         console.log('[episode complete]', {
@@ -622,7 +647,7 @@ export default function EpisodeScreen() {
           mastered,
           items_attempted: firstTryHistoryRef.current.length,
           first_try_correct: firstTryHistoryRef.current.filter((h) => h.correct).length,
-          unaided_streak_max: unaidedStreakMax,
+          unaided_streak_max: Math.max(unaidedStreakMax, maxCorrectRun()),
         });
       } catch (err) {
         console.error('[episode complete error]', err);
@@ -631,7 +656,7 @@ export default function EpisodeScreen() {
     }
   };
 
-  const advanceToNextItem = () => {
+  const advanceToNextItem = async () => {
     // Check if we've reached mastery or item cap
     const history = firstTryHistoryRef.current;
     const recent = history.slice(-SKILL_SESSION.masteryWindow);
@@ -644,21 +669,21 @@ export default function EpisodeScreen() {
 
     if (mastered) {
       // MASTERY REACHED
-      completeEpisode(true);
+      await completeEpisode(true);
       Alert.alert(
         "Bravo ! 🎉",
         `Tu as réussi ${history.filter((h) => h.correct).length} sur ${history.length} du premier coup. Tu maîtrises bien ça ! 🎉`
       );
-      router.back();
+      navigateAfterEpisodeComplete();
       return;
     }
 
     if (history.length >= SKILL_SESSION.sessionCap) {
       // Item cap reached without mastery - honest, kind, non-celebratory
-      completeEpisode(false);
+      await completeEpisode(false);
       const message = `Beau travail ! Tu as réussi ${history.filter((h) => h.correct).length} sur ${history.length} du premier coup. C'est encore un peu difficile — on va s'entraîner encore. 💪`;
       Alert.alert("À bientôt !", message);
-      router.back();
+      navigateAfterEpisodeComplete();
       return;
     }
 
@@ -672,6 +697,7 @@ export default function EpisodeScreen() {
       setPhase("practice");
       setIsCorrect(null);
       setFeedbackMessage("");
+      setFeedbackUserAnswer("");
       setExplanation("");
       setIsFirstAttempt(true);
     } else if (episodeData) {
@@ -687,6 +713,7 @@ export default function EpisodeScreen() {
       setPhase("practice");
       setIsCorrect(null);
       setFeedbackMessage("");
+      setFeedbackUserAnswer("");
       return;
     }
     router.back();
@@ -874,6 +901,12 @@ export default function EpisodeScreen() {
                     color={isCorrect ? "#4caf50" : "#f44336"}
                   />
                   <Text style={styles.feedbackText}>{feedbackMessage}</Text>
+                  {!isCorrect && feedbackUserAnswer ? (
+                    <View style={styles.childAnswerBox}>
+                      <Text style={styles.childAnswerLabel}>Ta réponse</Text>
+                      <Text style={styles.childAnswerText}>{feedbackUserAnswer}</Text>
+                    </View>
+                  ) : null}
                 </View>
               </View>
 
@@ -894,7 +927,7 @@ export default function EpisodeScreen() {
                 <TouchableOpacity
                   style={styles.secondaryButton}
                   onPress={() => {
-                    advanceToNextItem();
+                    void advanceToNextItem();
                   }}
                 >
                   <Text style={styles.secondaryButtonText}>Continuer</Text>
@@ -904,7 +937,7 @@ export default function EpisodeScreen() {
               {isCorrect && (
                 <TouchableOpacity
                   style={styles.primaryButton}
-                  onPress={advanceToNextItem}
+                  onPress={() => void advanceToNextItem()}
                 >
                   <Text style={styles.primaryButtonText}>Suivant</Text>
                   <MaterialCommunityIcons name="arrow-right" size={18} color="#fff" />
@@ -1172,6 +1205,28 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#333",
     marginTop: 12,
+    textAlign: "center",
+  },
+  childAnswerBox: {
+    alignSelf: "stretch",
+    marginTop: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    backgroundColor: "#fff",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#ffcdd2",
+  },
+  childAnswerLabel: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#c62828",
+    marginBottom: 4,
+  },
+  childAnswerText: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#333",
   },
   loadingContainer: {
     alignItems: "center",
