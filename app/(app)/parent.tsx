@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useRef, useState, useCallback } from "react";
 import {
   View,
   Text,
@@ -40,6 +40,7 @@ const AVATAR_EMOJI: Record<string, string> = {
 export default function ParentScreen() {
   const router = useRouter();
   const { session } = useAuth();
+  const contentScrollRef = useRef<ScrollView>(null);
   const [children, setChildren] = useState<Child[]>([]);
   const [selectedChildId, setSelectedChildId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -136,6 +137,12 @@ export default function ParentScreen() {
     router.back();
   };
 
+  const scrollRewardsFormIntoView = useCallback(() => {
+    setTimeout(() => {
+      contentScrollRef.current?.scrollToEnd({ animated: true });
+    }, 120);
+  }, []);
+
   const handleLogout = () => {
     setShowMenu(false);
     Alert.alert(
@@ -214,10 +221,13 @@ export default function ParentScreen() {
           keyboardVerticalOffset={80}
         >
         <ScrollView
+          ref={contentScrollRef}
           style={styles.content}
+          contentContainerStyle={styles.contentContainer}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
+          automaticallyAdjustKeyboardInsets
         >
           {/* Child Switcher */}
           <View style={styles.childSwitcher}>
@@ -269,7 +279,7 @@ export default function ParentScreen() {
                 avatar={selectedChild.selected_avatar || "fox"}
               />
               <View style={styles.rewardSection}>
-                <RewardsManager childId={selectedChild.id} />
+                <RewardsManager childId={selectedChild.id} onInputFocus={scrollRewardsFormIntoView} />
               </View>
             </>
           )}
@@ -388,6 +398,9 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
+  },
+  contentContainer: {
+    paddingBottom: 180,
   },
   childSwitcher: {
     flexDirection: "row",

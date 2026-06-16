@@ -21,7 +21,13 @@ import {
   updateRedemptionStatus,
 } from "@/lib/rewards";
 
-export default function RewardsManager({ childId, stars }: { childId: string; stars?: number }) {
+interface RewardsManagerProps {
+  childId: string;
+  stars?: number;
+  onInputFocus?: () => void;
+}
+
+export default function RewardsManager({ childId, stars, onInputFocus }: RewardsManagerProps) {
   const [items, setItems] = useState<ShopItem[]>([]);
   const [redemptions, setRedemptions] = useState<RewardRedemption[]>([]);
   const [starBalance, setStarBalance] = useState(stars ?? 0);
@@ -159,6 +165,7 @@ export default function RewardsManager({ childId, stars }: { childId: string; st
           onChangeText={setTitle}
           editable={!saving}
           returnKeyType="next"
+          onFocus={onInputFocus}
         />
         <TextInput
           style={styles.input}
@@ -168,6 +175,7 @@ export default function RewardsManager({ childId, stars }: { childId: string; st
           editable={!saving}
           returnKeyType="done"
           onSubmitEditing={Keyboard.dismiss}
+          onFocus={onInputFocus}
         />
         <View style={styles.costRow}>
           <TextInput
@@ -179,6 +187,7 @@ export default function RewardsManager({ childId, stars }: { childId: string; st
             editable={!saving}
             returnKeyType="done"
             onSubmitEditing={Keyboard.dismiss}
+            onFocus={onInputFocus}
           />
           <TouchableOpacity style={styles.doneButton} onPress={Keyboard.dismiss}>
             <Text style={styles.doneButtonText}>Done</Text>
