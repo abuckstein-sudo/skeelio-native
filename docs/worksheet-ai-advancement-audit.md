@@ -5,6 +5,8 @@ Branch inspected: `feature/onboarding-child-settings`
 
 This is an audit report, not an implementation plan. The goal is to map the current system, identify launch risks, and define how to build a useful worksheet QA dataset without overfitting to one CE1 child's worksheets.
 
+Product framing: worksheet scanning is not a side feature. It is Skeelio's main product pillar. The core promise is that Skeelio can understand the child's real school context from actual school materials, identify both the skill and the classroom method, and tutor from that context. Spelling drills, multiplication practice, rewards, dashboards, and generic assignments are supporting systems around that pillar.
+
 ## Executive Summary
 
 Skeelio currently has two partly separate learning systems:
@@ -14,9 +16,9 @@ Skeelio currently has two partly separate learning systems:
    - a `tutor_episodes` row with AI-generated lesson/practice metadata.
 2. Adaptive math advancement uses `learning_attempts`, tier ladders, and centralized gates in `masteryConfig.ts` / `tutorConfig.ts`.
 
-The biggest launch risk is not one specific prompt bug. It is that worksheet understanding, assignment generation, and advancement evidence are not yet governed by one shared contract. Some paths record first-try or unaided evidence, some record generic correctness, and worksheet-derived skill progress lives mostly in `tutor_episodes` rather than the same tier model as math practice.
+The biggest launch risk is not one specific prompt bug. It is that worksheet understanding, assignment generation, school-method extraction, and advancement evidence are not yet governed by one shared contract. Some paths record first-try or unaided evidence, some record generic correctness, and worksheet-derived skill progress lives mostly in `tutor_episodes` rather than the same tier model as math practice.
 
-Recommended next step: build a worksheet QA harness around `absorb-worksheet` before changing advancement rules. Then centralize a small "learning evidence" model so every path can say whether a result is placement evidence, mastery evidence, review evidence, or just homework completion.
+Recommended next step: build a worksheet QA harness around `absorb-worksheet` before changing advancement rules. That harness should verify not only "what skill is this?" but also "how is school teaching this?" Then centralize a small "learning evidence" model so every path can say whether a result is placement evidence, mastery evidence, review evidence, or just homework completion.
 
 ## Worksheet AI Pipeline Map
 
@@ -425,4 +427,3 @@ For outside testing, keep advancement conservative:
 - Parent-created assignments count as practice evidence, but should be distinguishable from adaptive placement evidence.
 - Hinted/revealed/multiple-choice answers should not count the same as first-try typed answers.
 - The UI should prefer "needs practice", "not enough data", and "ready to try next" over hard "mastered" unless evidence is strong.
-
