@@ -7,23 +7,19 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Image,
-  ScrollView,
   Alert,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { supabase } from "@/lib/supabase";
+import {
+  assignMoreLikeWorksheetSkill,
+  listWorksheetSkillsForChild,
+  worksheetSkillLabel,
+  worksheetSkillProgressText,
+  WorksheetSkill,
+} from "@/lib/worksheetSkills";
 
-interface Episode {
-  id: string;
-  created_at: string;
-  completed_at: string | null;
-  concept: { label: string; description?: string; sub_skills?: any[] } | null;
-  domain: string;
-  mastered: boolean;
-  items_attempted: number;
-  first_try_correct: number;
-  image_path: string | null;
-}
+type Episode = WorksheetSkill;
 
 interface Attempt {
   sub_skill: string | null;
@@ -49,27 +45,35 @@ export default function ParentProofSection({ childId }: { childId: string }) {
   const fetchEpisodes = async () => {
     try {
       setLoading(true);
-      const { data, error } = await supabase
-        .from("tutor_episodes")
-        .select(
-          "id, created_at, completed_at, concept, domain, mastered, items_attempted, first_try_correct, image_path"
-        )
-        .eq("child_id", childId)
-        .eq("status", "complete")
-        .order("completed_at", { ascending: false })
-        .limit(10);
-
-      if (error) {
-        console.error("[proof] fetch error:", error);
-        setEpisodes([]);
-      } else {
-        setEpisodes((data || []) as Episode[]);
-      }
+      const skills = await listWorksheetSkillsForChild(childId);
+      setEpisodes(
+        skills
+          .filter((skill) => skill.status === "complete")
+          .sort((a, b) => {
+            const dateA = a.completed_at ? new Date(a.completed_at).getTime() : 0;
+            const dateB = b.completed_at ? new Date(b.completed_at).getTime() : 0;
+            return dateB - dateA;
+          })
+          .slice(0, 10)
+      );
     } catch (err) {
       console.error("[proof] fetch error:", err);
       setEpisodes([]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleAssignMore = async (episode: Episode) => {
+    try {
+      await assignMoreLikeWorksheetSkill(episode);
+      Alert.alert(
+        "Assigned",
+        `Added more practice for "${worksheetSkillLabel(episode)}" to the homework feed.`
+      );
+    } catch (err) {
+      console.error("[proof] assign more error:", err);
+      Alert.alert("Error", "Couldn't assign more practice.");
     }
   };
 
@@ -120,7 +124,7 @@ export default function ParentProofSection({ childId }: { childId: string }) {
   if (loading) {
     return (
       <View style={styles.container}>
-        <Text style={styles.title}>Learning Progress</Text>
+        <Text style={styles.title}>Worksheet Skills</Text>
         <ActivityIndicator size="large" color="#2196f3" />
       </View>
     );
@@ -129,7 +133,7 @@ export default function ParentProofSection({ childId }: { childId: string }) {
   if (episodes.length === 0) {
     return (
       <View style={styles.container}>
-        <Text style={styles.title}>Learning Progress</Text>
+        <Text style={styles.title}>Worksheet Skills</Text>
         <View style={styles.emptyState}>
           <MaterialCommunityIcons name="file-document-outline" size={48} color="#ccc" />
           <Text style={styles.emptyText}>
@@ -142,7 +146,7 @@ export default function ParentProofSection({ childId }: { childId: string }) {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Learning Progress</Text>
+      <Text style={styles.title}>Worksheet Skills</Text>
 
       <FlatList
         data={episodes}
@@ -166,7 +170,7 @@ export default function ParentProofSection({ childId }: { childId: string }) {
                   {/* Concept label + domain badge */}
                   <View style={styles.conceptRow}>
                     <Text style={styles.concept} numberOfLines={1}>
-                      {episode.concept?.label || "Unknown"}
+                      {worksheetSkillLabel(episode)}
                     </Text>
                     <View
                       style={[
@@ -204,8 +208,7 @@ export default function ParentProofSection({ childId }: { childId: string }) {
 
                   {/* First-try correctness */}
                   <Text style={styles.scoreText}>
-                    {episode.first_try_correct} of {episode.items_attempted} correct on the
-                    first try
+                    {worksheetSkillProgressText(episode)}
                   </Text>
 
                   {/* Date */}
@@ -222,6 +225,16 @@ export default function ParentProofSection({ childId }: { childId: string }) {
                 />
               </View>
             </TouchableOpacity>
+
+            <View style={styles.cardActions}>
+              <TouchableOpacity
+                style={styles.assignMoreButton}
+                onPress={() => handleAssignMore(episode)}
+              >
+                <MaterialCommunityIcons name="refresh" size={14} color="#2196f3" />
+                <Text style={styles.assignMoreText}>Assign more like this</Text>
+              </TouchableOpacity>
+            </View>
 
             {/* Expanded Attempts */}
             {expandedId === episode.id && (
@@ -424,6 +437,29 @@ const styles = StyleSheet.create({
   dateText: {
     fontSize: 11,
     color: "#999",
+  },
+  cardActions: {
+    flexDirection: "row",
+    justifyContent: "flex-start",
+    marginTop: -6,
+    marginBottom: 12,
+    paddingHorizontal: 12,
+  },
+  assignMoreButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: "#2196f3",
+    backgroundColor: "#e3f2fd",
+  },
+  assignMoreText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#2196f3",
   },
   expandedContent: {
     backgroundColor: "#fff",
