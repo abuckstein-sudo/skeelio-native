@@ -12,17 +12,9 @@ const fallbackParentName = (user: User) => {
 };
 
 export async function ensureParentProfile(user: User) {
-  const { error } = await supabase
-    .from("users")
-    .upsert(
-      {
-        id: user.id,
-        email: user.email,
-        role: "parent",
-        full_name: fallbackParentName(user),
-      },
-      { onConflict: "id", ignoreDuplicates: true }
-    );
+  const { error } = await supabase.rpc("ensure_current_parent_profile", {
+    fallback_full_name: fallbackParentName(user),
+  });
 
   if (error) {
     console.warn("[profile] ensure parent profile failed:", error);

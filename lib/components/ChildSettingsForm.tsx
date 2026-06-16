@@ -321,7 +321,10 @@ export default function ChildSettingsForm({
 
       const { error: profileError } = await ensureParentProfile(userData.user);
       if (profileError) {
-        Alert.alert(COPY[appLanguage].error, COPY[appLanguage].profileFailed);
+        Alert.alert(
+          COPY[appLanguage].error,
+          `${COPY[appLanguage].profileFailed}\n\n${profileError.message}`
+        );
         setIsSaving(false);
         return;
       }
@@ -330,7 +333,7 @@ export default function ChildSettingsForm({
         .from("children")
         .insert({
           ...updateData,
-          parent_id: userId,
+          parent_id: userData.user.id,
         })
         .select();
 
