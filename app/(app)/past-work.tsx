@@ -14,25 +14,16 @@ import { useRouter, useLocalSearchParams, useFocusEffect } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { listAssignmentsForChild, Assignment } from "@/lib/assignments";
 import { supabase } from "@/lib/supabase";
+import {
+  assignMoreLikeWorksheetSkill,
+  listWorksheetSkillsForChild,
+  worksheetSkillLabel,
+  worksheetSkillProgressText,
+  WorksheetSkill,
+} from "@/lib/worksheetSkills";
 
-type View = "date" | "subject" | "worksheets";
+type PastWorkView = "date" | "subject" | "worksheets";
 type Granularity = "day" | "week" | "month" | "year";
-
-interface Worksheet {
-  id: string;
-  created_at: string;
-  completed_at: string | null;
-  concept: { label?: string; description?: string } | null;
-  domain: string | null;
-  mastered: boolean | null;
-  status: string | null;
-  image_path: string | null;
-  parent_id: string | null;
-  source: string | null;
-  language: string | null;
-  grade_band: string | null;
-  lesson: string | null;
-}
 
 const cap = (s?: string | null) =>
   s ? s.charAt(0).toUpperCase() + s.slice(1) : "";
@@ -115,9 +106,9 @@ export default function PastWorkScreen() {
   const childName = params.childName ? String(params.childName) : "";
 
   const [assignments, setAssignments] = useState<Assignment[]>([]);
-  const [worksheets, setWorksheets] = useState<Worksheet[]>([]);
+  const [worksheetSkills, setWorksheetSkills] = useState<WorksheetSkill[]>([]);
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState<View>("date");
+  const [view, setView] = useState<PastWorkView>("date");
   const [granularity, setGranularity] = useState<Granularity>("month");
 
   const load = useCallback(async () => {
@@ -134,15 +125,7 @@ export default function PastWorkScreen() {
         });
       setAssignments(done);
 
-      const { data: ws } = await supabase
-        .from("tutor_episodes")
-        .select(
-          "id, created_at, completed_at, concept, domain, mastered, status, image_path, parent_id, source, language, grade_band, lesson"
-        )
-        .eq("child_id", id)
-        .not("image_path", "is", null)
-        .order("created_at", { ascending: false });
-      setWorksheets((ws || []) as Worksheet[]);
+      setWorksheetSkills(await listWorksheetSkillsForChild(id));
     } catch (err) {
       console.error("[past-work] load error:", err);
     } finally {
@@ -184,24 +167,12 @@ export default function PastWorkScreen() {
     return arr;
   }, [assignments, view, granularity]);
 
-  const assignAgain = async (w: Worksheet) => {
+  const assignAgain = async (w: WorksheetSkill) => {
     try {
-      const { error } = await supabase.from("tutor_episodes").insert({
-        parent_id: w.parent_id,
-        child_id: id,
-        source: w.source || "photo",
-        image_path: w.image_path,
-        domain: w.domain,
-        language: w.language,
-        grade_band: w.grade_band,
-        concept: w.concept,
-        lesson: w.lesson,
-        status: "pending",
-      });
-      if (error) throw error;
+      await assignMoreLikeWorksheetSkill(w);
       Alert.alert(
         "Assigned",
-        `Added "${w.concept?.label || "this worksheet"}" to ${
+        `Added more practice for "${worksheetSkillLabel(w)}" to ${
           childName || "the child"
         }'s to-do list.`
       );
@@ -211,10 +182,10 @@ export default function PastWorkScreen() {
     }
   };
 
-  const deleteWorksheet = (w: Worksheet) => {
+  const deleteWorksheet = (w: WorksheetSkill) => {
     Alert.alert(
-      "Delete worksheet?",
-      "This removes it from past worksheets. This cannot be undone.",
+      "Delete skill work?",
+      "This removes it from past worksheet skills. This cannot be undone.",
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -227,7 +198,7 @@ export default function PastWorkScreen() {
                 .delete()
                 .eq("id", w.id);
               if (error) throw error;
-              setWorksheets((prev) => prev.filter((x) => x.id !== w.id));
+              setWorksheetSkills((prev) => prev.filter((x) => x.id !== w.id));
             } catch (err) {
               console.error("[past-work] delete error:", err);
               Alert.alert("Error", "Couldn't delete this worksheet.");
@@ -238,7 +209,7 @@ export default function PastWorkScreen() {
     );
   };
 
-  const renderTab = (key: View, label: string) => (
+  const renderTab = (key: PastWorkView, label: string) => (
     <TouchableOpacity
       style={[styles.tab, view === key && styles.tabActive]}
       onPress={() => setView(key)}
@@ -262,7 +233,7 @@ export default function PastWorkScreen() {
       <View style={styles.tabRow}>
         {renderTab("date", "By date")}
         {renderTab("subject", "By subject")}
-        {renderTab("worksheets", "Past worksheets")}
+        {renderTab("worksheets", "Worksheet skills")}
       </View>
 
       {view === "date" && (
@@ -286,32 +257,29 @@ export default function PastWorkScreen() {
           <ActivityIndicator size="large" color="#2196f3" />
         </View>
       ) : view === "worksheets" ? (
-        worksheets.length === 0 ? (
+        worksheetSkills.length === 0 ? (
           <View style={styles.center}>
             <Text style={styles.emptyText}>No worksheets scanned yet.</Text>
           </View>
         ) : (
           <ScrollView contentContainerStyle={styles.scroll}>
-            {worksheets.map((w) => (
+            {worksheetSkills.map((w) => (
               <View key={w.id} style={styles.wsRow}>
                 <WorksheetThumb path={w.image_path} />
                 <View style={{ flex: 1 }}>
                   <Text style={styles.rowTitle} numberOfLines={2}>
-                    {w.concept?.label || "Worksheet"}
+                    {worksheetSkillLabel(w)}
                   </Text>
                   <Text style={styles.rowDetail}>
                     {w.domain === "language" ? "Language" : "Math"} ·{" "}
                     {new Date(w.created_at).toLocaleDateString()}
-                    {w.status === "complete"
-                      ? w.mastered
-                        ? " · Mastered"
-                        : " · Needs practice"
-                      : " · Not done yet"}
+                    {" · "}
+                    {worksheetSkillProgressText(w)}
                   </Text>
                   <View style={styles.wsActions}>
                     <TouchableOpacity style={styles.wsBtn} onPress={() => assignAgain(w)}>
                       <MaterialCommunityIcons name="refresh" size={14} color="#2196f3" />
-                      <Text style={styles.wsBtnText}>Assign again</Text>
+                      <Text style={styles.wsBtnText}>Assign more like this</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={styles.wsDeleteBtn}

@@ -6,6 +6,12 @@ import { getOperationStatus, OperationStatus, getWordProblemsStatus, WordProblem
 import { Operation } from "@/lib/tutorConfig";
 import { listAssignmentsForChild, Assignment } from "@/lib/assignments";
 import { listSpellingListsForChild, type SpellingList } from "@/lib/spelling";
+import {
+  listWorksheetSkillsForChild,
+  worksheetSkillLabel,
+  worksheetSkillProgressText,
+  WorksheetSkill,
+} from "@/lib/worksheetSkills";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import GiraffeBackground from "@/components/GiraffeBackground";
 
@@ -59,12 +65,15 @@ export default function ChildHomeScreen() {
   const [stars, setStars] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
-  const [operationStatuses, setOperationStatuses] = useState<Record<Operation, OperationStatus>>({});
+  const [operationStatuses, setOperationStatuses] = useState<Record<Operation, OperationStatus>>(
+    {} as Record<Operation, OperationStatus>
+  );
   const [wordProblemsStatus, setWordProblemsStatus] = useState<WordProblemsStatus | null>(null);
   const [pendingAssignments, setPendingAssignments] = useState<Assignment[]>([]);
   const [completedAssignments, setCompletedAssignments] = useState<Assignment[]>([]);
   const [spellingLists, setSpellingLists] = useState<SpellingList[]>([]);
   const [pendingEpisodes, setPendingEpisodes] = useState<any[]>([]);
+  const [completedWorksheetSkills, setCompletedWorksheetSkills] = useState<WorksheetSkill[]>([]);
   const [settingsModalVisible, setSettingsModalVisible] = useState(false);
   const [settingsTab, setSettingsTab] = useState<"avatar" | "background">("avatar");
   const skipNextFocusFeedRefreshRef = useRef(false);
@@ -129,12 +138,28 @@ export default function ChildHomeScreen() {
     }
   }, [childId]);
 
+  const fetchCompletedWorksheetSkills = useCallback(async () => {
+    if (!childId) return;
+    const skills = await listWorksheetSkillsForChild(childId);
+    setCompletedWorksheetSkills(
+      skills
+        .filter((skill) => skill.status === "complete")
+        .sort((a, b) => {
+          const dateA = a.completed_at ? new Date(a.completed_at).getTime() : 0;
+          const dateB = b.completed_at ? new Date(b.completed_at).getTime() : 0;
+          return dateB - dateA;
+        })
+        .slice(0, 5)
+    );
+  }, [childId]);
+
   const refreshHomeworkFeed = useCallback(async () => {
     await Promise.all([
       fetchPendingAssignments(),
       fetchPendingEpisodes(),
+      fetchCompletedWorksheetSkills(),
     ]);
-  }, [fetchPendingAssignments, fetchPendingEpisodes]);
+  }, [fetchPendingAssignments, fetchPendingEpisodes, fetchCompletedWorksheetSkills]);
 
   useEffect(() => {
     if (childId) {
@@ -413,21 +438,34 @@ export default function ChildHomeScreen() {
     }),
   ].sort((x, y) => (x.createdAt < y.createdAt ? -1 : x.createdAt > y.createdAt ? 1 : 0));
 
-  const completedHomeworkFeed = completedAssignments.map((a) => {
-    const isSpelling = a.subject === "spelling";
-    const base = (a.focus || a.subject || "Practice") as string;
-    const title = isSpelling
-      ? `Spelling: ${(a.custom_questions as any)?.title || "Spelling List"}`
-      : base.charAt(0).toUpperCase() + base.slice(1);
-    return {
-      id: a.id,
-      title,
-      completedAt: a.completed_at,
-      subtitle: typeof a.correct_count === "number"
-        ? `Score: ${a.correct_count}/${a.question_count}`
-        : `${a.question_count} ${isSpelling ? "word" : "question"}${a.question_count !== 1 ? "s" : ""}`,
-    };
-  });
+  const completedHomeworkFeed = [
+    ...completedWorksheetSkills.map((skill) => ({
+      type: "worksheet" as const,
+      id: skill.id,
+      title: worksheetSkillLabel(skill),
+      completedAt: skill.completed_at,
+      subtitle: worksheetSkillProgressText(skill),
+    })),
+    ...completedAssignments.map((a) => {
+      const isSpelling = a.subject === "spelling";
+      const base = (a.focus || a.subject || "Practice") as string;
+      const title = isSpelling
+        ? `Spelling: ${(a.custom_questions as any)?.title || "Spelling List"}`
+        : base.charAt(0).toUpperCase() + base.slice(1);
+      return {
+        id: a.id,
+        title,
+        completedAt: a.completed_at,
+        subtitle: typeof a.correct_count === "number"
+          ? `Score: ${a.correct_count}/${a.question_count}`
+          : `${a.question_count} ${isSpelling ? "word" : "question"}${a.question_count !== 1 ? "s" : ""}`,
+      };
+    }),
+  ].sort((a, b) => {
+    const dateA = a.completedAt ? new Date(a.completedAt).getTime() : 0;
+    const dateB = b.completedAt ? new Date(b.completedAt).getTime() : 0;
+    return dateB - dateA;
+  }).slice(0, 5);
 
   return (
     <SafeAreaView style={styles.container}>
