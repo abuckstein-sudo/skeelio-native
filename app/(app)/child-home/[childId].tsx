@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, FlatList, SafeAreaView, Modal, Alert } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, FlatList, SafeAreaView, Modal } from "react-native";
 import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
 import { supabase } from "@/lib/supabase";
 import { getOperationStatus, OperationStatus, getWordProblemsStatus, WordProblemsStatus } from "@/lib/tutor/status";
@@ -329,7 +329,10 @@ export default function ChildHomeScreen() {
   };
 
   const handleShopPress = () => {
-    Alert.alert("Coming soon!", "The star shop is coming in a future update!");
+    router.push({
+      pathname: "/star-shop/[childId]",
+      params: { childId },
+    });
   };
 
   const handleEpisodeTap = (episode: any) => {
