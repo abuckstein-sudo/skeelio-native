@@ -209,14 +209,7 @@ export default function ScanScreen() {
   };
 
   const handleConfirmationDone = () => {
-    if (childId) {
-      router.replace({
-        pathname: "/child-home/[childId]",
-        params: { childId },
-      });
-      return;
-    }
-    router.back();
+    router.replace("/(app)/parent");
   };
 
   const pickImage = async () => {
@@ -614,7 +607,7 @@ export default function ScanScreen() {
               style={styles.confirmationButton}
               onPress={handleConfirmationDone}
             >
-              <Text style={styles.primaryButtonText}>Voir la page enfant</Text>
+              <Text style={styles.primaryButtonText}>Retour au tableau parent</Text>
             </TouchableOpacity>
           </View>
         </ScrollView>
