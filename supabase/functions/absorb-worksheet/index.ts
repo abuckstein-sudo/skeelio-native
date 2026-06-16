@@ -29,6 +29,9 @@ SPELLING LIST RULE:
 - Extract the words/list entries into spelling_words exactly as written, preserving accents, apostrophes, and articles.
 - For spelling_list pages, the concept label should be "Spelling list" in English or "Liste d'orthographe" in French.
 - For spelling_list pages, practice items must be spelling prompts anchored ONLY to spelling_words, never invented vocabulary/meaning questions.
+LANGUAGE LABEL RULE:
+- If the page asks the child to conjugate verbs, the concept label MUST be a conjugation label in the page language, such as "Conjugaison" or "Conjuguer au présent". Do NOT label conjugation pages as "vocabulaire".
+- Use "vocabulaire" / "vocabulary" ONLY when the page asks about meanings, definitions, synonyms, categories, or word knowledge.
 Each practice MATH item MUST be SELF-CONTAINED — the question text includes EVERY number needed:
 - { "kind":"math", "answer_type":"number"|"yesno", "sub_skill":"<which sub_skill>", "unit":"€"|"" (€ if the answer is a money amount; "" if a plain count), "question":"<COMPLETE word problem in page's language with EVERY numeric value stated explicitly. E.g. 'Un livre coûte 5,20 € et un cahier coûte 3,50 €. Si tu achètes un livre et un cahier, combien dépenses-tu en tout ?' or 'Tu as 15 €. Une paire de chaussures coûte 12 €. As-tu assez d'argent pour les chaussures ?'>", "check_expression":"<arithmetic or boolean expression using the exact numeric values stated in the question text (in standard decimal form, e.g., 5.20 not 5,20); no variable names, only literals>", "claimed_answer":<number for 'number' type, or boolean for 'yesno'> }
 Other items (reference, open) can use simple text.
@@ -708,6 +711,37 @@ function isLikelyConjugationPractice(worksheet: Record<string, unknown>): boolea
   );
 }
 
+function normalizeLanguageConceptLabel(
+  worksheet: Record<string, unknown>,
+  language: string,
+  isConjugationPractice: boolean,
+  subSkills: string[]
+) {
+  if (!isConjugationPractice) return;
+
+  const french = isFrench(language);
+  const concept = (worksheet.concept ?? {}) as {
+    label?: string;
+    description?: string;
+    sub_skills?: Array<{ label?: string; description?: string }>;
+  };
+  const preferredLabel = subSkills[0] || (french ? "Conjugaison" : "Conjugation");
+  const existingDescription = concept.description || "";
+  const fallbackDescription = french
+    ? "S'entraîner à conjuguer les verbes avec le bon pronom et le bon temps."
+    : "Practice conjugating verbs with the correct pronoun and tense.";
+
+  worksheet.concept = {
+    ...concept,
+    label: preferredLabel,
+    description: existingDescription || fallbackDescription,
+    sub_skills: subSkills.map((label) => ({
+      label,
+      description: concept.sub_skills?.find((skill) => skill.label === label)?.description || fallbackDescription,
+    })),
+  };
+}
+
 function getLanguageSubSkills(worksheet: Record<string, unknown>, isConjugationPractice: boolean): string[] {
   if (isConjugationPractice) {
     const scope = buildConceptScope(worksheet)
@@ -716,9 +750,9 @@ function getLanguageSubSkills(worksheet: Record<string, unknown>, isConjugationP
       .toLowerCase();
 
     if (scope.includes("futur")) return ["Conjuguer au futur simple"];
-    if (scope.includes("present")) return ["Conjuguer au present"];
-    if (scope.includes("imparfait")) return ["Conjuguer a l'imparfait"];
-    if (scope.includes("passe compose")) return ["Conjuguer au passe compose"];
+    if (scope.includes("present")) return ["Conjuguer au présent"];
+    if (scope.includes("imparfait")) return ["Conjuguer à l'imparfait"];
+    if (scope.includes("passe compose")) return ["Conjuguer au passé composé"];
     return ["Conjuguer le verbe"];
   }
 
@@ -775,9 +809,10 @@ function shouldRejectLanguageItem(item: Record<string, unknown>, isConjugationPr
 
 // Handle language/grammar practice: generate, verify by re-solving, filter
 async function handleLanguagePractice(worksheet: Record<string, unknown>, language: string, domainRaw: string): Promise<Response> {
-  const conceptScope = buildConceptScope(worksheet);
   const isConjugationPractice = isLikelyConjugationPractice(worksheet);
   const allSubSkills = getLanguageSubSkills(worksheet, isConjugationPractice);
+  normalizeLanguageConceptLabel(worksheet, language, isConjugationPractice, allSubSkills);
+  const conceptScope = buildConceptScope(worksheet);
   const subSkillsList = allSubSkills.join(", ");
 
   // Generate 8 candidate language items
