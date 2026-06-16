@@ -1,4 +1,5 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { createClient } from "jsr:@supabase/supabase-js@2";
 
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
 
@@ -287,6 +288,10 @@ function conjugationTense(concept: Record<string, unknown>, allSubSkills: string
   return scope.includes("futur") ? "future" : "present";
 }
 
+function conjugationTenseLabel(tense: "future" | "present"): string {
+  return tense === "future" ? "futur simple" : "présent";
+}
+
 function regularErForm(verb: string, pronoun: string, tense: "future" | "present"): string {
   const stem = verb.endsWith("er") ? verb.slice(0, -2) : verb;
   if (tense === "future") {
@@ -325,14 +330,110 @@ function subjectBlankForVerb(pronoun: string, verb: string): string {
   return `${pronoun} ___`;
 }
 
-function generateConjugationPractice(
+function displayPronoun(pronoun: string): string {
+  if (pronoun === "il/elle") return "il";
+  if (pronoun === "ils/elles") return "ils";
+  return pronoun;
+}
+
+type ConjugationBankRow = {
+  verb: string;
+  verb_group: string;
+  tense: string;
+  pronoun: string;
+  correct_answer: string;
+};
+
+async function fetchConjugationBankItems(
+  supabase: ReturnType<typeof createClient>,
+  language: string,
+  tense: "future" | "present",
+  subSkill: string,
+  maxItems: number,
+  avoid: string[]
+): Promise<Record<string, unknown>[]> {
+  const languageCode = isFrench(language) ? "fr-FR" : "en-CA";
+  const tenseLabel = conjugationTenseLabel(tense);
+  const avoidSet = new Set(avoid.map((w) => normalizeAnswerText(w)));
+
+  const { data, error } = await supabase
+    .from("conjugation_questions")
+    .select("verb, verb_group, tense, pronoun, correct_answer")
+    .eq("language", languageCode)
+    .eq("verb_group", "groupe_1")
+    .eq("tense", tenseLabel)
+    .limit(600);
+
+  if (error || !data || data.length === 0) {
+    if (error) console.error("[generate-practice] conjugation bank fetch error:", error);
+    return [];
+  }
+
+  const rowsByVerb = new Map<string, ConjugationBankRow[]>();
+  for (const row of data as ConjugationBankRow[]) {
+    if (!row.verb || !row.correct_answer || avoidSet.has(normalizeAnswerText(row.correct_answer))) continue;
+    const rows = rowsByVerb.get(row.verb) || [];
+    rows.push(row);
+    rowsByVerb.set(row.verb, rows);
+  }
+
+  const verbs = Array.from(rowsByVerb.keys()).sort((a, b) => a.localeCompare(b));
+  const items: Record<string, unknown>[] = [];
+  const usedVerbs = new Set<string>();
+  const offset = avoid.length % Math.max(verbs.length, 1);
+
+  for (let i = 0; items.length < maxItems && i < verbs.length * 2; i++) {
+    const verb = verbs[(offset + i * 7) % verbs.length];
+    if (!verb || usedVerbs.has(verb)) continue;
+
+    const rows = rowsByVerb.get(verb) || [];
+    const row = rows[i % rows.length];
+    if (!row) continue;
+
+    const pronoun = displayPronoun(row.pronoun);
+    const prompt =
+      tense === "future"
+        ? `Demain, ${subjectBlankForVerb(pronoun, row.verb)}. Mets « ${row.verb} » au futur simple.`
+        : `Aujourd'hui, ${subjectBlankForVerb(pronoun, row.verb)}. Mets « ${row.verb} » au présent.`;
+
+    usedVerbs.add(verb);
+    items.push({
+      kind: "reference",
+      sub_skill: subSkill,
+      question: prompt,
+      answer: row.correct_answer,
+      verified: true,
+    });
+  }
+
+  return items;
+}
+
+async function generateConjugationPractice(
+  supabase: ReturnType<typeof createClient>,
   concept: Record<string, unknown>,
+  language: string,
   allSubSkills: string[],
   maxItems: number,
   avoid: string[] = []
-): Response {
+): Promise<Response> {
   const tense = conjugationTense(concept, allSubSkills);
   const subSkill = conjugationSubSkill(concept, allSubSkills);
+  const bankItems = await fetchConjugationBankItems(supabase, language, tense, subSkill, maxItems, avoid);
+
+  if (bankItems.length > 0) {
+    return json({
+      practice: bankItems,
+      debug: {
+        generated: bankItems.length,
+        kept: bankItems.length,
+        deterministic: "conjugation_questions",
+        tense: conjugationTenseLabel(tense),
+        verb_group: "groupe_1",
+      },
+    }, 200);
+  }
+
   const avoidSet = new Set(avoid.map((w) => normalizeAnswerText(w)));
   const pronouns = ["je", "tu", "il", "elle", "nous", "vous", "ils", "elles"];
   const items: Record<string, unknown>[] = [];
@@ -440,18 +541,24 @@ Deno.serve(async (req) => {
     const domain = input.domain as string || "math";
     const count = input.count as number || 5;
     const avoid = (input.avoid as string[]) || [];
+    const authHeader = req.headers.get("authorization") || "";
 
     if (!concept || !language || !domain) {
       return json({ error: "concept, language, domain are required" }, 400);
     }
 
     const allSubSkills = (concept.sub_skills as Array<{label: string}>)?.map((s) => s.label) || [];
+    const supabase = createClient(
+      Deno.env.get("SUPABASE_URL") || "",
+      Deno.env.get("SUPABASE_ANON_KEY") || "",
+      authHeader ? { global: { headers: { Authorization: authHeader } } } : undefined
+    );
 
     if (domain === "math") {
       return await generateMathPractice(concept, language, allSubSkills, count);
     } else if (domain === "language" && (isFrench(language) || isEnglish(language))) {
       if (isLikelyConjugationPractice(concept, allSubSkills)) {
-        return generateConjugationPractice(concept, allSubSkills, count, avoid);
+        return await generateConjugationPractice(supabase, concept, language, allSubSkills, count, avoid);
       }
       return await generateLanguagePractice(concept, language, allSubSkills, count, avoid);
     } else {
