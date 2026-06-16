@@ -2411,12 +2411,6 @@ const styles = StyleSheet.create({
   topicButtonDisabled: {
     opacity: 0.6,
   },
-  emptyText: {
-    color: "#999",
-    fontSize: 14,
-    textAlign: "center",
-    marginVertical: 12,
-  },
   buttonGroup: {
     flexDirection: "row",
     gap: 8,

@@ -260,7 +260,8 @@ export default function ChildrenScreen() {
         <View style={styles.pinModalOverlay}>
           <View style={styles.pinModalContainer}>
             <Text style={styles.pinModalTitle}>
-              {selectedChildForPin?.name}'s PIN
+              {selectedChildForPin?.name}
+              {"'s PIN"}
             </Text>
 
             <TextInput

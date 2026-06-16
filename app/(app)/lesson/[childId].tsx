@@ -237,7 +237,10 @@ export default function LessonScreen() {
         <ScrollView contentContainerStyle={styles.contentScroll} keyboardShouldPersistTaps="handled">
         {page === 0 && (
           <>
-            <Text style={styles.header}>Let's learn: {tierLabel}</Text>
+            <Text style={styles.header}>
+              {"Let's learn: "}
+              {tierLabel}
+            </Text>
             <Text style={styles.subtitle}>{teachNotes}</Text>
           </>
         )}
@@ -358,7 +361,7 @@ export default function LessonScreen() {
           {page === 0 && (
             <>
               <TouchableOpacity style={styles.navButton} onPress={() => setPage(1)}>
-                <Text style={styles.navButtonText}>Let's go</Text>
+                <Text style={styles.navButtonText}>{"Let's go"}</Text>
               </TouchableOpacity>
               <TouchableOpacity style={[styles.navButton, { backgroundColor: "#f0f0f0" }]} onPress={handleSkip}>
                 <Text style={[styles.navButtonText, { color: "#1a1a1a" }]}>Skip</Text>

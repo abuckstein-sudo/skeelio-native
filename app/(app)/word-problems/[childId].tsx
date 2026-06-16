@@ -685,17 +685,6 @@ const styles = StyleSheet.create({
     color: "#333",
     textAlign: "center",
   },
-  title: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: "#1a1a1a",
-  },
-  backText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#2196f3",
-    marginRight: 12,
-  },
   sessionHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
