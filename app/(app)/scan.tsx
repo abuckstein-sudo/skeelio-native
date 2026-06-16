@@ -7,7 +7,6 @@ import {
   SafeAreaView,
   ActivityIndicator,
   Image,
-  Alert,
   ScrollView,
   FlatList,
 } from "react-native";
@@ -23,6 +22,7 @@ interface Child {
   id: string;
   name: string;
   selected_avatar?: string;
+  intro_seen?: boolean;
 }
 
 interface PracticeItem {
@@ -108,7 +108,7 @@ export default function ScanScreen() {
       setLoadingChildren(true);
       const { data, error: dbError } = await supabase
         .from("children")
-        .select("id, name, selected_avatar")
+        .select("id, name, selected_avatar, intro_seen")
         .eq("parent_id", uid);
 
       if (dbError) {
@@ -390,7 +390,7 @@ export default function ScanScreen() {
                 style={styles.childRow}
                 onPress={() => handleSelectChild(item)}
               >
-                {item.selected_avatar && (
+                {item.intro_seen && item.selected_avatar && (
                   <Text style={styles.avatarEmoji}>
                     {AVATAR_EMOJI[item.selected_avatar] || AVATAR_EMOJI.fox}
                   </Text>
