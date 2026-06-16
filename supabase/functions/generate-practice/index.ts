@@ -7,6 +7,44 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+const REGULAR_ER_VERB_BANK = [
+  "aimer",
+  "apporter",
+  "arriver",
+  "chercher",
+  "chanter",
+  "colorier",
+  "coller",
+  "compter",
+  "couper",
+  "danser",
+  "dessiner",
+  "donner",
+  "entrer",
+  "fermer",
+  "garder",
+  "jouer",
+  "laver",
+  "marcher",
+  "monter",
+  "montrer",
+  "parler",
+  "passer",
+  "penser",
+  "porter",
+  "pousser",
+  "ranger",
+  "regarder",
+  "rester",
+  "rouler",
+  "sauter",
+  "tomber",
+  "tourner",
+  "travailler",
+  "trouver",
+  "visiter",
+];
+
 const MATH_PROMPT = (subSkillsList: string, language: string) => `You are an expert elementary teacher. Generate 6 math practice items (${language}) for these sub-skills: ${subSkillsList}. Distribute evenly across sub-skills.
 
 Each item MUST be SELF-CONTAINED — every number the child needs IN THE QUESTION TEXT. Vary real-world contexts (school supplies, toys, snacks, sports, clothing, books).
@@ -296,16 +334,18 @@ function generateConjugationPractice(
   const tense = conjugationTense(concept, allSubSkills);
   const subSkill = conjugationSubSkill(concept, allSubSkills);
   const avoidSet = new Set(avoid.map((w) => normalizeAnswerText(w)));
-  const verbs = ["aimer", "marcher", "regarder", "jouer", "chanter", "dessiner", "parler", "danser", "trouver", "porter"];
   const pronouns = ["je", "tu", "il", "elle", "nous", "vous", "ils", "elles"];
   const items: Record<string, unknown>[] = [];
+  const usedVerbs = new Set<string>();
 
-  for (let i = 0; items.length < maxItems && i < verbs.length * pronouns.length; i++) {
-    const verb = verbs[i % verbs.length];
+  for (let i = 0; items.length < maxItems && i < REGULAR_ER_VERB_BANK.length * pronouns.length; i++) {
+    const verb = REGULAR_ER_VERB_BANK[(i * 7) % REGULAR_ER_VERB_BANK.length];
+    if (usedVerbs.has(verb) && usedVerbs.size < REGULAR_ER_VERB_BANK.length) continue;
     const pronoun = pronouns[i % pronouns.length];
     const subjectBlank = subjectBlankForVerb(pronoun, verb);
     const answer = regularErForm(verb, pronoun, tense);
     if (avoidSet.has(normalizeAnswerText(answer))) continue;
+    usedVerbs.add(verb);
 
     const prompt =
       tense === "future"
@@ -327,6 +367,7 @@ function generateConjugationPractice(
       generated: items.length,
       kept: items.length,
       deterministic: "regular_er_conjugation",
+      verb_bank_size: REGULAR_ER_VERB_BANK.length,
     },
   }, 200);
 }

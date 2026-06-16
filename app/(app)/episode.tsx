@@ -251,7 +251,7 @@ export default function EpisodeScreen() {
             grade_band: data.grade_band,
             language: data.language,
             domain: data.domain,
-            count: 15,
+            count: SKILL_SESSION.sessionCap,
             avoid: Array.from(shownAnswers),
           },
         }

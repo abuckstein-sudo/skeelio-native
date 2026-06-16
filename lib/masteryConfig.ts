@@ -7,7 +7,7 @@ export const SKILL_SESSION = {
   masteryFirstTryCorrect: 10,
   masteryWindow: 12,
   masteryMinDistinctItems: 6,
-  sessionCap: 20,
+  sessionCap: 12,
 };
 
 export const TIER_GATE = {
