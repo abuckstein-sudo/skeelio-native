@@ -11,62 +11,44 @@ import {
 import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { supabase } from "@/lib/supabase";
+import {
+  listRewardRedemptionsForChild,
+  listShopItemsForChild,
+  requestReward,
+  RewardRedemption,
+  ShopItem,
+} from "@/lib/rewards";
 
 interface Child {
   id: string;
   name: string;
 }
 
-interface ShopItem {
-  id: string;
-  title: string;
-  description: string;
-  cost: number;
-  icon: keyof typeof MaterialCommunityIcons.glyphMap;
-}
-
-const SHOP_ITEMS: ShopItem[] = [
-  {
-    id: "choose-dessert",
-    title: "Choose dessert",
-    description: "Pick dessert after dinner.",
-    cost: 30,
-    icon: "cupcake",
-  },
-  {
-    id: "story-choice",
-    title: "Pick the story",
-    description: "Choose tonight's bedtime story.",
-    cost: 45,
-    icon: "book-open-page-variant",
-  },
-  {
-    id: "movie-night",
-    title: "Movie night vote",
-    description: "Choose one movie for family movie night.",
-    cost: 100,
-    icon: "movie-open",
-  },
-];
-
 export default function StarShopScreen() {
   const router = useRouter();
   const { childId } = useLocalSearchParams<{ childId: string }>();
   const [child, setChild] = useState<Child | null>(null);
   const [stars, setStars] = useState(0);
+  const [items, setItems] = useState<ShopItem[]>([]);
+  const [redemptions, setRedemptions] = useState<RewardRedemption[]>([]);
   const [loading, setLoading] = useState(true);
+  const [requestingId, setRequestingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!childId) return;
     setLoading(true);
     try {
-      const [{ data: childData }, { data: rewardsData }] = await Promise.all([
+      const [{ data: childData }, { data: rewardsData }, shopItems, requests] = await Promise.all([
         supabase.from("children").select("id, name").eq("id", childId).maybeSingle(),
         supabase.from("rewards").select("stars").eq("child_id", childId).maybeSingle(),
+        listShopItemsForChild(childId),
+        listRewardRedemptionsForChild(childId),
       ]);
 
       setChild(childData ?? null);
       setStars(rewardsData?.stars ?? 0);
+      setItems(shopItems);
+      setRedemptions(requests);
     } catch (err) {
       console.error("[star-shop] load failed:", err);
     } finally {
@@ -84,10 +66,28 @@ export default function StarShopScreen() {
     }, [load])
   );
 
-  const sortedItems = useMemo(
-    () => [...SHOP_ITEMS].sort((a, b) => a.cost - b.cost),
-    []
-  );
+  const requestedByItem = useMemo(() => {
+    const map: Record<string, RewardRedemption> = {};
+    redemptions
+      .filter((r) => ["requested", "approved"].includes(r.status))
+      .forEach((r) => {
+        map[r.shop_item_id] = r;
+      });
+    return map;
+  }, [redemptions]);
+
+  const handleRequest = async (item: ShopItem) => {
+    if (!childId) return;
+    setRequestingId(item.id);
+    try {
+      await requestReward(childId, item);
+      await load();
+    } catch (err) {
+      console.error("[star-shop] request failed:", err);
+    } finally {
+      setRequestingId(null);
+    }
+  };
 
   if (loading) {
     return (
@@ -117,33 +117,51 @@ export default function StarShopScreen() {
         <View style={styles.balanceCard}>
           <Text style={styles.balanceLabel}>Stars available</Text>
           <Text style={styles.balanceValue}>⭐ {stars}</Text>
-          <Text style={styles.balanceHint}>
-            Rewards are parent-approved. This first shop preview does not spend stars yet.
-          </Text>
+          <Text style={styles.balanceHint}>Ask for a reward when you have enough stars. A parent approves it.</Text>
         </View>
 
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Rewards to aim for</Text>
-          <Text style={styles.sectionMeta}>Preview</Text>
+          <Text style={styles.sectionMeta}>{items.length} item{items.length === 1 ? "" : "s"}</Text>
         </View>
 
-        {sortedItems.map((item) => {
-          const canAfford = stars >= item.cost;
+        {items.length === 0 ? (
+          <View style={styles.emptyCard}>
+            <MaterialCommunityIcons name="gift-outline" size={28} color="#94a3b8" />
+            <Text style={styles.emptyTitle}>No rewards yet</Text>
+            <Text style={styles.emptyText}>Ask a parent to add a few rewards to the shop.</Text>
+          </View>
+        ) : items.map((item) => {
+          const canAfford = stars >= item.cost_stars;
+          const request = requestedByItem[item.id];
+          const isBusy = requestingId === item.id;
           return (
             <View key={item.id} style={styles.rewardCard}>
               <View style={styles.rewardIcon}>
-                <MaterialCommunityIcons name={item.icon} size={26} color="#2563eb" />
+                <Text style={styles.rewardEmoji}>{item.image_emoji || "🎁"}</Text>
               </View>
               <View style={styles.rewardBody}>
                 <Text style={styles.rewardTitle}>{item.title}</Text>
-                <Text style={styles.rewardDescription}>{item.description}</Text>
-                <Text style={styles.rewardCost}>⭐ {item.cost}</Text>
+                {item.description ? (
+                  <Text style={styles.rewardDescription}>{item.description}</Text>
+                ) : null}
+                <Text style={styles.rewardCost}>⭐ {item.cost_stars}</Text>
               </View>
-              <View style={[styles.statusPill, canAfford ? styles.readyPill : styles.savingPill]}>
-                <Text style={[styles.statusText, canAfford ? styles.readyText : styles.savingText]}>
-                  {canAfford ? "Ready" : "Save"}
-                </Text>
-              </View>
+              {request ? (
+                <View style={[styles.statusPill, styles.readyPill]}>
+                  <Text style={[styles.statusText, styles.readyText]}>
+                    {request.status === "approved" ? "Approved" : "Asked"}
+                  </Text>
+                </View>
+              ) : (
+                <TouchableOpacity
+                  style={[styles.requestButton, (!canAfford || isBusy) && styles.disabledButton]}
+                  onPress={() => handleRequest(item)}
+                  disabled={!canAfford || isBusy}
+                >
+                  <Text style={styles.requestButtonText}>{canAfford ? "Ask" : "Save"}</Text>
+                </TouchableOpacity>
+              )}
             </View>
           );
         })}
@@ -151,7 +169,7 @@ export default function StarShopScreen() {
         <View style={styles.parentNote}>
           <MaterialCommunityIcons name="account-heart-outline" size={22} color="#475569" />
           <Text style={styles.parentNoteText}>
-            Next: parents will create the shop items and approve reward requests.
+            Parents create rewards and approve requests. Stars are spent only when a request is approved.
           </Text>
         </View>
       </ScrollView>
@@ -258,6 +276,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginRight: 12,
   },
+  rewardEmoji: {
+    fontSize: 24,
+  },
   rewardBody: {
     flex: 1,
   },
@@ -297,6 +318,40 @@ const styles = StyleSheet.create({
   },
   savingText: {
     color: "#475569",
+  },
+  requestButton: {
+    backgroundColor: "#2563eb",
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  requestButtonText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  disabledButton: {
+    opacity: 0.45,
+  },
+  emptyCard: {
+    alignItems: "center",
+    backgroundColor: "#fff",
+    borderRadius: 14,
+    padding: 24,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+  },
+  emptyTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#0f172a",
+    marginTop: 8,
+  },
+  emptyText: {
+    color: "#64748b",
+    fontSize: 13,
+    marginTop: 4,
+    textAlign: "center",
   },
   parentNote: {
     flexDirection: "row",
