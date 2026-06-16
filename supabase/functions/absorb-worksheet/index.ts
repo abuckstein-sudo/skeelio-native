@@ -170,6 +170,15 @@ Deno.serve(async (req) => {
 
     const isFr = isFrench(languageRaw);
     const isEn = isEnglish(languageRaw);
+    if (isLikelyWordListWorksheet(worksheet) && !hasEnoughSpellingWords(worksheet)) {
+      const extractedWords = await extractSpellingWordsFromImage(image, languageRaw);
+      if (extractedWords.length >= 3) {
+        worksheet.source_type = "spelling_list";
+        worksheet.domain = "language";
+        worksheet.spelling_words = extractedWords;
+      }
+    }
+
     const spellingList = normalizeSpellingListWorksheet(worksheet);
     if (spellingList) {
       return json(spellingList, 200);
@@ -562,6 +571,79 @@ function cleanSpellingEntry(value: unknown): string {
     .replace(/^[\s\d.)\]-]+/, "")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function hasEnoughSpellingWords(worksheet: Record<string, unknown>): boolean {
+  const rawWords = Array.isArray(worksheet.spelling_words) ? worksheet.spelling_words : [];
+  return rawWords.map(cleanSpellingEntry).filter((word) => word.length > 0).length >= 3;
+}
+
+function isLikelyWordListWorksheet(worksheet: Record<string, unknown>): boolean {
+  const sourceType = String(worksheet.source_type ?? "")
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase();
+  const conceptText = buildConceptScope(worksheet)
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase();
+
+  return (
+    sourceType === "spelling_list" ||
+    conceptText.includes("liste de mots") ||
+    conceptText.includes("mots de vocabulaire") ||
+    conceptText.includes("mots a apprendre") ||
+    conceptText.includes("orthographe") ||
+    conceptText.includes("word list") ||
+    conceptText.includes("spelling list")
+  );
+}
+
+async function extractSpellingWordsFromImage(image: string, language: string): Promise<string[]> {
+  const prompt = `You are reading a photo of a child's spelling or vocabulary word-list sheet.
+
+Return ONLY JSON:
+{ "words": ["<each visible list entry exactly as written>"] }
+
+Rules:
+- Extract only words or short entries visibly printed on the page.
+- Preserve accents, apostrophes, slashes, and articles exactly, e.g. "l'instituteur/l'institutrice", "premier/première".
+- Ignore handwriting, notebook lines, titles, dates, and explanations.
+- Do not invent words. If fewer than 3 list entries are visible, return { "words": [] }.
+- The page language appears to be ${language || "unknown"}.`;
+
+  try {
+    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
+      body: JSON.stringify({
+        model: "gpt-4o",
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: prompt },
+              { type: "image_url", image_url: { url: image } },
+            ],
+          },
+        ],
+      }),
+    });
+
+    if (!res.ok) {
+      console.error("[absorb-worksheet] spelling extraction error:", res.status);
+      return [];
+    }
+
+    const data = await res.json();
+    const raw = data.choices?.[0]?.message?.content ?? "";
+    const parsed = parseJsonResponse(raw);
+    const words = Array.isArray(parsed?.words) ? parsed.words : [];
+    return Array.from(new Set(words.map(cleanSpellingEntry).filter((word) => word.length > 0)));
+  } catch (error) {
+    console.error("[absorb-worksheet] spelling extraction failed:", error);
+    return [];
+  }
 }
 
 function normalizeSpellingListWorksheet(worksheet: Record<string, unknown>): Record<string, unknown> | null {
