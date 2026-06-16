@@ -10,6 +10,7 @@ import {
   Alert,
 } from "react-native";
 import { supabase } from "@/lib/supabase";
+import { AppLanguage, childLanguageForApp, getStoredAppLanguage } from "@/lib/appLanguage";
 import { ensureParentProfile } from "@/lib/parentProfile";
 
 const SCHOOL_SYSTEMS: Record<string, string> = {
@@ -53,14 +54,100 @@ const GRADES_BY_SYSTEM: Record<string, string[]> = {
 };
 
 const SUBJECTS = [
-  { key: "multiplication", label: "Multiplication" },
-  { key: "division", label: "Division" },
-  { key: "addition", label: "Addition" },
-  { key: "subtraction", label: "Subtraction" },
-  { key: "spelling", label: "Spelling" },
-  { key: "reading", label: "Reading" },
-  { key: "conjugation", label: "Conjugation" },
+  { key: "multiplication", labels: { en: "Multiplication", fr: "Multiplication" } },
+  { key: "division", labels: { en: "Division", fr: "Division" } },
+  { key: "addition", labels: { en: "Addition", fr: "Addition" } },
+  { key: "subtraction", labels: { en: "Subtraction", fr: "Soustraction" } },
+  { key: "spelling", labels: { en: "Spelling", fr: "Orthographe" } },
+  { key: "reading", labels: { en: "Reading", fr: "Lecture" } },
+  { key: "conjugation", labels: { en: "Conjugation", fr: "Conjugaison" } },
 ];
+
+const LANGUAGE_OPTIONS = [
+  { value: "English", labels: { en: "English", fr: "Anglais" } },
+  { value: "French", labels: { en: "French", fr: "Français" } },
+];
+
+const COPY: Record<AppLanguage, Record<string, string>> = {
+  en: {
+    addTitle: "Add child",
+    editTitle: "Edit {name}'s settings",
+    basicInfo: "Basic Information",
+    skeelioTag: "Skeelio Tag",
+    tagPlaceholder: "Real first name, nickname, or family tag",
+    managePin: "Manage child's PIN",
+    pinHelp: "PIN can be modified here later if forgotten. The child setup flow will let the child choose their own PIN.",
+    pinPlaceholder: "4-6 digit PIN",
+    languages: "Languages",
+    schoolInfo: "School Information",
+    schoolSystem: "School System",
+    selectSchool: "Select school system",
+    gradeLevel: "Grade Level",
+    selectGrade: "Select grade level",
+    selectSchoolFirst: "Select school system first",
+    skillsTitle: "Skills to track",
+    skillsHelp: "These are the skills that will be added to the parent dashboard for ongoing tracking. You can still assign specific practice later.",
+    addButton: "Add Child",
+    saveButton: "Save Settings",
+    cancel: "Cancel",
+    dangerZone: "Danger Zone",
+    deleteChild: "Delete {name}",
+    deleteTitle: "Delete Child",
+    deleteConfirm: "Are you sure you want to delete {name}? This cannot be undone.",
+    delete: "Delete",
+    error: "Error",
+    success: "Success",
+    tagRequired: "Skeelio Tag is required",
+    pinInvalid: "PIN must be 4-6 digits",
+    userIdRequired: "User ID is required",
+    signInAgain: "Please sign in again before adding a child.",
+    profileFailed: "Couldn't prepare your parent account. Please try signing out and back in.",
+    loadFailed: "Couldn't load child settings",
+    saveFailed: "Couldn't save: {message}",
+    childAdded: "Child added!",
+    settingsSaved: "Settings saved!",
+    childNotFound: "Child was not found or already deleted",
+  },
+  fr: {
+    addTitle: "Ajouter un enfant",
+    editTitle: "Modifier les réglages de {name}",
+    basicInfo: "Informations de base",
+    skeelioTag: "Skeelio Tag",
+    tagPlaceholder: "Prénom, surnom ou repère familial",
+    managePin: "Gérer le PIN de l'enfant",
+    pinHelp: "Le PIN pourra être modifié ici plus tard s'il est oublié. Le parcours enfant permettra à l'enfant de choisir son propre PIN.",
+    pinPlaceholder: "PIN de 4 à 6 chiffres",
+    languages: "Langues",
+    schoolInfo: "Informations scolaires",
+    schoolSystem: "Système scolaire",
+    selectSchool: "Sélectionner un système scolaire",
+    gradeLevel: "Niveau",
+    selectGrade: "Sélectionner un niveau",
+    selectSchoolFirst: "Sélectionner d'abord un système scolaire",
+    skillsTitle: "Compétences à suivre",
+    skillsHelp: "Ces compétences seront ajoutées au tableau de bord parent pour un suivi continu. Vous pourrez toujours assigner des exercices précis plus tard.",
+    addButton: "Ajouter l'enfant",
+    saveButton: "Enregistrer",
+    cancel: "Annuler",
+    dangerZone: "Zone sensible",
+    deleteChild: "Supprimer {name}",
+    deleteTitle: "Supprimer l'enfant",
+    deleteConfirm: "Voulez-vous vraiment supprimer {name} ? Cette action est définitive.",
+    delete: "Supprimer",
+    error: "Erreur",
+    success: "Succès",
+    tagRequired: "Le Skeelio Tag est obligatoire",
+    pinInvalid: "Le PIN doit contenir 4 à 6 chiffres",
+    userIdRequired: "Identifiant utilisateur requis",
+    signInAgain: "Veuillez vous reconnecter avant d'ajouter un enfant.",
+    profileFailed: "Impossible de préparer votre compte parent. Essayez de vous déconnecter puis de vous reconnecter.",
+    loadFailed: "Impossible de charger les réglages de l'enfant",
+    saveFailed: "Impossible d'enregistrer : {message}",
+    childAdded: "Enfant ajouté !",
+    settingsSaved: "Réglages enregistrés !",
+    childNotFound: "L'enfant est introuvable ou a déjà été supprimé",
+  },
+};
 
 interface ChildSettingsFormProps {
   childId?: string;
@@ -87,6 +174,7 @@ export default function ChildSettingsForm({
   const [birthDay, setBirthDay] = useState("");
   const [pin, setPin] = useState("");
   const [languages, setLanguages] = useState<string[]>(["English"]);
+  const [appLanguage, setAppLanguage] = useState<AppLanguage>("en");
   const [schoolSystem, setSchoolSystem] = useState("");
   const [gradeLevel, setGradeLevel] = useState("");
   const [additionLevel, setAdditionLevel] = useState("not_started");
@@ -103,6 +191,26 @@ export default function ChildSettingsForm({
     }
   }, [childId, isAddMode]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadAppLanguage = async () => {
+      const language = await getStoredAppLanguage(userId);
+      if (cancelled) return;
+
+      setAppLanguage(language);
+      if (isAddMode) {
+        setLanguages([childLanguageForApp(language)]);
+      }
+    };
+
+    loadAppLanguage();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isAddMode, userId]);
+
   const fetchChild = async () => {
     if (!childId) {
       setIsLoading(false);
@@ -117,7 +225,7 @@ export default function ChildSettingsForm({
 
     if (error) {
       console.error("[settings] fetch error:", error);
-      Alert.alert("Error", "Couldn't load child settings");
+      Alert.alert(COPY[appLanguage].error, COPY[appLanguage].loadFailed);
       setIsLoading(false);
       return;
     }
@@ -150,12 +258,12 @@ export default function ChildSettingsForm({
 
   const handleSave = async () => {
     if (!name.trim()) {
-      Alert.alert("Error", "Skeelio Tag is required");
+      Alert.alert(COPY[appLanguage].error, COPY[appLanguage].tagRequired);
       return;
     }
 
     if (!isAddMode && pin && (pin.length < 4 || pin.length > 6)) {
-      Alert.alert("Error", "PIN must be 4–6 digits");
+      Alert.alert(COPY[appLanguage].error, COPY[appLanguage].pinInvalid);
       return;
     }
 
@@ -199,21 +307,21 @@ export default function ChildSettingsForm({
 
     if (isAddMode) {
       if (!userId) {
-        Alert.alert("Error", "User ID is required");
+        Alert.alert(COPY[appLanguage].error, COPY[appLanguage].userIdRequired);
         setIsSaving(false);
         return;
       }
 
       const { data: userData, error: userError } = await supabase.auth.getUser();
       if (userError || !userData.user) {
-        Alert.alert("Error", "Please sign in again before adding a child.");
+        Alert.alert(COPY[appLanguage].error, COPY[appLanguage].signInAgain);
         setIsSaving(false);
         return;
       }
 
       const { error: profileError } = await ensureParentProfile(userData.user);
       if (profileError) {
-        Alert.alert("Error", "Couldn't prepare your parent account. Please try signing out and back in.");
+        Alert.alert(COPY[appLanguage].error, COPY[appLanguage].profileFailed);
         setIsSaving(false);
         return;
       }
@@ -257,21 +365,21 @@ export default function ChildSettingsForm({
 
     if (error) {
       console.error(isAddMode ? "[child-insert] error" : "[settings-save] error:", error);
-      Alert.alert("Error", `Couldn't save: ${error.message}`);
+      Alert.alert(COPY[appLanguage].error, COPY[appLanguage].saveFailed.replace("{message}", error.message));
       setIsSaving(false);
       return;
     }
 
-    Alert.alert("Success", isAddMode ? "Child added!" : "Settings saved!");
+    Alert.alert(COPY[appLanguage].success, isAddMode ? COPY[appLanguage].childAdded : COPY[appLanguage].settingsSaved);
     setIsSaving(false);
     onSaved?.(savedChild);
   };
 
   const handleDelete = () => {
-    Alert.alert("Delete Child", `Are you sure you want to delete ${name}? This cannot be undone.`, [
-      { text: "Cancel", onPress: () => {} },
+    Alert.alert(COPY[appLanguage].deleteTitle, COPY[appLanguage].deleteConfirm.replace("{name}", name), [
+      { text: COPY[appLanguage].cancel, onPress: () => {} },
       {
-        text: "Delete",
+        text: COPY[appLanguage].delete,
         onPress: async () => {
           console.log("[child-delete] attempting", { childId });
 
@@ -285,13 +393,13 @@ export default function ChildSettingsForm({
 
           if (error) {
             console.error("[child-delete] error:", error);
-            Alert.alert("Error", `Couldn't delete: ${error.message}`);
+            Alert.alert(COPY[appLanguage].error, COPY[appLanguage].saveFailed.replace("{message}", error.message));
             return;
           }
 
           if (!data || data.length === 0) {
             console.error("[child-delete] no rows deleted");
-            Alert.alert("Error", "Child was not found or already deleted");
+            Alert.alert(COPY[appLanguage].error, COPY[appLanguage].childNotFound);
             return;
           }
 
@@ -312,28 +420,31 @@ export default function ChildSettingsForm({
   }
 
   const availableGrades = schoolSystem && GRADES_BY_SYSTEM[schoolSystem] ? GRADES_BY_SYSTEM[schoolSystem] : [];
-  const schoolSystemLabel = schoolSystem ? SCHOOL_SYSTEMS[schoolSystem] : "Select school system";
-  const gradeLabel = gradeLevel || (schoolSystem ? "Select grade level" : "Select school system first");
+  const copy = COPY[appLanguage];
+  const schoolSystemLabel = schoolSystem ? SCHOOL_SYSTEMS[schoolSystem] : copy.selectSchool;
+  const gradeLabel = gradeLevel || (schoolSystem ? copy.selectGrade : copy.selectSchoolFirst);
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
-      <Text style={styles.title}>{isAddMode ? "Add child" : `Edit ${name}'s settings`}</Text>
+      <Text style={styles.title}>
+        {isAddMode ? copy.addTitle : copy.editTitle.replace("{name}", name)}
+      </Text>
 
       {/* Basic Info */}
-      <Text style={styles.sectionTitle}>Basic Information</Text>
+      <Text style={styles.sectionTitle}>{copy.basicInfo}</Text>
 
-      <Text style={styles.label}>Skeelio Tag</Text>
+      <Text style={styles.label}>{copy.skeelioTag}</Text>
       <TextInput
         style={styles.input}
         value={name}
         onChangeText={setName}
-        placeholder="Real first name, nickname, or family tag"
+        placeholder={copy.tagPlaceholder}
       />
 
-      <Text style={styles.label}>{"Manage child's PIN"}</Text>
+      <Text style={styles.label}>{copy.managePin}</Text>
       <View style={styles.infoBox}>
         <Text style={styles.infoText}>
-          PIN can be modified here later if forgotten. The child setup flow will let the child choose their own PIN.
+          {copy.pinHelp}
         </Text>
       </View>
       {!isAddMode && (
@@ -341,37 +452,37 @@ export default function ChildSettingsForm({
           style={styles.input}
           value={pin}
           onChangeText={setPin}
-          placeholder="4-6 digit PIN"
+          placeholder={copy.pinPlaceholder}
           keyboardType="number-pad"
           maxLength={6}
         />
       )}
 
-      <Text style={styles.label}>Languages</Text>
+      <Text style={styles.label}>{copy.languages}</Text>
       <View style={styles.optionRow}>
-        {["English", "French"].map((lang) => (
+        {LANGUAGE_OPTIONS.map((lang) => (
           <TouchableOpacity
-            key={lang}
-            style={[styles.optionButton, (languages || []).includes(lang) && styles.optionButtonActive]}
+            key={lang.value}
+            style={[styles.optionButton, (languages || []).includes(lang.value) && styles.optionButtonActive]}
             onPress={() =>
               setLanguages((prev) =>
-                (prev || []).includes(lang) ? (prev || []).filter((l) => l !== lang) : [...(prev || []), lang]
+                (prev || []).includes(lang.value) ? (prev || []).filter((l) => l !== lang.value) : [...(prev || []), lang.value]
               )
             }
           >
             <Text
-              style={[styles.optionButtonText, (languages || []).includes(lang) && styles.optionButtonTextActive]}
+              style={[styles.optionButtonText, (languages || []).includes(lang.value) && styles.optionButtonTextActive]}
             >
-              {lang}
+              {lang.labels[appLanguage]}
             </Text>
           </TouchableOpacity>
         ))}
       </View>
 
       {/* School Info */}
-      <Text style={styles.sectionTitle}>School Information</Text>
+      <Text style={styles.sectionTitle}>{copy.schoolInfo}</Text>
 
-      <Text style={styles.label}>School System</Text>
+      <Text style={styles.label}>{copy.schoolSystem}</Text>
       <TouchableOpacity
         style={styles.dropdownButton}
         onPress={() => setOpenDropdown(openDropdown === "school" ? null : "school")}
@@ -397,7 +508,7 @@ export default function ChildSettingsForm({
         </View>
       )}
 
-      <Text style={styles.label}>Grade Level</Text>
+      <Text style={styles.label}>{copy.gradeLevel}</Text>
       <TouchableOpacity
         style={[styles.dropdownButton, !schoolSystem && styles.dropdownButtonDisabled]}
         onPress={() => schoolSystem && setOpenDropdown(openDropdown === "grade" ? null : "grade")}
@@ -425,13 +536,13 @@ export default function ChildSettingsForm({
 
       {/* Skills */}
       <View style={styles.sectionTitleRow}>
-        <Text style={styles.sectionTitle}>Skills to track</Text>
+        <Text style={styles.sectionTitle}>{copy.skillsTitle}</Text>
         <TouchableOpacity
           style={styles.infoIcon}
           onPress={() =>
             Alert.alert(
-              "Skills to track",
-              "These are the skills that will be added to the parent dashboard for ongoing tracking. You can still assign specific practice later."
+              copy.skillsTitle,
+              copy.skillsHelp
             )
           }
         >
@@ -439,7 +550,7 @@ export default function ChildSettingsForm({
         </TouchableOpacity>
       </View>
       <View style={styles.optionRow}>
-        {SUBJECTS.map(({ key, label }) => (
+        {SUBJECTS.map(({ key, labels }) => (
           <TouchableOpacity
             key={key}
             style={[styles.optionButton, (focusSubjects || []).includes(key) && styles.optionButtonActive]}
@@ -455,7 +566,7 @@ export default function ChildSettingsForm({
                 (focusSubjects || []).includes(key) && styles.optionButtonTextActive,
               ]}
             >
-              {label}
+              {labels[appLanguage]}
             </Text>
           </TouchableOpacity>
         ))}
@@ -470,20 +581,20 @@ export default function ChildSettingsForm({
         {isSaving ? (
           <ActivityIndicator color="#fff" />
         ) : (
-          <Text style={styles.buttonText}>{isAddMode ? "Add Child" : "Save Settings"}</Text>
+          <Text style={styles.buttonText}>{isAddMode ? copy.addButton : copy.saveButton}</Text>
         )}
       </TouchableOpacity>
 
       <TouchableOpacity style={styles.cancelButton} onPress={() => onCancel?.()} disabled={isSaving}>
-        <Text style={styles.cancelButtonText}>Cancel</Text>
+        <Text style={styles.cancelButtonText}>{copy.cancel}</Text>
       </TouchableOpacity>
 
       {/* Danger Zone (only in edit mode) */}
       {!isAddMode && (
         <View style={styles.dangerZone}>
-          <Text style={styles.dangerZoneTitle}>Danger Zone</Text>
+          <Text style={styles.dangerZoneTitle}>{copy.dangerZone}</Text>
           <TouchableOpacity style={styles.deleteButton} onPress={handleDelete}>
-            <Text style={styles.deleteButtonText}>Delete {name}</Text>
+            <Text style={styles.deleteButtonText}>{copy.deleteChild.replace("{name}", name)}</Text>
           </TouchableOpacity>
         </View>
       )}

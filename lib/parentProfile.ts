@@ -13,10 +13,12 @@ const fallbackParentName = (user: User) => {
 
 export async function ensureParentProfile(user: User) {
   const { error } = await supabase
-    .from("profiles")
+    .from("users")
     .upsert(
       {
         id: user.id,
+        email: user.email,
+        role: "parent",
         full_name: fallbackParentName(user),
       },
       { onConflict: "id", ignoreDuplicates: true }

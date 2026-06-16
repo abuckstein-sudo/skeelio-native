@@ -3,9 +3,8 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import OnboardingCarousel from "@/components/OnboardingCarousel";
+import { AppLanguage, getStoredAppLanguage, setStoredAppLanguage } from "@/lib/appLanguage";
 import { supabase } from "@/lib/supabase";
-
-type AppLanguage = "en" | "fr";
 
 const SLIDES: Record<AppLanguage, { id: string; title: string; body: string; cta?: string }[]> = {
   en: [
@@ -55,8 +54,7 @@ export default function OnboardingScreen() {
       const { data } = await supabase.auth.getUser();
       const id = data.user?.id ?? null;
       setUserId(id);
-      const stored = id ? await AsyncStorage.getItem(`skeelio:appLanguage:${id}`) : null;
-      if (stored === "en" || stored === "fr") setLanguage(stored);
+      if (id) setLanguage(await getStoredAppLanguage(id));
     };
 
     loadLanguage();
@@ -64,9 +62,7 @@ export default function OnboardingScreen() {
 
   const chooseLanguage = async (nextLanguage: AppLanguage) => {
     setLanguage(nextLanguage);
-    if (userId) {
-      await AsyncStorage.setItem(`skeelio:appLanguage:${userId}`, nextLanguage);
-    }
+    await setStoredAppLanguage(userId, nextLanguage);
   };
 
   const markSeen = async () => {

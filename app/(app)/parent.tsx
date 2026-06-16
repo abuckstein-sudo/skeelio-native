@@ -55,7 +55,7 @@ export default function ParentScreen() {
     if (!session?.user?.id) return;
     try {
       const { data } = await supabase
-        .from("profiles")
+        .from("users")
         .select("full_name")
         .eq("id", session.user.id)
         .maybeSingle();
