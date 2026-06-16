@@ -54,14 +54,14 @@ CRITICAL:
 1. Derive sub_skills ONLY from question types on the page (don't invent).
 2. Identify the school method/representation from the page when visible: notation, labels, table layout, sentence frame, operation setup, diagram style, grammar terms, or teacher method. Example: if the page uses c/d/u, record c=centaines, d=dizaines, u=unités.
 3. evidence_policy MUST be "context_only": scanning a worksheet gives school context, not proficiency/mastery credit.
-4. Each math item INVENTS a fresh scenario (different items/prices than the sheet) — NO reuse of sheet values.
-5. VARY the real-world contexts across items — rotate among everyday kid settings: school supplies (pencils, notebooks, erasers), toys (action figures, building blocks, board games), snacks/groceries (fruit, candy, juice, milk), sports gear (balls, skates, bikes), clothing (shoes, jackets, hats), books/comics. Do NOT stay only on the sheet's domain.
+4. Same-form math items MUST preserve the worksheet's task shape and classroom method. If the page uses c/d/u place value, generate c/d/u comparison, equalizing, or equivalent-writing items; do NOT turn those into generic multiplication, shopping, packets, students, balloons, or pens word problems.
+5. Only use fresh real-world scenarios for far-transfer items where that does not erase the worksheet method. If the page mixes sections, keep each generated item tied to a visible question form from the photo.
 6. EVERY number the child needs MUST appear in the question text itself (use French comma decimals: 5,20 € not 5.20 €).
 7. check_expression uses the SAME numbers as in the question, in standard decimal form (5.20 not 5,20).
 8. Include a "how many can you buy" item where relevant (e.g., "Tu as 10 €. Un stylo coûte 2 €. Combien de stylos peux-tu acheter?").
 9. Each item is distinct, NO duplicates; ALL text in page's language only.`;
 
-const RETRY_PROMPT = (subSkillsList: string, language: string) => `Generate 4 more DISTINCT math practice items (${language}) for sub-skills: ${subSkillsList}. Distribute evenly across the sub-skills listed. EACH ITEM MUST BE SELF-CONTAINED — every number the child needs must be IN THE QUESTION TEXT. Vary contexts widely across everyday kid settings: school supplies, toys, snacks/groceries, sports gear, clothing, books. Structure:
+const RETRY_PROMPT = (subSkillsList: string, language: string) => `Generate 4 more DISTINCT math practice items (${language}) for sub-skills: ${subSkillsList}. Distribute evenly across the sub-skills listed. EACH ITEM MUST BE SELF-CONTAINED — every number the child needs must be IN THE QUESTION TEXT. Preserve the worksheet task shape when the sub-skill names imply a specific school method such as c/d/u, equivalent writings, comparison, or equalizing collections. Structure:
 {
   "kind":"math",
   "answer_type":"number"|"yesno",
@@ -104,7 +104,7 @@ Structure:
 Return ONLY the JSON array, NO EXPLANATION, ALL TEXT IN ${language}:
 [...]`;
 
-const MATH_TOPUP_PROMPT = (subSkill: string, language: string) => `Generate 4 more math practice items (${language}) focused ONLY on the sub-skill: "${subSkill}". EACH ITEM MUST BE SELF-CONTAINED — every number the child needs must be IN THE QUESTION TEXT. Vary contexts (school supplies, toys, snacks, sports, clothing, books). Return ONLY the JSON array with structure { "kind":"math", "answer_type":"...", "sub_skill":"${subSkill}", "unit":"€"|"" (€ if money; "" if count), "question":"...", "check_expression":"...", "claimed_answer":... }:
+const MATH_TOPUP_PROMPT = (subSkill: string, language: string) => `Generate 4 more math practice items (${language}) focused ONLY on the sub-skill: "${subSkill}". EACH ITEM MUST be SELF-CONTAINED — every number the child needs must be IN THE QUESTION TEXT. Preserve worksheet-shaped methods such as c/d/u notation, equivalent writings, comparison, or equalizing collections instead of turning them into generic word problems. Return ONLY the JSON array with structure { "kind":"math", "answer_type":"...", "sub_skill":"${subSkill}", "unit":"€"|"" (€ if money; "" if count), "question":"...", "check_expression":"...", "claimed_answer":... }:
 [...]`;
 
 const LANGUAGE_TOPUP_PROMPT = (subSkill: string, language: string, conceptScope: string) => `Generate 4 more grammar/language practice items (${language}) focused ONLY on the sub-skill: "${subSkill}". Constrain to the RULE taught (NO irregulars/exceptions beyond scope).
