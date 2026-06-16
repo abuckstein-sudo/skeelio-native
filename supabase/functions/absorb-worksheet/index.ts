@@ -34,7 +34,7 @@ const INITIAL_PROMPT = `You are an expert elementary teacher (ages 6–10). You 
    "practice_modes": ["same_form", "near_transfer", "far_transfer"],
    "evidence_policy": "context_only"
  },
- "lesson": "<a short, warm, age-appropriate mini-lesson in the page's language; plain text, no markdown>",
+ "lesson": "<a short, warm, age-appropriate mini-lesson in the page's language; plain text, no markdown. It MUST explicitly explain the detected classroom method/notation and at least one worksheet question form. If the page uses c/d/u, explain c=centaines, d=dizaines, u=unités and how to compare or transform collections with that notation before mentioning any broader topic.>",
  "practice": [ <exactly 6 items, DISTRIBUTED EVENLY across all sub_skills; each tagged with its sub_skill> ]
 }
 CRITICAL: Distribute the 6 practice items roughly evenly across ALL sub_skills — if there are 3 sub_skills, generate ~2 items for each. Do NOT cluster on one sub_skill.
@@ -54,6 +54,7 @@ CRITICAL:
 1. Derive sub_skills ONLY from question types on the page (don't invent).
 2. Identify the school method/representation from the page when visible: notation, labels, table layout, sentence frame, operation setup, diagram style, grammar terms, or teacher method. Example: if the page uses c/d/u, record c=centaines, d=dizaines, u=unités.
 3. evidence_policy MUST be "context_only": scanning a worksheet gives school context, not proficiency/mastery credit.
+3a. The lesson must teach from the visible school method, not just summarize the worksheet. For c/d/u pages, the lesson should sound like: "c veut dire centaines, d veut dire dizaines, u veut dire unités..." and show how to use that for the worksheet forms.
 4. Same-form math items MUST preserve the worksheet's task shape and classroom method. If the page uses c/d/u place value, generate c/d/u comparison, equalizing, or equivalent-writing items; do NOT turn those into generic multiplication, shopping, packets, students, balloons, or pens word problems.
 5. Only use fresh real-world scenarios for far-transfer items where that does not erase the worksheet method. If the page mixes sections, keep each generated item tied to a visible question form from the photo.
 6. EVERY number the child needs MUST appear in the question text itself (use French comma decimals: 5,20 € not 5.20 €).
