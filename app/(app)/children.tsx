@@ -167,14 +167,6 @@ export default function ChildrenScreen() {
     setPinError("");
   };
 
-  const handleParent = (childId: string) => {
-    console.log("[nav] parent dashboard:", childId);
-    router.push({
-      pathname: "/child/[id]",
-      params: { id: childId },
-    });
-  };
-
   const handleParentSection = () => {
     console.log("[nav] opening parent section");
     router.push("/(app)/parent");

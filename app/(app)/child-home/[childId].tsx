@@ -5,7 +5,6 @@ import { supabase } from "@/lib/supabase";
 import { getOperationStatus, OperationStatus, getWordProblemsStatus, WordProblemsStatus } from "@/lib/tutor/status";
 import { Operation } from "@/lib/tutorConfig";
 import { listAssignmentsForChild, Assignment } from "@/lib/assignments";
-import { listSpellingListsForChild, type SpellingList } from "@/lib/spelling";
 import {
   listWorksheetSkillsForChild,
   worksheetSkillLabel,
@@ -24,6 +23,8 @@ interface Child {
   pin?: string;
   pin_setup_required?: boolean;
   intro_seen?: boolean;
+  preferred_language?: string | null;
+  languages?: string[] | null;
 }
 
 const AVATAR_EMOJI: Record<string, string> = {
@@ -59,34 +60,128 @@ const BACKGROUND_OPTIONS = [
   { id: "blue", label: "Blue", color: "#6FB0E0" },
   { id: "red", label: "Red", color: "#E8857E" },
   { id: "green", label: "Green", color: "#6FC089" },
-];
-
-const INTRO_SLIDES = [
-  {
-    key: "avatar",
-    icon: "account-star",
-    title: "Choose your avatar",
-    body: "Pick the character you want to see when you come here.",
-  },
-  {
-    key: "background",
-    icon: "palette",
-    title: "Choose your background",
-    body: "Pick the colour or scene that makes this page feel like yours.",
-  },
-  {
-    key: "work",
-    icon: "clipboard-check",
-    title: "Do homework or free play",
-    body: "If an assignment is waiting, start there. If not, choose any practice tile.",
-  },
-  {
-    key: "stars",
-    icon: "star",
-    title: "Earn stars",
-    body: "Practise, finish work, and collect stars for the shop.",
-  },
 ] as const;
+
+type ChildHomeLanguage = "en" | "fr";
+
+const SETUP_COPY = {
+  en: {
+    pinTitle: "Create your PIN",
+    pinBody: "You will use this PIN when you come back to Skeelio.",
+    pinPlaceholder: "4-6 numbers",
+    pinConfirmPlaceholder: "Confirm PIN",
+    pinInvalid: "Use 4 to 6 numbers",
+    pinMismatch: "The two PINs need to match",
+    pinSaveError: "Could not save PIN",
+    pinSaveButton: "Save PIN",
+    avatarRequired: "Pick an avatar first",
+    backgroundRequired: "Pick a background first",
+    finishError: "Could not finish setup",
+    back: "Back",
+    next: "Next",
+    start: "Start",
+    homework: "Homework",
+    homeworkBody: "Do assigned work first",
+    freePlay: "Free play",
+    freePlayBody: "Choose practice tiles",
+    settings: "Settings",
+    pickAvatar: "Pick Your Avatar",
+    pickBackground: "Pick Your Background",
+    backgroundLabels: {
+      giraffe: "Giraffe",
+      blue: "Blue",
+      red: "Red",
+      green: "Green",
+    },
+    introSlides: [
+      {
+        key: "avatar",
+        icon: "account-star",
+        title: "Choose your avatar",
+        body: "Pick the character you want to see when you come here.",
+      },
+      {
+        key: "background",
+        icon: "palette",
+        title: "Choose your background",
+        body: "Pick the colour or scene that makes this page feel like yours.",
+      },
+      {
+        key: "work",
+        icon: "clipboard-check",
+        title: "Do homework or free play",
+        body: "If an assignment is waiting, start there. If not, choose any practice tile.",
+      },
+      {
+        key: "stars",
+        icon: "star",
+        title: "Earn stars",
+        body: "Practise, finish work, and collect stars for the shop.",
+      },
+    ],
+  },
+  fr: {
+    pinTitle: "Crée ton PIN",
+    pinBody: "Tu utiliseras ce PIN pour revenir dans Skeelio.",
+    pinPlaceholder: "4 à 6 chiffres",
+    pinConfirmPlaceholder: "Confirme le PIN",
+    pinInvalid: "Utilise 4 à 6 chiffres",
+    pinMismatch: "Les deux PIN doivent être identiques",
+    pinSaveError: "Impossible d'enregistrer le PIN",
+    pinSaveButton: "Enregistrer le PIN",
+    avatarRequired: "Choisis d'abord un avatar",
+    backgroundRequired: "Choisis d'abord un fond",
+    finishError: "Impossible de terminer la configuration",
+    back: "Retour",
+    next: "Suivant",
+    start: "Commencer",
+    homework: "Devoirs",
+    homeworkBody: "Fais d'abord le travail assigné",
+    freePlay: "Jeu libre",
+    freePlayBody: "Choisis une activité",
+    settings: "Réglages",
+    pickAvatar: "Choisis ton avatar",
+    pickBackground: "Choisis ton fond",
+    backgroundLabels: {
+      giraffe: "Girafe",
+      blue: "Bleu",
+      red: "Rouge",
+      green: "Vert",
+    },
+    introSlides: [
+      {
+        key: "avatar",
+        icon: "account-star",
+        title: "Choisis ton avatar",
+        body: "Choisis le personnage que tu veux voir ici.",
+      },
+      {
+        key: "background",
+        icon: "palette",
+        title: "Choisis ton fond",
+        body: "Choisis la couleur ou le décor qui rend cette page à toi.",
+      },
+      {
+        key: "work",
+        icon: "clipboard-check",
+        title: "Devoirs ou jeu libre",
+        body: "S'il y a un devoir, commence par là. Sinon, choisis une activité.",
+      },
+      {
+        key: "stars",
+        icon: "star",
+        title: "Gagne des étoiles",
+        body: "Entraîne-toi, termine ton travail et gagne des étoiles pour la boutique.",
+      },
+    ],
+  },
+} as const;
+
+const getChildHomeLanguage = (child: Child | null): ChildHomeLanguage => {
+  const preferred = child?.preferred_language?.toLowerCase();
+  const languages = child?.languages?.map((language) => language.toLowerCase()) ?? [];
+  return preferred === "french" || languages.includes("french") ? "fr" : "en";
+};
 
 export default function ChildHomeScreen() {
   const router = useRouter();
@@ -101,7 +196,6 @@ export default function ChildHomeScreen() {
   const [wordProblemsStatus, setWordProblemsStatus] = useState<WordProblemsStatus | null>(null);
   const [pendingAssignments, setPendingAssignments] = useState<Assignment[]>([]);
   const [completedAssignments, setCompletedAssignments] = useState<Assignment[]>([]);
-  const [spellingLists, setSpellingLists] = useState<SpellingList[]>([]);
   const [pendingEpisodes, setPendingEpisodes] = useState<any[]>([]);
   const [completedWorksheetSkills, setCompletedWorksheetSkills] = useState<WorksheetSkill[]>([]);
   const [settingsModalVisible, setSettingsModalVisible] = useState(false);
@@ -141,13 +235,6 @@ export default function ChildHomeScreen() {
     setPendingAssignments(pending);
     setCompletedAssignments(completed);
 
-    // Fetch spelling lists
-    try {
-      const lists = await listSpellingListsForChild(childId);
-      setSpellingLists(lists);
-    } catch (err) {
-      console.error("[child-home] failed to fetch spelling lists:", err);
-    }
   }, [childId]);
 
   const fetchPendingEpisodes = useCallback(async () => {
@@ -223,7 +310,7 @@ export default function ChildHomeScreen() {
 
     const { data, error: dbError } = await supabase
       .from("children")
-      .select("id, name, grade_level, selected_avatar, home_background, pin, pin_setup_required, intro_seen, max_addition_number, max_times_table, math_subtraction_level, math_division_level")
+      .select("id, name, grade_level, selected_avatar, home_background, pin, pin_setup_required, intro_seen, preferred_language, languages, max_addition_number, max_times_table, math_subtraction_level, math_division_level")
       .eq("id", childId)
       .single();
 
@@ -428,16 +515,17 @@ export default function ChildHomeScreen() {
   };
 
   const handlePinSetupSubmit = async () => {
+    const copy = SETUP_COPY[getChildHomeLanguage(child)];
     const pin = newPin.trim();
     const confirmation = confirmPin.trim();
 
     if (!/^\d{4,6}$/.test(pin)) {
-      setPinSetupError("Use 4 to 6 numbers");
+      setPinSetupError(copy.pinInvalid);
       return;
     }
 
     if (pin !== confirmation) {
-      setPinSetupError("The two PINs need to match");
+      setPinSetupError(copy.pinMismatch);
       setConfirmPin("");
       return;
     }
@@ -457,29 +545,30 @@ export default function ChildHomeScreen() {
       setPinSetupError("");
     } catch (err: any) {
       console.error("[child-home] failed to set child PIN:", err);
-      setPinSetupError(err?.message || "Could not save PIN");
+      setPinSetupError(err?.message || copy.pinSaveError);
     }
   };
 
   const handleIntroNext = async () => {
     if (!child) return;
+    const copy = SETUP_COPY[getChildHomeLanguage(child)];
 
-    const isAvatarSlide = INTRO_SLIDES[introSlideIndex].key === "avatar";
-    const isBackgroundSlide = INTRO_SLIDES[introSlideIndex].key === "background";
+    const isAvatarSlide = copy.introSlides[introSlideIndex].key === "avatar";
+    const isBackgroundSlide = copy.introSlides[introSlideIndex].key === "background";
 
     if (isAvatarSlide && !child.selected_avatar) {
-      setIntroError("Pick an avatar first");
+      setIntroError(copy.avatarRequired);
       return;
     }
 
     if (isBackgroundSlide && !child.home_background) {
-      setIntroError("Pick a background first");
+      setIntroError(copy.backgroundRequired);
       return;
     }
 
     setIntroError("");
 
-    if (introSlideIndex < INTRO_SLIDES.length - 1) {
+    if (introSlideIndex < copy.introSlides.length - 1) {
       setIntroSlideIndex((current) => current + 1);
       return;
     }
@@ -495,7 +584,7 @@ export default function ChildHomeScreen() {
       setIntroSlideIndex(0);
     } catch (err: any) {
       console.error("[child-home] failed to save intro state:", err);
-      setIntroError(err?.message || "Could not finish setup");
+      setIntroError(err?.message || copy.finishError);
     }
   };
 
@@ -585,7 +674,9 @@ export default function ChildHomeScreen() {
     return dateB - dateA;
   }).slice(0, 5);
 
-  const currentIntroSlide = INTRO_SLIDES[introSlideIndex];
+  const setupCopy = SETUP_COPY[getChildHomeLanguage(child)];
+  const introSlides = setupCopy.introSlides;
+  const currentIntroSlide = introSlides[introSlideIndex];
   const introVisible = !!child && !child.pin_setup_required && !child.intro_seen;
   const pinSetupVisible = !!child?.pin_setup_required;
   const renderAvatarChoices = () => (
@@ -621,7 +712,7 @@ export default function ChildHomeScreen() {
           {bg.id === "giraffe" ? (
             <View style={styles.giraffePreview} />
           ) : null}
-          <Text style={styles.backgroundLabel}>{bg.label}</Text>
+          <Text style={styles.backgroundLabel}>{setupCopy.backgroundLabels[bg.id]}</Text>
         </TouchableOpacity>
       ))}
     </View>
@@ -748,15 +839,15 @@ export default function ChildHomeScreen() {
         <View style={styles.setupOverlay}>
           <View style={styles.setupPanel}>
             <MaterialCommunityIcons name="lock-check" size={36} color="#2196f3" />
-            <Text style={styles.setupTitle}>Create your PIN</Text>
+            <Text style={styles.setupTitle}>{setupCopy.pinTitle}</Text>
             <Text style={styles.setupBody}>
-              You will use this PIN when you come back to Skeelio.
+              {setupCopy.pinBody}
             </Text>
             <TextInput
               style={styles.setupPinInput}
               value={newPin}
               onChangeText={setNewPin}
-              placeholder="4-6 numbers"
+              placeholder={setupCopy.pinPlaceholder}
               keyboardType="number-pad"
               secureTextEntry={true}
               maxLength={6}
@@ -766,7 +857,7 @@ export default function ChildHomeScreen() {
               style={styles.setupPinInput}
               value={confirmPin}
               onChangeText={setConfirmPin}
-              placeholder="Confirm PIN"
+              placeholder={setupCopy.pinConfirmPlaceholder}
               keyboardType="number-pad"
               secureTextEntry={true}
               maxLength={6}
@@ -780,7 +871,7 @@ export default function ChildHomeScreen() {
               onPress={handlePinSetupSubmit}
               disabled={newPin.length < 4 || confirmPin.length < 4}
             >
-              <Text style={styles.setupPrimaryButtonText}>Save PIN</Text>
+              <Text style={styles.setupPrimaryButtonText}>{setupCopy.pinSaveButton}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -794,7 +885,7 @@ export default function ChildHomeScreen() {
         <View style={styles.setupOverlay}>
           <View style={styles.introPanel}>
             <View style={styles.introProgressRow}>
-              {INTRO_SLIDES.map((slide, index) => (
+              {introSlides.map((slide, index) => (
                 <View
                   key={slide.key}
                   style={[
@@ -817,12 +908,12 @@ export default function ChildHomeScreen() {
             {currentIntroSlide.key === "work" && (
               <View style={styles.introExampleRow}>
                 <View style={styles.introMiniCard}>
-                  <Text style={styles.introMiniTitle}>Homework</Text>
-                  <Text style={styles.introMiniText}>Do assigned work first</Text>
+                  <Text style={styles.introMiniTitle}>{setupCopy.homework}</Text>
+                  <Text style={styles.introMiniText}>{setupCopy.homeworkBody}</Text>
                 </View>
                 <View style={styles.introMiniCard}>
-                  <Text style={styles.introMiniTitle}>Free play</Text>
-                  <Text style={styles.introMiniText}>Choose practice tiles</Text>
+                  <Text style={styles.introMiniTitle}>{setupCopy.freePlay}</Text>
+                  <Text style={styles.introMiniText}>{setupCopy.freePlayBody}</Text>
                 </View>
               </View>
             )}
@@ -839,11 +930,11 @@ export default function ChildHomeScreen() {
                 onPress={handleIntroBack}
                 disabled={introSlideIndex === 0}
               >
-                <Text style={styles.introSecondaryButtonText}>Back</Text>
+                <Text style={styles.introSecondaryButtonText}>{setupCopy.back}</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.setupPrimaryButton} onPress={handleIntroNext}>
                 <Text style={styles.setupPrimaryButtonText}>
-                  {introSlideIndex === INTRO_SLIDES.length - 1 ? "Start" : "Next"}
+                  {introSlideIndex === introSlides.length - 1 ? setupCopy.start : setupCopy.next}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -860,7 +951,7 @@ export default function ChildHomeScreen() {
       >
         <SafeAreaView style={styles.settingsModalContainer}>
           <View style={styles.settingsHeader}>
-            <Text style={styles.settingsTitle}>Settings</Text>
+            <Text style={styles.settingsTitle}>{setupCopy.settings}</Text>
             <TouchableOpacity onPress={() => setSettingsModalVisible(false)}>
               <MaterialCommunityIcons name="close" size={24} color="#333" />
             </TouchableOpacity>
@@ -869,13 +960,13 @@ export default function ChildHomeScreen() {
           <ScrollView contentContainerStyle={styles.settingsContent}>
             {/* Avatar Section */}
             <View style={styles.settingsSection}>
-              <Text style={styles.settingsSectionTitle}>Pick Your Avatar</Text>
+              <Text style={styles.settingsSectionTitle}>{setupCopy.pickAvatar}</Text>
               {renderAvatarChoices()}
             </View>
 
             {/* Background Section */}
             <View style={styles.settingsSection}>
-              <Text style={styles.settingsSectionTitle}>Pick Your Background</Text>
+              <Text style={styles.settingsSectionTitle}>{setupCopy.pickBackground}</Text>
               {renderBackgroundChoices()}
             </View>
           </ScrollView>
