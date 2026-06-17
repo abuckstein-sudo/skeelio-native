@@ -10,12 +10,14 @@ import {
   Modal,
   TextInput,
   useWindowDimensions,
+  Alert,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect, useRouter } from "expo-router";
 import { supabase } from "@/lib/supabase";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import GiraffeBackground from "@/components/GiraffeBackground";
+import { getHomeworkLockStatus } from "@/lib/homeworkTime";
 
 interface Child {
   id: string;
@@ -131,7 +133,20 @@ export default function ChildrenScreen() {
     setIsLoading(false);
   };
 
-  const handleSelectChild = (child: Child) => {
+  const showLimitMessageIfLocked = async (child: Child): Promise<boolean> => {
+    const status = await getHomeworkLockStatus(child.id);
+    if (!status.locked) return false;
+
+    Alert.alert(
+      "You have done a lot of work today!",
+      "Go play or let your adult know you need more time."
+    );
+    return true;
+  };
+
+  const handleSelectChild = async (child: Child) => {
+    if (await showLimitMessageIfLocked(child)) return;
+
     if (child.pin_setup_required) {
       router.push({
         pathname: "/child-home/[childId]",
@@ -147,10 +162,16 @@ export default function ChildrenScreen() {
     setPinError("");
   };
 
-  const handlePinSubmit = () => {
+  const handlePinSubmit = async () => {
     if (!selectedChildForPin) return;
 
     if (enteredPin === selectedChildForPin.pin) {
+      if (await showLimitMessageIfLocked(selectedChildForPin)) {
+        setPinModalVisible(false);
+        setEnteredPin("");
+        setPinError("");
+        return;
+      }
       console.log("[nav] PIN correct, navigating to child home");
       setPinModalVisible(false);
       setEnteredPin("");

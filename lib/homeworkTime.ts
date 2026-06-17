@@ -77,3 +77,29 @@ export async function addHomeworkActiveSeconds(homeworkDayId: string, seconds: n
 
   if (error) throw error;
 }
+
+export async function getHomeworkLockStatus(childId: string): Promise<{
+  locked: boolean;
+  limitMinutes: number | null;
+  elapsedSeconds: number;
+}> {
+  const [limit, dayResult] = await Promise.all([
+    getChildHomeworkLimit(childId),
+    supabase
+      .from("school_homework_days")
+      .select("total_active_seconds")
+      .eq("child_id", childId)
+      .eq("homework_date", todayDateKey())
+      .neq("status", "archived")
+      .maybeSingle(),
+  ]);
+
+  const limitMinutes = limit?.daily_limit_minutes || null;
+  const elapsedSeconds = Number((dayResult.data as any)?.total_active_seconds || 0);
+  const unlockedToday = limit?.unlocked_date === todayDateKey();
+  return {
+    locked: Boolean(limitMinutes && !unlockedToday && elapsedSeconds >= limitMinutes * 60),
+    limitMinutes,
+    elapsedSeconds,
+  };
+}

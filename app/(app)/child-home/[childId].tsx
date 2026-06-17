@@ -246,6 +246,7 @@ export default function ChildHomeScreen() {
   const [homeworkLimit, setHomeworkLimit] = useState<ChildHomeworkLimit | null>(null);
   const [homeworkTimerSeconds, setHomeworkTimerSeconds] = useState(0);
   const [limitWarningShown, setLimitWarningShown] = useState(false);
+  const [isChildHomeFocused, setIsChildHomeFocused] = useState(true);
   const [materialModalVisible, setMaterialModalVisible] = useState(false);
   const [activeMaterial, setActiveMaterial] = useState<SchoolHomeworkMaterial | null>(null);
   const [activeMaterialUrl, setActiveMaterialUrl] = useState<string | null>(null);
@@ -338,15 +339,26 @@ export default function ChildHomeScreen() {
     setHomeworkTimerSeconds(today?.total_active_seconds || 0);
   }, [childId]);
 
+  useFocusEffect(
+    useCallback(() => {
+      setIsChildHomeFocused(true);
+      return () => setIsChildHomeFocused(false);
+    }, [])
+  );
+
   useEffect(() => {
     const today = schoolHomeworkWeekDays.find((day) => day?.homework_date === todayDateKey());
     const items = today?.school_homework_items || [];
     const limitMinutes = homeworkLimit?.daily_limit_minutes;
     const unlockedToday = homeworkLimit?.unlocked_date === todayDateKey();
-    if (!today?.id || items.length === 0 || !limitMinutes || unlockedToday) return;
+    if (!isChildHomeFocused || !today?.id || items.length === 0 || !limitMinutes || unlockedToday) return;
 
     const limitSeconds = limitMinutes * 60;
     if (homeworkTimerSeconds >= limitSeconds) {
+      Alert.alert(
+        "You have done a lot of work today!",
+        "Go play or let your adult know you need more time."
+      );
       router.replace("/children");
       return;
     }
@@ -362,7 +374,10 @@ export default function ChildHomeScreen() {
         }
         if (next >= limitSeconds) {
           void addHomeworkActiveSeconds(today.id, pendingSeconds).finally(() => {
-            Alert.alert("Homework time is finished", "Great effort today. Ask a parent if you need more time.");
+            Alert.alert(
+              "You have done a lot of work today!",
+              "Go play or let your adult know you need more time."
+            );
             router.replace("/children");
           });
           clearInterval(timer);
@@ -386,7 +401,7 @@ export default function ChildHomeScreen() {
         void addHomeworkActiveSeconds(today.id, pendingSeconds);
       }
     };
-  }, [schoolHomeworkWeekDays, homeworkLimit, homeworkTimerSeconds, limitWarningShown, router]);
+  }, [schoolHomeworkWeekDays, homeworkLimit, homeworkTimerSeconds, limitWarningShown, router, isChildHomeFocused]);
 
   const refreshHomeworkFeed = useCallback(async () => {
     await Promise.all([
@@ -1014,7 +1029,7 @@ export default function ChildHomeScreen() {
         onRequestClose={() => setMaterialModalVisible(false)}
       >
         <View style={styles.materialModalBackdrop}>
-          <View style={styles.materialModal}>
+          <View style={[styles.materialModal, activeMaterial?.material_type === "image" && styles.materialModalImageFullscreen]}>
             <View style={styles.materialModalHeader}>
               <Text style={styles.materialModalTitle}>{activeMaterialTitle}</Text>
               <TouchableOpacity onPress={() => setMaterialModalVisible(false)} style={styles.materialCloseButton}>
@@ -1503,6 +1518,12 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     overflow: "hidden",
   },
+  materialModalImageFullscreen: {
+    width: "100%",
+    height: "100%",
+    maxHeight: "100%",
+    borderRadius: 0,
+  },
   materialModalHeader: {
     flexDirection: "row",
     alignItems: "center",
@@ -1524,16 +1545,16 @@ const styles = StyleSheet.create({
   },
   materialImage: {
     width: "100%",
-    height: 460,
+    height: "100%",
     backgroundColor: "#f5f5f5",
   },
   materialImageZoom: {
     width: "100%",
-    height: 460,
+    flex: 1,
     backgroundColor: "#f5f5f5",
   },
   materialImageZoomContent: {
-    minHeight: 460,
+    flexGrow: 1,
     alignItems: "center",
     justifyContent: "center",
   },
