@@ -68,6 +68,12 @@ export type ParsedSchoolHomeworkItem = {
   linked_spelling_list_id?: string | null;
 };
 
+export type ExtractedSchoolHomework = {
+  rawText: string;
+  items: string[];
+  language: "English" | "French";
+};
+
 export function todayDateKey(date = new Date()): string {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -226,7 +232,7 @@ export function parseSchoolHomeworkInput(rawInput: string, spellingLists: Spelli
         return {
           task_text: taskText,
           task_kind: "signature" as const,
-          metadata: { requires_parent_signature: true, needs_material: true },
+          metadata: { requires_parent_signature: true, needs_material: false },
         };
       }
 
@@ -270,11 +276,12 @@ export function parseSchoolHomeworkInput(rawInput: string, spellingLists: Spelli
       }
 
       if (/(relire|lire|lecture|read)\b/.test(normalized) || /\br\s*\d+/i.test(taskText)) {
+        const reference = taskText.match(/\bR\s*\d+(?:\s*(?:a|à|-|to)\s*R?\s*\d+)?/i)?.[0] || null;
         return {
           task_text: taskText,
           task_kind: "reading" as const,
           metadata: {
-            reference: taskText.match(/\bR\s*\d+(?:\s*(?:a|à|-|to)\s*R?\s*\d+)?/i)?.[0] || null,
+            reference,
             needs_material: true,
           },
         };
@@ -286,6 +293,28 @@ export function parseSchoolHomeworkInput(rawInput: string, spellingLists: Spelli
         metadata: {},
       };
     });
+}
+
+export async function extractSchoolHomeworkFromImage(
+  imageBase64: string,
+  mimeType = "image/jpeg"
+): Promise<ExtractedSchoolHomework> {
+  const { data, error } = await supabase.functions.invoke("extract-school-homework", {
+    body: { imageBase64, mimeType },
+  });
+
+  if (error) throw error;
+  if (!data || !Array.isArray(data.items)) throw new Error("Invalid homework extraction response");
+
+  const items = data.items
+    .map((item: unknown) => String(item || "").trim())
+    .filter(Boolean);
+
+  return {
+    rawText: String(data.rawText || items.join("\n")).trim(),
+    items,
+    language: data.language === "English" ? "English" : "French",
+  };
 }
 
 export async function replaceSchoolHomeworkDay(params: {
@@ -549,6 +578,20 @@ export function itemNeedsMaterial(item: Pick<SchoolHomeworkItem, "task_kind" | "
   return Boolean((item.metadata as any)?.needs_material) && !hasMaterial;
 }
 
+export function schoolHomeworkMaterialTitle(item: Pick<SchoolHomeworkItem, "task_text" | "task_kind" | "metadata">): string {
+  const metadata = (item.metadata || {}) as Record<string, unknown>;
+  if (item.task_kind === "reading") {
+    return metadata.reference ? `Reading: ${metadata.reference}` : `Reading: ${item.task_text}`;
+  }
+  if (item.task_kind === "spelling") {
+    return metadata.list_number ? `Spelling: Liste ${metadata.list_number}` : `Spelling: ${item.task_text}`;
+  }
+  if (item.task_kind === "signature") {
+    return `Signature: ${item.task_text}`;
+  }
+  return item.task_text;
+}
+
 export async function addSchoolHomeworkTextMaterial(params: {
   item: SchoolHomeworkItem;
   title?: string;
@@ -566,7 +609,7 @@ export async function addSchoolHomeworkTextMaterial(params: {
       parent_id: params.item.parent_id,
       child_id: params.item.child_id,
       material_type: "text",
-      title: params.title || params.item.task_text,
+      title: params.title || schoolHomeworkMaterialTitle(params.item),
       text_content: content,
     });
 
@@ -633,7 +676,7 @@ export async function addSchoolHomeworkImageMaterial(params: {
       parent_id: params.item.parent_id,
       child_id: params.item.child_id,
       material_type: "image",
-      title: params.title || params.item.task_text,
+      title: params.title || schoolHomeworkMaterialTitle(params.item),
       storage_bucket: params.storagePath ? params.bucket || "worksheets" : null,
       storage_path: params.storagePath || null,
       text_content: params.dataUrl || null,

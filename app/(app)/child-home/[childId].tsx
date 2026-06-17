@@ -20,6 +20,7 @@ import {
   SchoolHomeworkMaterial,
   setSchoolHomeworkItemDone,
   signedSchoolHomeworkImageUrl,
+  schoolHomeworkMaterialTitle,
   todayDateKey,
   schoolHomeworkWeekDateKeys,
 } from "@/lib/schoolHomework";
@@ -977,6 +978,7 @@ export default function ChildHomeScreen() {
             const hasMaterial = (item.school_homework_materials || []).length > 0;
             const needsMaterial = Boolean((item.metadata as any)?.needs_material) && !hasMaterial;
             const canOpen = linked || hasMaterial;
+            const materialLabel = hasMaterial ? schoolHomeworkMaterialTitle(item) : "";
             return (
               <TouchableOpacity
                 key={item.id}
@@ -1006,7 +1008,7 @@ export default function ChildHomeScreen() {
                       : linked
                         ? childLanguage === "fr" ? "appuie pour pratiquer" : "tap to practice"
                         : hasMaterial
-                          ? childLanguage === "fr" ? "appuie pour ouvrir" : "tap to open"
+                          ? materialLabel
                           : needsMaterial
                             ? childLanguage === "fr" ? "un adulte doit ajouter le document" : "needs a document from an adult"
                             : item.task_kind}

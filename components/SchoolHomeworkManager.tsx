@@ -12,9 +12,11 @@ import {
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as ImageManipulator from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
+import CameraCaptureModal from "./CameraCaptureModal";
 import {
   addSchoolHomeworkImageMaterial,
   addSchoolHomeworkTextMaterial,
+  extractSchoolHomeworkFromImage,
   itemNeedsMaterial,
   listSchoolHomeworkDay,
   replaceSchoolHomeworkDay,
@@ -41,6 +43,9 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
   const [weekAnchor, setWeekAnchor] = useState(new Date());
   const weekDateKeys = schoolHomeworkWeekDateKeys(weekAnchor);
   const [homeworkDate, setHomeworkDate] = useState(todayDateKey());
+  const [agendaCameraVisible, setAgendaCameraVisible] = useState(false);
+  const [extractingAgenda, setExtractingAgenda] = useState(false);
+  const [inputSourceType, setInputSourceType] = useState<"manual" | "photo">("manual");
 
   useEffect(() => {
     void fetchHomework();
@@ -54,6 +59,7 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
       const limit = await getChildHomeworkLimit(childId);
       setHomeworkDay(day);
       setRawInput(day?.raw_input || "");
+      setInputSourceType(day?.source_type || "manual");
       setLimitInput(limit?.daily_limit_minutes ? String(limit.daily_limit_minutes) : "");
       setEditingMaterialItemIds({});
     } catch (err) {
@@ -75,15 +81,47 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
         childId,
         homeworkDate,
         rawInput,
-        sourceType: "manual",
+        sourceType: inputSourceType,
       });
       setHomeworkDay(saved);
+      setInputSourceType(saved.source_type);
       Alert.alert("Saved", "School homework is ready on the child home screen.");
     } catch (err) {
       console.error("[school-homework-manager] save error:", err);
       Alert.alert("Error", "Could not save school homework.");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleAgendaPhotoCaptured = async (uri: string) => {
+    try {
+      setExtractingAgenda(true);
+      const manipulated = await ImageManipulator.manipulateAsync(
+        uri,
+        [{ resize: { width: 1300 } }],
+        { compress: 0.55, format: ImageManipulator.SaveFormat.JPEG, base64: true }
+      );
+
+      if (!manipulated.base64) throw new Error("Could not read agenda image");
+
+      const extracted = await extractSchoolHomeworkFromImage(manipulated.base64, "image/jpeg");
+      if (extracted.items.length === 0) {
+        Alert.alert("Nothing found", "I could not find homework items in that agenda photo.");
+        return;
+      }
+
+      setRawInput(extracted.items.join("\n"));
+      setInputSourceType("photo");
+      Alert.alert(
+        "Review extracted homework",
+        "I filled the homework box from the agenda photo. Check it, edit anything wrong, then save."
+      );
+    } catch (err) {
+      console.error("[school-homework-manager] agenda photo extraction error:", err);
+      Alert.alert("Error", "Could not extract homework from that agenda photo.");
+    } finally {
+      setExtractingAgenda(false);
     }
   };
 
@@ -211,7 +249,7 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
   };
 
   const items = homeworkDay?.school_homework_items || [];
-  const setupItems = items.filter((item) => itemNeedsMaterial(item) || item.status === "waiting_parent");
+  const setupItems = items.filter((item) => itemNeedsMaterial(item));
   const doneCount = items.filter((item) => item.status === "done").length;
   const totalMinutes = Math.round((homeworkDay?.total_active_seconds || 0) / 60);
   const waitingCount = items.filter((item) => item.status === "waiting_parent").length;
@@ -252,12 +290,32 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
       <TextInput
         style={styles.input}
         value={rawInput}
-        onChangeText={setRawInput}
+        onChangeText={(text) => {
+          setRawInput(text);
+          setInputSourceType("manual");
+        }}
         placeholder={"Paste today's homework list\nrelire R22 à R24\nPratique Liste 26\nTables multiplication par coeur 1x à 5x"}
         placeholderTextColor="#999"
         multiline
         textAlignVertical="top"
       />
+
+      <View style={styles.inputActionRow}>
+        <TouchableOpacity
+          style={[styles.photoHomeworkButton, extractingAgenda && styles.saveButtonDisabled]}
+          onPress={() => setAgendaCameraVisible(true)}
+          disabled={extractingAgenda}
+        >
+          {extractingAgenda ? (
+            <ActivityIndicator size="small" color="#1565c0" />
+          ) : (
+            <MaterialCommunityIcons name="camera-outline" size={18} color="#1565c0" />
+          )}
+          <Text style={styles.photoHomeworkButtonText}>
+            {extractingAgenda ? "Reading agenda..." : "Add from agenda photo"}
+          </Text>
+        </TouchableOpacity>
+      </View>
 
       <TouchableOpacity
         style={[styles.saveButton, saving && styles.saveButtonDisabled]}
@@ -339,7 +397,7 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
                             ? "waiting for parent"
                             : item.task_kind}
                   </Text>
-                  {(materialReady || item.task_kind === "reading" || item.task_kind === "signature") && !editingMaterial && (
+                  {(materialReady || itemNeedsMaterial(item)) && !editingMaterial && (
                     <TouchableOpacity
                       style={styles.editMaterialButton}
                       onPress={() => handleStartMaterialEdit(item)}
@@ -357,7 +415,7 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
                       resizeMode="cover"
                     />
                   )}
-                {editingMaterial && (
+                {editingMaterial && item.task_kind !== "signature" && (
                   <View style={styles.materialPanel}>
                     {materialReady && (
                       <Text style={styles.materialReadyText}>
@@ -410,6 +468,11 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
                     )}
                   </View>
                 )}
+                {item.task_kind === "signature" && item.status !== "done" && (
+                  <Text style={styles.signatureHint}>
+                    Parent-only item. Mark it complete here after the quiz or note has been signed.
+                  </Text>
+                )}
                     </>
                   );
                 })()}
@@ -418,6 +481,14 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
           ))}
         </View>
       )}
+      <CameraCaptureModal
+        visible={agendaCameraVisible}
+        onCaptured={(uri) => {
+          setAgendaCameraVisible(false);
+          void handleAgendaPhotoCaptured(uri);
+        }}
+        onClose={() => setAgendaCameraVisible(false)}
+      />
     </View>
   );
 }
@@ -456,6 +527,27 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
     backgroundColor: "#fafafa",
+  },
+  inputActionRow: {
+    marginTop: 10,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  photoHomeworkButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: 8,
+    backgroundColor: "#e3f2fd",
+    borderWidth: 1,
+    borderColor: "#bbdefb",
+  },
+  photoHomeworkButtonText: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#1565c0",
   },
   daySelector: {
     flexDirection: "row",
@@ -670,6 +762,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 17,
     color: "#607d8b",
+  },
+  signatureHint: {
+    marginTop: 6,
+    fontSize: 12,
+    lineHeight: 17,
+    color: "#795548",
   },
   materialButton: {
     flexDirection: "row",
