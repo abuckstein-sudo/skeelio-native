@@ -117,8 +117,9 @@ export async function createMathAssignment(params: {
   mode?: "practice" | "quiz";
   wordProblemOp?: Operation | "mixed";
   multiplicationTables?: number[];
+  operationTables?: number[];
 }): Promise<Assignment> {
-  const { childId, topic, count, dueDate, mode = "practice", wordProblemOp, multiplicationTables } = params;
+  const { childId, topic, count, dueDate, mode = "practice", wordProblemOp, multiplicationTables, operationTables } = params;
 
   // Get the current authenticated user to ensure parent_id is set correctly
   const { data: authData, error: authError } = await supabase.auth.getUser();
@@ -186,15 +187,18 @@ export async function createMathAssignment(params: {
         hintUsed: row.ai_hint_used || false,
       }));
 
-    const tables = Array.isArray(multiplicationTables)
-      ? multiplicationTables.filter((table) => Number.isInteger(table) && table >= 0 && table <= 12)
+    const tables = Array.isArray(operationTables || multiplicationTables)
+      ? (operationTables || multiplicationTables || []).filter((table) => Number.isInteger(table) && table >= 0 && table <= 12)
       : [];
     const { tierId } = currentTierAndBand(attempts, topic as Operation, childData || {});
+    const tableQuestionPool = (topic === "multiplication" || topic === "division") && tables.length > 0
+      ? buildTableQuestionPool(topic as "multiplication" | "division", tables, tierId)
+      : [];
 
     for (let i = 0; i < count; i++) {
       const genQ =
-        topic === "multiplication" && tables.length > 0
-          ? generateMultiplicationTableQuestion(tables, tierId)
+        tableQuestionPool.length > 0
+          ? tableQuestionPool[i % tableQuestionPool.length]
           : generateQuestion(topic as Operation, tierId, childData?.max_times_table);
       customQuestions.push(questionToCustom(genQ, topic as Operation));
     }
@@ -233,17 +237,41 @@ export async function createMathAssignment(params: {
   return newAssignment as Assignment;
 }
 
-function generateMultiplicationTableQuestion(tables: number[], tierId: string): Question {
-  const table = tables[Math.floor(Math.random() * tables.length)];
-  const other = Math.floor(Math.random() * 13);
-  const [a, b] = Math.random() < 0.5 ? [table, other] : [other, table];
-  return {
-    operation: "multiplication",
-    tierId,
-    a,
-    b,
-    answer: a * b,
-  };
+function buildTableQuestionPool(topic: "multiplication" | "division", tables: number[], tierId: string): Question[] {
+  const pool = tables.flatMap((table) =>
+    Array.from({ length: 13 }, (_, other) => {
+      if (topic === "division") {
+        const divisor = Math.max(1, table);
+        return {
+          operation: "division" as const,
+          tierId,
+          a: divisor * other,
+          b: divisor,
+          answer: other,
+        };
+      }
+
+      const [a, b] = other % 2 === 0 ? [table, other] : [other, table];
+      return {
+        operation: "multiplication" as const,
+        tierId,
+        a,
+        b,
+        answer: a * b,
+      };
+    })
+  );
+
+  return shuffle(pool);
+}
+
+function shuffle<T>(items: T[]): T[] {
+  const copy = [...items];
+  for (let i = copy.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
 }
 
 export async function markAssignmentComplete(

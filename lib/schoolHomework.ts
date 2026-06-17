@@ -2,7 +2,7 @@ import { supabase } from "./supabase";
 import { createMathAssignment, deleteAssignment } from "./assignments";
 import { listSpellingListsForChild, SpellingList } from "./spelling";
 
-export type SchoolHomeworkKind = "generic" | "reading" | "spelling" | "multiplication" | "signature";
+export type SchoolHomeworkKind = "generic" | "reading" | "spelling" | "multiplication" | "division" | "signature";
 export type SchoolHomeworkStatus = "pending" | "done" | "waiting_parent";
 
 export type SchoolHomeworkItem = {
@@ -137,7 +137,7 @@ function findSpellingListReference(taskText: string, spellingLists: SpellingList
   return { listNumber, list };
 }
 
-function multiplicationTables(taskText: string): number[] {
+function mathTables(taskText: string): number[] {
   const normalized = normalizeText(taskText).replace(/×/g, "x");
   const range = normalized.match(/\b(\d{1,2})\s*x?\s*(?:a|à|-|to)\s*(\d{1,2})\s*x?\b/);
   if (range) {
@@ -150,14 +150,23 @@ function multiplicationTables(taskText: string): number[] {
     }
   }
 
-  const single = normalized.match(/\b(?:table|tables|multiplication|multiplier).*?(\d{1,2})\s*x?\b/) ||
-    normalized.match(/\b(\d{1,2})\s*x\b/);
-  if (single) {
-    const table = Number(single[1]);
-    if (Number.isInteger(table) && table >= 0 && table <= 12) return [table];
+  const tables = new Set<number>();
+  const tableContext = /\b(table|tables|multiplication|multiplier|division|diviser)\b/.test(normalized);
+  const xPattern = /(?:\bx\s*(\d{1,2})\b|\b(\d{1,2})\s*x\b)/g;
+  for (const match of normalized.matchAll(xPattern)) {
+    const table = Number(match[1] || match[2]);
+    if (Number.isInteger(table) && table >= 0 && table <= 12) tables.add(table);
   }
 
-  return [];
+  if (tableContext) {
+    const afterKeywordPattern = /\b(?:table|tables|multiplication|multiplier|division|diviser)(?:\s+par|\s+de)?\s+(\d{1,2})\b/g;
+    for (const match of normalized.matchAll(afterKeywordPattern)) {
+      const table = Number(match[1]);
+      if (Number.isInteger(table) && table >= 0 && table <= 12) tables.add(table);
+    }
+  }
+
+  return Array.from(tables);
 }
 
 function levenshteinDistance(a: string, b: string): number {
@@ -203,7 +212,7 @@ export function parseSchoolHomeworkInput(rawInput: string, spellingLists: Spelli
     .map((taskText) => {
       const normalized = normalizeText(taskText);
       const spellingRef = findSpellingListReference(taskText, spellingLists);
-      const tables = multiplicationTables(taskText);
+      const tables = mathTables(taskText);
 
       if (looksLikeSignatureTask(normalized)) {
         return {
@@ -222,6 +231,17 @@ export function parseSchoolHomeworkInput(rawInput: string, spellingLists: Spelli
             list_number: spellingRef.listNumber,
             matched_list_title: spellingRef.list?.title || null,
             needs_material: !spellingRef.list,
+          },
+        };
+      }
+
+      if (normalized.includes("division") || normalized.includes("diviser")) {
+        return {
+          task_text: taskText,
+          task_kind: "division" as const,
+          metadata: {
+            tables,
+            needs_generated_practice: tables.length > 0,
           },
         };
       }
@@ -324,7 +344,7 @@ export async function replaceSchoolHomeworkDay(params: {
           ? ((reusableItem?.metadata as any).tables as unknown[]).filter((table): table is number => typeof table === "number")
           : [];
         const canReuseAssignment = reusableItem?.linked_assignment_id &&
-          item.task_kind === "multiplication" &&
+          (item.task_kind === "multiplication" || item.task_kind === "division") &&
           tables.length > 0 &&
           JSON.stringify(tables) === JSON.stringify(reusableTables);
 
@@ -339,20 +359,20 @@ export async function replaceSchoolHomeworkDay(params: {
             linked_spelling_list_id: reusableItem.linked_spelling_list_id,
             metadata: {
               ...item.metadata,
-              linked_practice: "multiplication",
+              linked_practice: item.task_kind,
             },
           };
         }
 
-        if (item.task_kind === "multiplication" && tables.length > 0) {
+        if ((item.task_kind === "multiplication" || item.task_kind === "division") && tables.length > 0) {
           try {
             const assignment = await createMathAssignment({
               childId: params.childId,
-              topic: "multiplication",
+              topic: item.task_kind,
               count: 20,
               dueDate: params.homeworkDate,
               mode: "practice",
-              multiplicationTables: tables,
+              operationTables: tables,
             });
             if (reusableItem?.linked_assignment_id && reusableItem.linked_assignment_id !== assignment.id) {
               void deleteAssignment(reusableItem.linked_assignment_id).catch((err) => {
@@ -372,11 +392,11 @@ export async function replaceSchoolHomeworkDay(params: {
               linked_assignment_id: assignment.id,
               metadata: {
                 ...item.metadata,
-                linked_practice: "multiplication",
+                linked_practice: item.task_kind,
               },
             };
           } catch (err) {
-            console.error("[school-homework] multiplication assignment create error:", err);
+            console.error("[school-homework] math assignment create error:", err);
           }
         }
 
@@ -548,10 +568,12 @@ export async function addSchoolHomeworkTextMaterial(params: {
 
 export async function addSchoolHomeworkImageMaterial(params: {
   item: SchoolHomeworkItem;
-  storagePath: string;
+  storagePath?: string;
+  dataUrl?: string;
   title?: string;
   bucket?: string;
 }): Promise<void> {
+  if (!params.storagePath && !params.dataUrl) throw new Error("Image material is missing");
   await clearSchoolHomeworkMaterials(params.item.id);
 
   const { error: insertError } = await supabase
@@ -563,8 +585,9 @@ export async function addSchoolHomeworkImageMaterial(params: {
       child_id: params.item.child_id,
       material_type: "image",
       title: params.title || params.item.task_text,
-      storage_bucket: params.bucket || "worksheets",
-      storage_path: params.storagePath,
+      storage_bucket: params.storagePath ? params.bucket || "worksheets" : null,
+      storage_path: params.storagePath || null,
+      text_content: params.dataUrl || null,
     });
 
   if (insertError) throw insertError;
@@ -598,6 +621,10 @@ async function markItemMaterialReady(itemId: string): Promise<void> {
 }
 
 export async function signedSchoolHomeworkImageUrl(material: SchoolHomeworkMaterial): Promise<string | null> {
+  if (material.material_type === "image" && material.text_content?.startsWith("data:image/")) {
+    return material.text_content;
+  }
+
   if (material.material_type !== "image" || !material.storage_bucket || !material.storage_path) {
     return null;
   }

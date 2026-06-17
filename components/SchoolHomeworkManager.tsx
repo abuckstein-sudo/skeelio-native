@@ -11,7 +11,6 @@ import {
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as ImageManipulator from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
-import { decode } from "base64-arraybuffer";
 import {
   addSchoolHomeworkImageMaterial,
   addSchoolHomeworkTextMaterial,
@@ -26,7 +25,6 @@ import {
   setSchoolHomeworkItemDone,
   todayDateKey,
 } from "@/lib/schoolHomework";
-import { supabase } from "@/lib/supabase";
 
 export default function SchoolHomeworkManager({ childId }: { childId: string }) {
   const [homeworkDay, setHomeworkDay] = useState<SchoolHomeworkDay | null>(null);
@@ -111,20 +109,16 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
 
       const manipulated = await ImageManipulator.manipulateAsync(
         result.assets[0].uri,
-        [{ resize: { width: 1500 } }],
-        { compress: 0.62, format: ImageManipulator.SaveFormat.JPEG, base64: true }
+        [{ resize: { width: 1100 } }],
+        { compress: 0.45, format: ImageManipulator.SaveFormat.JPEG, base64: true }
       );
 
       if (!manipulated.base64) throw new Error("Could not read selected image");
 
-      const path = `homework/${item.parent_id}/${item.child_id}/${item.id}/${Date.now()}.jpg`;
-      const { error: uploadError } = await supabase.storage
-        .from("worksheets")
-        .upload(path, decode(manipulated.base64), { contentType: "image/jpeg", upsert: false });
-
-      if (uploadError) throw uploadError;
-
-      await addSchoolHomeworkImageMaterial({ item, storagePath: path });
+      await addSchoolHomeworkImageMaterial({
+        item,
+        dataUrl: `data:image/jpeg;base64,${manipulated.base64}`,
+      });
       setEditingMaterialItemIds((current) => ({ ...current, [item.id]: false }));
       await fetchHomework();
       Alert.alert("Photo saved", "The child can now open this homework material.");
@@ -155,6 +149,15 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
     } finally {
       setMaterialSavingItemId(null);
     }
+  };
+
+  const handleStartMaterialEdit = (item: SchoolHomeworkItem) => {
+    const material = (item.school_homework_materials || [])[0];
+    setMaterialTextByItem((current) => ({
+      ...current,
+      [item.id]: material?.material_type === "text" ? material.text_content || "" : "",
+    }));
+    setEditingMaterialItemIds((current) => ({ ...current, [item.id]: true }));
   };
 
   const items = homeworkDay?.school_homework_items || [];
@@ -252,7 +255,7 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
                   {(materialReady || item.task_kind === "reading" || item.task_kind === "signature") && !editingMaterial && (
                     <TouchableOpacity
                       style={styles.editMaterialButton}
-                      onPress={() => setEditingMaterialItemIds((current) => ({ ...current, [item.id]: true }))}
+                      onPress={() => handleStartMaterialEdit(item)}
                     >
                       <Text style={styles.editMaterialText}>{materialReady ? "Edit" : "Add"}</Text>
                     </TouchableOpacity>
