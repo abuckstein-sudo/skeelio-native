@@ -281,6 +281,16 @@ export async function markAssignmentComplete(
     );
     throw error;
   }
+
+  await supabase
+    .from("school_homework_items")
+    .update({
+      status: "done",
+      completed_at: now,
+      completed_by: "child",
+      updated_at: now,
+    })
+    .eq("linked_assignment_id", assignmentId);
 }
 
 export async function createSpellingAssignment(

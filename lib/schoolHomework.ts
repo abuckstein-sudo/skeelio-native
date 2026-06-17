@@ -1,4 +1,5 @@
 import { supabase } from "./supabase";
+import { createMathAssignment, deleteAssignment } from "./assignments";
 import { listSpellingListsForChild, SpellingList } from "./spelling";
 
 export type SchoolHomeworkKind = "generic" | "reading" | "spelling" | "multiplication" | "signature";
@@ -40,6 +41,7 @@ export type ParsedSchoolHomeworkItem = {
   task_text: string;
   task_kind: SchoolHomeworkKind;
   metadata: Record<string, unknown>;
+  linked_assignment_id?: string | null;
   linked_spelling_list_id?: string | null;
 };
 
@@ -207,6 +209,22 @@ export async function replaceSchoolHomeworkDay(params: {
 
   if (dayError) throw dayError;
 
+  const oldLinkedAssignmentIds = ((await supabase
+    .from("school_homework_items")
+    .select("linked_assignment_id")
+    .eq("homework_day_id", day.id)
+    .not("linked_assignment_id", "is", null)).data || [])
+    .map((row: any) => row.linked_assignment_id)
+    .filter(Boolean);
+
+  await Promise.all(
+    Array.from(new Set(oldLinkedAssignmentIds)).map((assignmentId) =>
+      deleteAssignment(assignmentId).catch((err) => {
+        console.error("[school-homework] old linked assignment delete error:", err);
+      })
+    )
+  );
+
   const { error: deleteError } = await supabase
     .from("school_homework_items")
     .delete()
@@ -215,8 +233,41 @@ export async function replaceSchoolHomeworkDay(params: {
   if (deleteError) throw deleteError;
 
   if (parsedItems.length > 0) {
+    const linkedItems = await Promise.all(
+      parsedItems.map(async (item) => {
+        const tables = Array.isArray(item.metadata.tables)
+          ? (item.metadata.tables as unknown[]).filter((table): table is number => typeof table === "number")
+          : [];
+
+        if (item.task_kind === "multiplication" && tables.length > 0) {
+          try {
+            const assignment = await createMathAssignment({
+              childId: params.childId,
+              topic: "multiplication",
+              count: 20,
+              dueDate: params.homeworkDate,
+              mode: "practice",
+              multiplicationTables: tables,
+            });
+            return {
+              ...item,
+              linked_assignment_id: assignment.id,
+              metadata: {
+                ...item.metadata,
+                linked_practice: "multiplication",
+              },
+            };
+          } catch (err) {
+            console.error("[school-homework] multiplication assignment create error:", err);
+          }
+        }
+
+        return item;
+      })
+    );
+
     const { error: itemError } = await supabase.from("school_homework_items").insert(
-      parsedItems.map((item, index) => ({
+      linkedItems.map((item, index) => ({
         homework_day_id: day.id,
         parent_id: parentId,
         child_id: params.childId,
@@ -225,6 +276,7 @@ export async function replaceSchoolHomeworkDay(params: {
         status: item.task_kind === "signature" ? "waiting_parent" : "pending",
         sort_order: index,
         metadata: item.metadata,
+        linked_assignment_id: item.linked_assignment_id || null,
         linked_spelling_list_id: item.linked_spelling_list_id || null,
       }))
     );

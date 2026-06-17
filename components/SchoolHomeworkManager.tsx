@@ -124,7 +124,11 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
               />
               <View style={styles.previewTextWrap}>
                 <Text style={styles.previewText}>{item.task_text}</Text>
-                <Text style={styles.previewMeta}>{item.task_kind.replace("_", " ")}</Text>
+                <Text style={styles.previewMeta}>
+                  {item.linked_assignment_id || item.linked_spelling_list_id
+                    ? `${item.task_kind} · linked practice`
+                    : item.task_kind}
+                </Text>
               </View>
             </TouchableOpacity>
           ))}

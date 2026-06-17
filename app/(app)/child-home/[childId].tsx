@@ -524,6 +524,14 @@ export default function ChildHomeScreen() {
   };
 
   const handleSchoolHomeworkItemPress = (item: SchoolHomeworkItem) => {
+    if (item.linked_assignment_id) {
+      router.push({
+        pathname: "/homework/[assignmentId]",
+        params: { assignmentId: item.linked_assignment_id, childId },
+      });
+      return;
+    }
+
     if (item.linked_spelling_list_id) {
       router.push({
         pathname: "/spelling/[listId]",
@@ -684,6 +692,12 @@ export default function ChildHomeScreen() {
 
   // One unified "Homework" feed: worksheet practice sessions (episodes) +
   // assigned work, ordered by when they were created/assigned.
+  const schoolLinkedAssignmentIds = new Set(
+    (schoolHomeworkDay?.school_homework_items || [])
+      .map((item) => item.linked_assignment_id)
+      .filter(Boolean)
+  );
+
   const homeworkFeed = [
     ...pendingEpisodes.map((e) => ({
       type: "episode" as const,
@@ -693,7 +707,7 @@ export default function ChildHomeScreen() {
       subtitle: e.status === "in_progress" ? "Reprendre" : "À faire",
       episode: e,
     })),
-    ...pendingAssignments.map((a) => {
+    ...pendingAssignments.filter((a) => !schoolLinkedAssignmentIds.has(a.id)).map((a) => {
       const isSpelling = a.subject === "spelling";
       const base = (a.focus || a.subject || "Practice") as string;
       const title = isSpelling
@@ -833,7 +847,7 @@ export default function ChildHomeScreen() {
           </Text>
           {(schoolHomeworkDay.school_homework_items || []).map((item) => {
             const done = item.status === "done";
-            const linked = !!item.linked_spelling_list_id;
+            const linked = !!item.linked_assignment_id || !!item.linked_spelling_list_id;
             return (
               <TouchableOpacity
                 key={item.id}
