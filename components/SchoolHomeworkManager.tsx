@@ -122,14 +122,19 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
 
       if (!manipulated.base64) throw new Error("Could not read selected image");
 
-      await addSchoolHomeworkImageMaterial({
+      const materialResult = await addSchoolHomeworkImageMaterial({
         item,
         dataUrl: `data:image/jpeg;base64,${manipulated.base64}`,
         imageBase64: manipulated.base64,
       });
       setEditingMaterialItemIds((current) => ({ ...current, [item.id]: false }));
       await fetchHomework();
-      Alert.alert("Photo saved", "The child can now open this homework material.");
+      Alert.alert(
+        materialResult.createdSpellingPractice ? "Spelling practice ready" : "Photo saved",
+        materialResult.createdSpellingPractice
+          ? "The child can now practice this spelling list."
+          : "The child can now open this homework material."
+      );
     } catch (err) {
       console.error("[school-homework-manager] attach photo error:", err);
       Alert.alert("Error", "Could not attach the photo.");

@@ -621,7 +621,7 @@ export async function addSchoolHomeworkImageMaterial(params: {
   imageBase64?: string;
   title?: string;
   bucket?: string;
-}): Promise<void> {
+}): Promise<{ createdSpellingPractice: boolean }> {
   if (!params.storagePath && !params.dataUrl) throw new Error("Image material is missing");
   await clearSchoolHomeworkMaterials(params.item.id);
 
@@ -640,10 +640,13 @@ export async function addSchoolHomeworkImageMaterial(params: {
     });
 
   if (insertError) throw insertError;
+  let createdSpellingPractice = false;
   if (params.item.task_kind === "spelling" && !params.item.linked_spelling_list_id && params.imageBase64) {
     await createSpellingPracticeFromImageMaterial(params.item, params.imageBase64);
+    createdSpellingPractice = true;
   }
   await markItemMaterialReady(params.item.id);
+  return { createdSpellingPractice };
 }
 
 async function clearSchoolHomeworkMaterials(itemId: string): Promise<void> {

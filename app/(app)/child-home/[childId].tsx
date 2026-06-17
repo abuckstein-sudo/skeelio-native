@@ -608,18 +608,20 @@ export default function ChildHomeScreen() {
   };
 
   const handleSchoolHomeworkItemPress = async (item: SchoolHomeworkItem) => {
-    if (item.linked_assignment_id) {
+    if (item.linked_spelling_list_id) {
       router.push({
-        pathname: "/homework/[assignmentId]",
-        params: { assignmentId: item.linked_assignment_id, childId },
+        pathname: "/spelling/[listId]",
+        params: item.linked_assignment_id
+          ? { listId: item.linked_spelling_list_id, childId, assignmentId: item.linked_assignment_id, mode: "practice" }
+          : { listId: item.linked_spelling_list_id, childId, mode: "practice" },
       });
       return;
     }
 
-    if (item.linked_spelling_list_id) {
+    if (item.linked_assignment_id) {
       router.push({
-        pathname: "/spelling/[listId]",
-        params: { listId: item.linked_spelling_list_id, childId, mode: "practice" },
+        pathname: "/homework/[assignmentId]",
+        params: { assignmentId: item.linked_assignment_id, childId },
       });
       return;
     }

@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from "react";
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, ActivityIndicator, ScrollView, SafeAreaView, KeyboardAvoidingView, Platform, Keyboard } from "react-native";
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, ActivityIndicator, ScrollView, SafeAreaView, KeyboardAvoidingView, Platform } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { supabase } from "@/lib/supabase";
 import { markAssignmentComplete, Assignment, CustomQuestion } from "@/lib/assignments";
@@ -102,6 +102,20 @@ function parseQuestion(text: string): { a: number; op: string; topic: Operation;
   };
 }
 
+function normalizeCustomQuestions(value: unknown): CustomQuestion[] {
+  return Array.isArray(value)
+    ? value.filter((question): question is CustomQuestion => {
+        const candidate = question as Partial<CustomQuestion>;
+        return (
+          typeof candidate?.question_text === "string" &&
+          typeof candidate?.correct_answer === "string" &&
+          typeof candidate?.subject === "string" &&
+          typeof candidate?.topic === "string"
+        );
+      })
+    : [];
+}
+
 export default function HomeworkScreen() {
   const router = useRouter();
   const { assignmentId, childId } = useLocalSearchParams<{ assignmentId: string; childId: string }>();
@@ -169,6 +183,18 @@ export default function HomeworkScreen() {
     }
 
     const assignment = data as Assignment & { progress_index?: number; correct_count?: number };
+
+    if (assignment.subject === "spelling") {
+      const listId = (assignment.custom_questions as any)?.list_id;
+      if (listId) {
+        router.replace({
+          pathname: "/spelling/[listId]",
+          params: { listId, childId, assignmentId, mode: assignment.mode || "practice" },
+        });
+        return;
+      }
+    }
+
     setAssignment(assignment);
     if (childId) {
       const { data: childData } = await supabase
@@ -178,7 +204,7 @@ export default function HomeworkScreen() {
         .single();
       setAppLanguage(appLanguageForChild(childData));
     }
-    const qs = assignment.custom_questions || [];
+    const qs = normalizeCustomQuestions(assignment.custom_questions);
     setQuestions(qs);
     setIsQuizMode(assignment.mode === "quiz");
     setHintUsedPerQuestion(new Array(qs.length).fill(false));
@@ -545,7 +571,7 @@ export default function HomeworkScreen() {
       <QuitButton />
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.container}>
         {/* Zone 1: Scrollable content (question + hint) — flex: 1 */}
-        <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled" onPress={() => Keyboard.dismiss()}>
+        <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
           {/* Progress */}
           <View style={styles.header}>
             <Text style={styles.progressText}>
