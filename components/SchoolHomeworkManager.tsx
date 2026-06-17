@@ -38,7 +38,8 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
   const [editingMaterialItemIds, setEditingMaterialItemIds] = useState<Record<string, boolean>>({});
   const [limitInput, setLimitInput] = useState("");
   const [savingLimit, setSavingLimit] = useState(false);
-  const weekDateKeys = schoolHomeworkWeekDateKeys();
+  const [weekAnchor, setWeekAnchor] = useState(new Date());
+  const weekDateKeys = schoolHomeworkWeekDateKeys(weekAnchor);
   const [homeworkDate, setHomeworkDate] = useState(todayDateKey());
 
   useEffect(() => {
@@ -195,8 +196,19 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
     }
   };
 
+  const shiftWeek = (direction: -1 | 1) => {
+    const next = new Date(weekAnchor);
+    next.setDate(next.getDate() + direction * 7);
+    const nextWeek = schoolHomeworkWeekDateKeys(next);
+    setWeekAnchor(next);
+    setHomeworkDate(nextWeek[0]);
+  };
+
   const items = homeworkDay?.school_homework_items || [];
   const setupItems = items.filter((item) => itemNeedsMaterial(item) || item.status === "waiting_parent");
+  const doneCount = items.filter((item) => item.status === "done").length;
+  const totalMinutes = Math.round((homeworkDay?.total_active_seconds || 0) / 60);
+  const waitingCount = items.filter((item) => item.status === "waiting_parent").length;
 
   return (
     <View style={styles.container}>
@@ -209,6 +221,9 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
       </View>
 
       <View style={styles.daySelector}>
+        <TouchableOpacity style={styles.weekButton} onPress={() => shiftWeek(-1)}>
+          <MaterialCommunityIcons name="chevron-left" size={18} color="#455a64" />
+        </TouchableOpacity>
         {weekDateKeys.map((dateKey) => {
           const selected = dateKey === homeworkDate;
           return (
@@ -223,6 +238,9 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
             </TouchableOpacity>
           );
         })}
+        <TouchableOpacity style={styles.weekButton} onPress={() => shiftWeek(1)}>
+          <MaterialCommunityIcons name="chevron-right" size={18} color="#455a64" />
+        </TouchableOpacity>
       </View>
 
       <TextInput
@@ -266,6 +284,14 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
 
       {items.length > 0 && (
         <View style={styles.previewList}>
+          <View style={styles.summaryBox}>
+            <Text style={styles.summaryTitle}>Homework summary</Text>
+            <Text style={styles.summaryText}>
+              {doneCount}/{items.length} complete
+              {totalMinutes > 0 ? ` · ${totalMinutes} min` : ""}
+              {waitingCount > 0 ? ` · ${waitingCount} waiting for adult` : ""}
+            </Text>
+          </View>
           {setupItems.length > 0 && (
             <View style={styles.setupBox}>
               <Text style={styles.setupTitle}>Needs info</Text>
@@ -431,6 +457,13 @@ const styles = StyleSheet.create({
     gap: 6,
     marginBottom: 12,
   },
+  weekButton: {
+    width: 32,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 8,
+    backgroundColor: "#eceff1",
+  },
   dayPill: {
     paddingHorizontal: 10,
     paddingVertical: 7,
@@ -524,6 +557,24 @@ const styles = StyleSheet.create({
   previewList: {
     marginTop: 14,
     gap: 8,
+  },
+  summaryBox: {
+    backgroundColor: "#eef7ee",
+    borderColor: "#c8e6c9",
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 10,
+  },
+  summaryTitle: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#2e7d32",
+  },
+  summaryText: {
+    marginTop: 3,
+    fontSize: 12,
+    lineHeight: 17,
+    color: "#2e7d32",
   },
   previewItem: {
     flexDirection: "row",
