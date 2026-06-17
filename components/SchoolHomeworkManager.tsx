@@ -7,6 +7,7 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  Image,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as ImageManipulator from "expo-image-manipulator";
@@ -25,6 +26,7 @@ import {
   setSchoolHomeworkItemDone,
   todayDateKey,
 } from "@/lib/schoolHomework";
+import { getChildHomeworkLimit, setChildHomeworkLimit, unlockChildHomeworkForToday } from "@/lib/homeworkTime";
 
 export default function SchoolHomeworkManager({ childId }: { childId: string }) {
   const [homeworkDay, setHomeworkDay] = useState<SchoolHomeworkDay | null>(null);
@@ -34,6 +36,8 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
   const [materialTextByItem, setMaterialTextByItem] = useState<Record<string, string>>({});
   const [materialSavingItemId, setMaterialSavingItemId] = useState<string | null>(null);
   const [editingMaterialItemIds, setEditingMaterialItemIds] = useState<Record<string, boolean>>({});
+  const [limitInput, setLimitInput] = useState("");
+  const [savingLimit, setSavingLimit] = useState(false);
   const weekDateKeys = schoolHomeworkWeekDateKeys();
   const [homeworkDate, setHomeworkDate] = useState(todayDateKey());
 
@@ -46,8 +50,10 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
     setLoading(true);
     try {
       const day = await listSchoolHomeworkDay(childId, homeworkDate);
+      const limit = await getChildHomeworkLimit(childId);
       setHomeworkDay(day);
       setRawInput(day?.raw_input || "");
+      setLimitInput(limit?.daily_limit_minutes ? String(limit.daily_limit_minutes) : "");
       setEditingMaterialItemIds({});
     } catch (err) {
       console.error("[school-homework-manager] fetch error:", err);
@@ -160,6 +166,35 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
     setEditingMaterialItemIds((current) => ({ ...current, [item.id]: true }));
   };
 
+  const handleSaveLimit = async () => {
+    const minutes = limitInput.trim() ? Number(limitInput.trim()) : null;
+    if (minutes !== null && (!Number.isInteger(minutes) || minutes < 1)) {
+      Alert.alert("Invalid limit", "Use a whole number of minutes, or leave it blank.");
+      return;
+    }
+
+    try {
+      setSavingLimit(true);
+      await setChildHomeworkLimit(childId, minutes);
+      Alert.alert("Saved", minutes ? `Daily homework limit set to ${minutes} minutes.` : "Daily homework limit removed.");
+    } catch (err) {
+      console.error("[school-homework-manager] save limit error:", err);
+      Alert.alert("Error", "Could not save the time limit.");
+    } finally {
+      setSavingLimit(false);
+    }
+  };
+
+  const handleUnlockToday = async () => {
+    try {
+      await unlockChildHomeworkForToday(childId);
+      Alert.alert("Unlocked", "This child can continue homework today.");
+    } catch (err) {
+      console.error("[school-homework-manager] unlock error:", err);
+      Alert.alert("Error", "Could not unlock homework time.");
+    }
+  };
+
   const items = homeworkDay?.school_homework_items || [];
   const setupItems = items.filter((item) => itemNeedsMaterial(item) || item.status === "waiting_parent");
 
@@ -208,6 +243,26 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
         <MaterialCommunityIcons name="clipboard-check-outline" size={18} color="#fff" />
         <Text style={styles.saveButtonText}>{saving ? "Saving..." : "Save homework"}</Text>
       </TouchableOpacity>
+
+      <View style={styles.limitPanel}>
+        <Text style={styles.limitTitle}>Daily homework limit</Text>
+        <View style={styles.limitRow}>
+          <TextInput
+            style={styles.limitInput}
+            value={limitInput}
+            onChangeText={setLimitInput}
+            keyboardType="number-pad"
+            placeholder="Minutes"
+            placeholderTextColor="#999"
+          />
+          <TouchableOpacity style={styles.limitButton} onPress={handleSaveLimit} disabled={savingLimit}>
+            <Text style={styles.limitButtonText}>{savingLimit ? "Saving..." : "Save"}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.unlockButton} onPress={handleUnlockToday}>
+            <Text style={styles.unlockButtonText}>Unlock today</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
 
       {items.length > 0 && (
         <View style={styles.previewList}>
@@ -261,6 +316,15 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
                     </TouchableOpacity>
                   )}
                 </View>
+                {!editingMaterial &&
+                  (item.school_homework_materials || [])[0]?.material_type === "image" &&
+                  (item.school_homework_materials || [])[0]?.text_content?.startsWith("data:image/") && (
+                    <Image
+                      source={{ uri: (item.school_homework_materials || [])[0].text_content || "" }}
+                      style={styles.materialPreviewImage}
+                      resizeMode="cover"
+                    />
+                  )}
                 {editingMaterial && (
                   <View style={styles.materialPanel}>
                     {materialReady && (
@@ -268,6 +332,14 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
                         Replacing this will keep the homework item and child progress, but update the attached material.
                       </Text>
                     )}
+                    {(item.school_homework_materials || [])[0]?.material_type === "image" &&
+                      (item.school_homework_materials || [])[0]?.text_content?.startsWith("data:image/") && (
+                        <Image
+                          source={{ uri: (item.school_homework_materials || [])[0].text_content || "" }}
+                          style={styles.materialPreviewImage}
+                          resizeMode="cover"
+                        />
+                      )}
                     <View style={styles.materialActions}>
                       <TouchableOpacity
                         style={styles.materialButton}
@@ -398,6 +470,57 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "700",
   },
+  limitPanel: {
+    marginTop: 12,
+    padding: 10,
+    borderRadius: 8,
+    backgroundColor: "#f8fafc",
+    borderWidth: 1,
+    borderColor: "#e0e7ef",
+  },
+  limitTitle: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#455a64",
+    marginBottom: 8,
+  },
+  limitRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  limitInput: {
+    width: 78,
+    borderWidth: 1,
+    borderColor: "#d7e2ec",
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    color: "#263238",
+    backgroundColor: "#fff",
+  },
+  limitButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: 8,
+    backgroundColor: "#2196f3",
+  },
+  limitButtonText: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#fff",
+  },
+  unlockButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: 8,
+    backgroundColor: "#eceff1",
+  },
+  unlockButtonText: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#455a64",
+  },
   previewList: {
     marginTop: 14,
     gap: 8,
@@ -476,6 +599,14 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     marginBottom: 8,
+  },
+  materialPreviewImage: {
+    width: 120,
+    height: 86,
+    borderRadius: 8,
+    marginTop: 8,
+    marginBottom: 8,
+    backgroundColor: "#e0e0e0",
   },
   materialReadyText: {
     marginBottom: 8,

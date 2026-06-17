@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, SafeAreaView, Modal, TextInput, Image } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, SafeAreaView, Modal, TextInput, Image, Alert } from "react-native";
 import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
 import { supabase } from "@/lib/supabase";
 import { getOperationStatus, OperationStatus, getWordProblemsStatus, WordProblemsStatus } from "@/lib/tutor/status";
@@ -23,6 +23,7 @@ import {
   todayDateKey,
   schoolHomeworkWeekDateKeys,
 } from "@/lib/schoolHomework";
+import { addHomeworkActiveSeconds, ChildHomeworkLimit, getChildHomeworkLimit } from "@/lib/homeworkTime";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import GiraffeBackground from "@/components/GiraffeBackground";
 import { appLanguageForChild } from "@/lib/appLanguage";
@@ -242,6 +243,9 @@ export default function ChildHomeScreen() {
   const [completedWorksheetSkills, setCompletedWorksheetSkills] = useState<WorksheetSkill[]>([]);
   const [schoolHomeworkWeekDays, setSchoolHomeworkWeekDays] = useState<(SchoolHomeworkDay | null)[]>([]);
   const [expandedHomeworkDate, setExpandedHomeworkDate] = useState(todayDateKey());
+  const [homeworkLimit, setHomeworkLimit] = useState<ChildHomeworkLimit | null>(null);
+  const [homeworkTimerSeconds, setHomeworkTimerSeconds] = useState(0);
+  const [limitWarningShown, setLimitWarningShown] = useState(false);
   const [materialModalVisible, setMaterialModalVisible] = useState(false);
   const [activeMaterial, setActiveMaterial] = useState<SchoolHomeworkMaterial | null>(null);
   const [activeMaterialUrl, setActiveMaterialUrl] = useState<string | null>(null);
@@ -324,9 +328,65 @@ export default function ChildHomeScreen() {
 
   const fetchSchoolHomework = useCallback(async () => {
     if (!childId) return;
-    const days = await listSchoolHomeworkWeek(childId);
+    const [days, limit] = await Promise.all([
+      listSchoolHomeworkWeek(childId),
+      getChildHomeworkLimit(childId),
+    ]);
     setSchoolHomeworkWeekDays(days);
+    setHomeworkLimit(limit);
+    const today = days.find((day) => day?.homework_date === todayDateKey());
+    setHomeworkTimerSeconds(today?.total_active_seconds || 0);
   }, [childId]);
+
+  useEffect(() => {
+    const today = schoolHomeworkWeekDays.find((day) => day?.homework_date === todayDateKey());
+    const items = today?.school_homework_items || [];
+    const limitMinutes = homeworkLimit?.daily_limit_minutes;
+    const unlockedToday = homeworkLimit?.unlocked_date === todayDateKey();
+    if (!today?.id || items.length === 0 || !limitMinutes || unlockedToday) return;
+
+    const limitSeconds = limitMinutes * 60;
+    if (homeworkTimerSeconds >= limitSeconds) {
+      router.replace("/children");
+      return;
+    }
+
+    let pendingSeconds = 0;
+    const timer = setInterval(() => {
+      pendingSeconds += 5;
+      setHomeworkTimerSeconds((current) => {
+        const next = current + 5;
+        if (!limitWarningShown && next >= Math.max(0, limitSeconds - 120) && next < limitSeconds) {
+          setLimitWarningShown(true);
+          Alert.alert("Almost time for a break", "You have a little homework time left. Finish the item you are on.");
+        }
+        if (next >= limitSeconds) {
+          void addHomeworkActiveSeconds(today.id, pendingSeconds).finally(() => {
+            Alert.alert("Homework time is finished", "Great effort today. Ask a parent if you need more time.");
+            router.replace("/children");
+          });
+          clearInterval(timer);
+        }
+        return Math.min(next, limitSeconds);
+      });
+    }, 5000);
+
+    const syncTimer = setInterval(() => {
+      if (pendingSeconds > 0) {
+        const seconds = pendingSeconds;
+        pendingSeconds = 0;
+        void addHomeworkActiveSeconds(today.id, seconds);
+      }
+    }, 30000);
+
+    return () => {
+      clearInterval(timer);
+      clearInterval(syncTimer);
+      if (pendingSeconds > 0) {
+        void addHomeworkActiveSeconds(today.id, pendingSeconds);
+      }
+    };
+  }, [schoolHomeworkWeekDays, homeworkLimit, homeworkTimerSeconds, limitWarningShown, router]);
 
   const refreshHomeworkFeed = useCallback(async () => {
     await Promise.all([
@@ -963,7 +1023,15 @@ export default function ChildHomeScreen() {
             </View>
             {activeMaterial?.material_type === "image" ? (
               activeMaterialUrl ? (
-                <Image source={{ uri: activeMaterialUrl }} style={styles.materialImage} resizeMode="contain" />
+                <ScrollView
+                  style={styles.materialImageZoom}
+                  contentContainerStyle={styles.materialImageZoomContent}
+                  maximumZoomScale={4}
+                  minimumZoomScale={1}
+                  centerContent
+                >
+                  <Image source={{ uri: activeMaterialUrl }} style={styles.materialImage} resizeMode="contain" />
+                </ScrollView>
               ) : (
                 <ActivityIndicator size="large" color="#2196f3" style={styles.materialLoader} />
               )
@@ -1048,6 +1116,14 @@ export default function ChildHomeScreen() {
         </View>
       )}
       </ScrollView>
+
+      {homeworkLimit?.daily_limit_minutes ? (
+        <View style={styles.homeworkTimerDebug}>
+          <Text style={styles.homeworkTimerDebugText}>
+            HW {Math.floor(homeworkTimerSeconds / 60)}:{String(homeworkTimerSeconds % 60).padStart(2, "0")} / {homeworkLimit.daily_limit_minutes}:00
+          </Text>
+        </View>
+      ) : null}
 
       <Modal
         visible={pinSetupVisible}
@@ -1451,6 +1527,16 @@ const styles = StyleSheet.create({
     height: 460,
     backgroundColor: "#f5f5f5",
   },
+  materialImageZoom: {
+    width: "100%",
+    height: 460,
+    backgroundColor: "#f5f5f5",
+  },
+  materialImageZoomContent: {
+    minHeight: 460,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   materialLoader: {
     height: 240,
   },
@@ -1462,6 +1548,20 @@ const styles = StyleSheet.create({
     fontSize: 17,
     lineHeight: 26,
     color: "#263238",
+  },
+  homeworkTimerDebug: {
+    position: "absolute",
+    right: 12,
+    bottom: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 8,
+    backgroundColor: "rgba(38,50,56,0.86)",
+  },
+  homeworkTimerDebugText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "800",
   },
   homeworkSection: {
     backgroundColor: "#fef3e0",
