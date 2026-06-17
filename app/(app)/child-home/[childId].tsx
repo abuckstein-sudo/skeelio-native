@@ -1055,6 +1055,14 @@ export default function ChildHomeScreen() {
                 <Text style={styles.materialText}>{activeMaterial?.text_content}</Text>
               </ScrollView>
             )}
+            {activeMaterial?.material_type === "image" && (
+              <TouchableOpacity
+                onPress={() => setMaterialModalVisible(false)}
+                style={styles.materialFloatingCloseButton}
+              >
+                <MaterialCommunityIcons name="close" size={24} color="#fff" />
+              </TouchableOpacity>
+            )}
           </View>
         </View>
       </Modal>
@@ -1542,6 +1550,17 @@ const styles = StyleSheet.create({
   },
   materialCloseButton: {
     padding: 4,
+  },
+  materialFloatingCloseButton: {
+    position: "absolute",
+    top: 18,
+    right: 18,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(0,0,0,0.62)",
   },
   materialImage: {
     width: "100%",

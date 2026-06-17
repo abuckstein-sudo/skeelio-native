@@ -1,6 +1,14 @@
 import { supabase } from "./supabase";
 import { createMathAssignment, createSpellingAssignment, deleteAssignment } from "./assignments";
-import { createSpellingItems, createSpellingList, listSpellingListsForChild, parseManualWords, SpellingList } from "./spelling";
+import {
+  createSpellingItems,
+  createSpellingList,
+  extractWordsFromImage,
+  listSpellingListsForChild,
+  parseManualWords,
+  SpellingLanguage,
+  SpellingList,
+} from "./spelling";
 
 export type SchoolHomeworkKind = "generic" | "reading" | "spelling" | "multiplication" | "division" | "signature";
 export type SchoolHomeworkStatus = "pending" | "done" | "waiting_parent";
@@ -572,11 +580,20 @@ export async function addSchoolHomeworkTextMaterial(params: {
 async function createSpellingPracticeFromMaterial(item: SchoolHomeworkItem, rawWords: string): Promise<void> {
   const words = parseManualWords(rawWords);
   if (words.length === 0) return;
+  await createLinkedSpellingPractice(item, words, "French");
+}
 
+async function createSpellingPracticeFromImageMaterial(item: SchoolHomeworkItem, imageBase64: string): Promise<void> {
+  const { words, language } = await extractWordsFromImage(imageBase64, "image/jpeg");
+  if (words.length === 0) return;
+  await createLinkedSpellingPractice(item, words, language);
+}
+
+async function createLinkedSpellingPractice(item: SchoolHomeworkItem, words: string[], language: SpellingLanguage): Promise<void> {
   const listNumber = (item.metadata as any)?.list_number;
   const title = listNumber ? `Liste ${listNumber}` : item.task_text;
-  const list = await createSpellingList(item.child_id, title, "French", "manual");
-  await createSpellingItems(list.id, item.child_id, words, "French");
+  const list = await createSpellingList(item.child_id, title, language, "manual");
+  await createSpellingItems(list.id, item.child_id, words, language);
   const assignment = await createSpellingAssignment(item.child_id, list.id, title, words.length, "practice");
 
   const { error } = await supabase
@@ -601,6 +618,7 @@ export async function addSchoolHomeworkImageMaterial(params: {
   item: SchoolHomeworkItem;
   storagePath?: string;
   dataUrl?: string;
+  imageBase64?: string;
   title?: string;
   bucket?: string;
 }): Promise<void> {
@@ -622,6 +640,9 @@ export async function addSchoolHomeworkImageMaterial(params: {
     });
 
   if (insertError) throw insertError;
+  if (params.item.task_kind === "spelling" && !params.item.linked_spelling_list_id && params.imageBase64) {
+    await createSpellingPracticeFromImageMaterial(params.item, params.imageBase64);
+  }
   await markItemMaterialReady(params.item.id);
 }
 

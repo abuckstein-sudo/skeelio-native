@@ -125,6 +125,7 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
       await addSchoolHomeworkImageMaterial({
         item,
         dataUrl: `data:image/jpeg;base64,${manipulated.base64}`,
+        imageBase64: manipulated.base64,
       });
       setEditingMaterialItemIds((current) => ({ ...current, [item.id]: false }));
       await fetchHomework();
