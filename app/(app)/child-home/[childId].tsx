@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, SafeAreaView, Modal, TextInput } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, SafeAreaView, Modal, TextInput, Image } from "react-native";
 import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
 import { supabase } from "@/lib/supabase";
 import { getOperationStatus, OperationStatus, getWordProblemsStatus, WordProblemsStatus } from "@/lib/tutor/status";
@@ -16,7 +16,9 @@ import {
   schoolHomeworkDateLabel,
   SchoolHomeworkDay,
   SchoolHomeworkItem,
+  SchoolHomeworkMaterial,
   setSchoolHomeworkItemDone,
+  signedSchoolHomeworkImageUrl,
   todayDateKey,
 } from "@/lib/schoolHomework";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -237,6 +239,10 @@ export default function ChildHomeScreen() {
   const [pendingEpisodes, setPendingEpisodes] = useState<any[]>([]);
   const [completedWorksheetSkills, setCompletedWorksheetSkills] = useState<WorksheetSkill[]>([]);
   const [schoolHomeworkDay, setSchoolHomeworkDay] = useState<SchoolHomeworkDay | null>(null);
+  const [materialModalVisible, setMaterialModalVisible] = useState(false);
+  const [activeMaterial, setActiveMaterial] = useState<SchoolHomeworkMaterial | null>(null);
+  const [activeMaterialUrl, setActiveMaterialUrl] = useState<string | null>(null);
+  const [activeMaterialTitle, setActiveMaterialTitle] = useState("");
   const [settingsModalVisible, setSettingsModalVisible] = useState(false);
   const [newPin, setNewPin] = useState("");
   const [confirmPin, setConfirmPin] = useState("");
@@ -523,7 +529,7 @@ export default function ChildHomeScreen() {
     });
   };
 
-  const handleSchoolHomeworkItemPress = (item: SchoolHomeworkItem) => {
+  const handleSchoolHomeworkItemPress = async (item: SchoolHomeworkItem) => {
     if (item.linked_assignment_id) {
       router.push({
         pathname: "/homework/[assignmentId]",
@@ -538,6 +544,18 @@ export default function ChildHomeScreen() {
         params: { listId: item.linked_spelling_list_id, childId, mode: "practice" },
       });
       return;
+    }
+
+    const material = (item.school_homework_materials || [])[0];
+    if (material) {
+      setActiveMaterial(material);
+      setActiveMaterialTitle(material.title || item.task_text);
+      setActiveMaterialUrl(null);
+      setMaterialModalVisible(true);
+      if (material.material_type === "image") {
+        const url = await signedSchoolHomeworkImageUrl(material);
+        setActiveMaterialUrl(url);
+      }
     }
   };
 
@@ -848,22 +866,26 @@ export default function ChildHomeScreen() {
           {(schoolHomeworkDay.school_homework_items || []).map((item) => {
             const done = item.status === "done";
             const linked = !!item.linked_assignment_id || !!item.linked_spelling_list_id;
+            const hasMaterial = (item.school_homework_materials || []).length > 0;
+            const needsMaterial = Boolean((item.metadata as any)?.needs_material) && !hasMaterial;
+            const canOpen = linked || hasMaterial;
             return (
               <TouchableOpacity
                 key={item.id}
                 style={[styles.schoolHomeworkItem, done && styles.schoolHomeworkItemDone]}
                 activeOpacity={0.8}
-                onPress={() => handleSchoolHomeworkItemPress(item)}
-                disabled={!linked}
+                onPress={() => void handleSchoolHomeworkItemPress(item)}
+                disabled={!canOpen}
               >
                 <TouchableOpacity
                   style={styles.schoolHomeworkCheck}
                   onPress={() => void handleSchoolHomeworkToggle(item)}
+                  disabled={item.status === "waiting_parent"}
                 >
                   <MaterialCommunityIcons
                     name={done ? "checkbox-marked-circle" : "checkbox-blank-circle-outline"}
                     size={26}
-                    color={done ? "#4caf50" : "#78909c"}
+                    color={done ? "#4caf50" : item.status === "waiting_parent" ? "#b0bec5" : "#78909c"}
                   />
                 </TouchableOpacity>
                 <View style={styles.schoolHomeworkTextWrap}>
@@ -875,17 +897,50 @@ export default function ChildHomeScreen() {
                       ? childLanguage === "fr" ? "à faire signer" : "waiting for parent"
                       : linked
                         ? childLanguage === "fr" ? "appuie pour pratiquer" : "tap to practice"
-                        : item.task_kind}
+                        : hasMaterial
+                          ? childLanguage === "fr" ? "appuie pour ouvrir" : "tap to open"
+                          : needsMaterial
+                            ? childLanguage === "fr" ? "un adulte doit ajouter le document" : "needs a document from an adult"
+                            : item.task_kind}
                   </Text>
                 </View>
-                {linked && (
-                  <MaterialCommunityIcons name="chevron-right" size={22} color="#90a4ae" />
+                {canOpen && (
+                  <MaterialCommunityIcons name={hasMaterial && !linked ? "file-document-outline" : "chevron-right"} size={22} color="#90a4ae" />
                 )}
               </TouchableOpacity>
             );
           })}
         </View>
       )}
+
+      <Modal
+        visible={materialModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setMaterialModalVisible(false)}
+      >
+        <View style={styles.materialModalBackdrop}>
+          <View style={styles.materialModal}>
+            <View style={styles.materialModalHeader}>
+              <Text style={styles.materialModalTitle}>{activeMaterialTitle}</Text>
+              <TouchableOpacity onPress={() => setMaterialModalVisible(false)} style={styles.materialCloseButton}>
+                <MaterialCommunityIcons name="close" size={22} color="#455a64" />
+              </TouchableOpacity>
+            </View>
+            {activeMaterial?.material_type === "image" ? (
+              activeMaterialUrl ? (
+                <Image source={{ uri: activeMaterialUrl }} style={styles.materialImage} resizeMode="contain" />
+              ) : (
+                <ActivityIndicator size="large" color="#2196f3" style={styles.materialLoader} />
+              )
+            ) : (
+              <ScrollView style={styles.materialTextScroll}>
+                <Text style={styles.materialText}>{activeMaterial?.text_content}</Text>
+              </ScrollView>
+            )}
+          </View>
+        </View>
+      </Modal>
 
       {/* Homework Section (worksheet practice + assigned work, one feed) */}
       {homeworkFeed.length > 0 && (
@@ -1299,6 +1354,54 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#78909c",
     textTransform: "capitalize",
+  },
+  materialModalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    justifyContent: "center",
+    padding: 18,
+  },
+  materialModal: {
+    maxHeight: "86%",
+    borderRadius: 12,
+    backgroundColor: "#fff",
+    overflow: "hidden",
+  },
+  materialModalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#eceff1",
+  },
+  materialModalTitle: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#263238",
+  },
+  materialCloseButton: {
+    padding: 4,
+  },
+  materialImage: {
+    width: "100%",
+    height: 460,
+    backgroundColor: "#f5f5f5",
+  },
+  materialLoader: {
+    height: 240,
+  },
+  materialTextScroll: {
+    maxHeight: 460,
+    padding: 16,
+  },
+  materialText: {
+    fontSize: 17,
+    lineHeight: 26,
+    color: "#263238",
   },
   homeworkSection: {
     backgroundColor: "#fef3e0",

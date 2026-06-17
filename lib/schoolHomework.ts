@@ -19,6 +19,21 @@ export type SchoolHomeworkItem = {
   linked_spelling_list_id: string | null;
   completed_at: string | null;
   completed_by: "child" | "adult" | null;
+  school_homework_materials?: SchoolHomeworkMaterial[];
+};
+
+export type SchoolHomeworkMaterial = {
+  id: string;
+  homework_item_id: string;
+  homework_day_id: string;
+  parent_id: string;
+  child_id: string;
+  material_type: "image" | "text";
+  title: string | null;
+  storage_bucket: string | null;
+  storage_path: string | null;
+  text_content: string | null;
+  created_at: string;
 };
 
 export type SchoolHomeworkDay = {
@@ -134,7 +149,7 @@ export function parseSchoolHomeworkInput(rawInput: string, spellingLists: Spelli
         return {
           task_text: taskText,
           task_kind: "signature" as const,
-          metadata: { requires_parent_signature: true },
+          metadata: { requires_parent_signature: true, needs_material: true },
         };
       }
 
@@ -295,7 +310,7 @@ export async function replaceSchoolHomeworkDay(params: {
 export async function listSchoolHomeworkDay(childId: string, homeworkDate = todayDateKey()): Promise<SchoolHomeworkDay | null> {
   const { data, error } = await supabase
     .from("school_homework_days")
-    .select("*, school_homework_items(*)")
+    .select("*, school_homework_items(*, school_homework_materials(*))")
     .eq("child_id", childId)
     .eq("homework_date", homeworkDate)
     .neq("status", "archived")
@@ -307,7 +322,12 @@ export async function listSchoolHomeworkDay(childId: string, homeworkDate = toda
   }
 
   if (!data) return null;
-  const items = ((data as any).school_homework_items || []) as SchoolHomeworkItem[];
+  const items = (((data as any).school_homework_items || []) as SchoolHomeworkItem[]).map((item) => ({
+    ...item,
+    school_homework_materials: (item.school_homework_materials || []).sort((a, b) =>
+      new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+    ),
+  }));
   return {
     ...(data as SchoolHomeworkDay),
     school_homework_items: items.sort((a, b) => a.sort_order - b.sort_order),
@@ -336,4 +356,90 @@ export async function setSchoolHomeworkItemDone(
     .eq("id", item.id);
 
   if (error) throw error;
+}
+
+export function itemNeedsMaterial(item: Pick<SchoolHomeworkItem, "task_kind" | "metadata" | "school_homework_materials">): boolean {
+  const hasMaterial = (item.school_homework_materials || []).length > 0;
+  return Boolean((item.metadata as any)?.needs_material) && !hasMaterial;
+}
+
+export async function addSchoolHomeworkTextMaterial(params: {
+  item: SchoolHomeworkItem;
+  title?: string;
+  textContent: string;
+}): Promise<void> {
+  const content = params.textContent.trim();
+  if (!content) throw new Error("Material text is empty");
+
+  const { error: insertError } = await supabase
+    .from("school_homework_materials")
+    .insert({
+      homework_item_id: params.item.id,
+      homework_day_id: params.item.homework_day_id,
+      parent_id: params.item.parent_id,
+      child_id: params.item.child_id,
+      material_type: "text",
+      title: params.title || params.item.task_text,
+      text_content: content,
+    });
+
+  if (insertError) throw insertError;
+  await markItemMaterialReady(params.item.id);
+}
+
+export async function addSchoolHomeworkImageMaterial(params: {
+  item: SchoolHomeworkItem;
+  storagePath: string;
+  title?: string;
+  bucket?: string;
+}): Promise<void> {
+  const { error: insertError } = await supabase
+    .from("school_homework_materials")
+    .insert({
+      homework_item_id: params.item.id,
+      homework_day_id: params.item.homework_day_id,
+      parent_id: params.item.parent_id,
+      child_id: params.item.child_id,
+      material_type: "image",
+      title: params.title || params.item.task_text,
+      storage_bucket: params.bucket || "worksheets",
+      storage_path: params.storagePath,
+    });
+
+  if (insertError) throw insertError;
+  await markItemMaterialReady(params.item.id);
+}
+
+async function markItemMaterialReady(itemId: string): Promise<void> {
+  const { data: item, error: readError } = await supabase
+    .from("school_homework_items")
+    .select("metadata")
+    .eq("id", itemId)
+    .single();
+
+  if (readError) throw readError;
+  const metadata = { ...((item as any)?.metadata || {}), needs_material: false };
+  const { error: updateError } = await supabase
+    .from("school_homework_items")
+    .update({ metadata, updated_at: new Date().toISOString() })
+    .eq("id", itemId);
+
+  if (updateError) throw updateError;
+}
+
+export async function signedSchoolHomeworkImageUrl(material: SchoolHomeworkMaterial): Promise<string | null> {
+  if (material.material_type !== "image" || !material.storage_bucket || !material.storage_path) {
+    return null;
+  }
+
+  const { data, error } = await supabase.storage
+    .from(material.storage_bucket)
+    .createSignedUrl(material.storage_path, 60 * 10);
+
+  if (error) {
+    console.error("[school-homework] signed image url error:", error);
+    return null;
+  }
+
+  return data.signedUrl;
 }
