@@ -11,6 +11,14 @@ import {
   worksheetSkillProgressText,
   WorksheetSkill,
 } from "@/lib/worksheetSkills";
+import {
+  listSchoolHomeworkDay,
+  schoolHomeworkDateLabel,
+  SchoolHomeworkDay,
+  SchoolHomeworkItem,
+  setSchoolHomeworkItemDone,
+  todayDateKey,
+} from "@/lib/schoolHomework";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import GiraffeBackground from "@/components/GiraffeBackground";
 import { appLanguageForChild } from "@/lib/appLanguage";
@@ -228,6 +236,7 @@ export default function ChildHomeScreen() {
   const [completedAssignments, setCompletedAssignments] = useState<Assignment[]>([]);
   const [pendingEpisodes, setPendingEpisodes] = useState<any[]>([]);
   const [completedWorksheetSkills, setCompletedWorksheetSkills] = useState<WorksheetSkill[]>([]);
+  const [schoolHomeworkDay, setSchoolHomeworkDay] = useState<SchoolHomeworkDay | null>(null);
   const [settingsModalVisible, setSettingsModalVisible] = useState(false);
   const [newPin, setNewPin] = useState("");
   const [confirmPin, setConfirmPin] = useState("");
@@ -304,13 +313,20 @@ export default function ChildHomeScreen() {
     );
   }, [childId]);
 
+  const fetchSchoolHomework = useCallback(async () => {
+    if (!childId) return;
+    const day = await listSchoolHomeworkDay(childId, todayDateKey());
+    setSchoolHomeworkDay(day);
+  }, [childId]);
+
   const refreshHomeworkFeed = useCallback(async () => {
     await Promise.all([
       fetchPendingAssignments(),
       fetchPendingEpisodes(),
       fetchCompletedWorksheetSkills(),
+      fetchSchoolHomework(),
     ]);
-  }, [fetchPendingAssignments, fetchPendingEpisodes, fetchCompletedWorksheetSkills]);
+  }, [fetchPendingAssignments, fetchPendingEpisodes, fetchCompletedWorksheetSkills, fetchSchoolHomework]);
 
   useEffect(() => {
     if (childId) {
@@ -505,6 +521,26 @@ export default function ChildHomeScreen() {
         childId: childId,
       },
     });
+  };
+
+  const handleSchoolHomeworkItemPress = (item: SchoolHomeworkItem) => {
+    if (item.linked_spelling_list_id) {
+      router.push({
+        pathname: "/spelling/[listId]",
+        params: { listId: item.linked_spelling_list_id, childId, mode: "practice" },
+      });
+      return;
+    }
+  };
+
+  const handleSchoolHomeworkToggle = async (item: SchoolHomeworkItem) => {
+    try {
+      await setSchoolHomeworkItemDone(item, item.status !== "done", "child");
+      await fetchSchoolHomework();
+    } catch (err) {
+      console.error("[child-home] school homework toggle error:", err);
+      alert("Could not update homework");
+    }
   };
 
   const handleAvatarSelect = async (avatarId: string) => {
@@ -789,6 +825,53 @@ export default function ChildHomeScreen() {
           {pendingAssignments.length > 0 || pendingEpisodes.length > 0 ? setupCopy.greetingReady : setupCopy.greetingChoice}
         </Text>
       </View>
+
+      {schoolHomeworkDay && (schoolHomeworkDay.school_homework_items || []).length > 0 && (
+        <View style={styles.schoolHomeworkSection}>
+          <Text style={styles.schoolHomeworkDate}>
+            {schoolHomeworkDateLabel(schoolHomeworkDay.homework_date, childLanguage)}
+          </Text>
+          {(schoolHomeworkDay.school_homework_items || []).map((item) => {
+            const done = item.status === "done";
+            const linked = !!item.linked_spelling_list_id;
+            return (
+              <TouchableOpacity
+                key={item.id}
+                style={[styles.schoolHomeworkItem, done && styles.schoolHomeworkItemDone]}
+                activeOpacity={0.8}
+                onPress={() => handleSchoolHomeworkItemPress(item)}
+                disabled={!linked}
+              >
+                <TouchableOpacity
+                  style={styles.schoolHomeworkCheck}
+                  onPress={() => void handleSchoolHomeworkToggle(item)}
+                >
+                  <MaterialCommunityIcons
+                    name={done ? "checkbox-marked-circle" : "checkbox-blank-circle-outline"}
+                    size={26}
+                    color={done ? "#4caf50" : "#78909c"}
+                  />
+                </TouchableOpacity>
+                <View style={styles.schoolHomeworkTextWrap}>
+                  <Text style={[styles.schoolHomeworkText, done && styles.schoolHomeworkTextDone]}>
+                    {item.task_text}
+                  </Text>
+                  <Text style={styles.schoolHomeworkMeta}>
+                    {item.status === "waiting_parent"
+                      ? childLanguage === "fr" ? "à faire signer" : "waiting for parent"
+                      : linked
+                        ? childLanguage === "fr" ? "appuie pour pratiquer" : "tap to practice"
+                        : item.task_kind}
+                  </Text>
+                </View>
+                {linked && (
+                  <MaterialCommunityIcons name="chevron-right" size={22} color="#90a4ae" />
+                )}
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      )}
 
       {/* Homework Section (worksheet practice + assigned work, one feed) */}
       {homeworkFeed.length > 0 && (
@@ -1155,6 +1238,53 @@ const styles = StyleSheet.create({
     color: "#d32f2f",
     marginBottom: 20,
     textAlign: "center",
+  },
+  schoolHomeworkSection: {
+    backgroundColor: "#fff",
+    borderRadius: 8,
+    padding: 16,
+    marginBottom: 18,
+    borderWidth: 1,
+    borderColor: "#e0e0e0",
+  },
+  schoolHomeworkDate: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: "#263238",
+    marginBottom: 12,
+    textTransform: "capitalize",
+  },
+  schoolHomeworkItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    borderTopColor: "#f0f0f0",
+  },
+  schoolHomeworkItemDone: {
+    opacity: 0.72,
+  },
+  schoolHomeworkCheck: {
+    padding: 2,
+  },
+  schoolHomeworkTextWrap: {
+    flex: 1,
+  },
+  schoolHomeworkText: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#263238",
+  },
+  schoolHomeworkTextDone: {
+    textDecorationLine: "line-through",
+    color: "#607d8b",
+  },
+  schoolHomeworkMeta: {
+    marginTop: 2,
+    fontSize: 12,
+    color: "#78909c",
+    textTransform: "capitalize",
   },
   homeworkSection: {
     backgroundColor: "#fef3e0",
