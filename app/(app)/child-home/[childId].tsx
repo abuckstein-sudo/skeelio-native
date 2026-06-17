@@ -12,14 +12,16 @@ import {
   WorksheetSkill,
 } from "@/lib/worksheetSkills";
 import {
-  listSchoolHomeworkDay,
+  listSchoolHomeworkWeek,
   schoolHomeworkDateLabel,
+  schoolHomeworkShortDateLabel,
   SchoolHomeworkDay,
   SchoolHomeworkItem,
   SchoolHomeworkMaterial,
   setSchoolHomeworkItemDone,
   signedSchoolHomeworkImageUrl,
   todayDateKey,
+  schoolHomeworkWeekDateKeys,
 } from "@/lib/schoolHomework";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import GiraffeBackground from "@/components/GiraffeBackground";
@@ -238,7 +240,8 @@ export default function ChildHomeScreen() {
   const [completedAssignments, setCompletedAssignments] = useState<Assignment[]>([]);
   const [pendingEpisodes, setPendingEpisodes] = useState<any[]>([]);
   const [completedWorksheetSkills, setCompletedWorksheetSkills] = useState<WorksheetSkill[]>([]);
-  const [schoolHomeworkDay, setSchoolHomeworkDay] = useState<SchoolHomeworkDay | null>(null);
+  const [schoolHomeworkWeekDays, setSchoolHomeworkWeekDays] = useState<(SchoolHomeworkDay | null)[]>([]);
+  const [expandedHomeworkDate, setExpandedHomeworkDate] = useState(todayDateKey());
   const [materialModalVisible, setMaterialModalVisible] = useState(false);
   const [activeMaterial, setActiveMaterial] = useState<SchoolHomeworkMaterial | null>(null);
   const [activeMaterialUrl, setActiveMaterialUrl] = useState<string | null>(null);
@@ -321,8 +324,8 @@ export default function ChildHomeScreen() {
 
   const fetchSchoolHomework = useCallback(async () => {
     if (!childId) return;
-    const day = await listSchoolHomeworkDay(childId, todayDateKey());
-    setSchoolHomeworkDay(day);
+    const days = await listSchoolHomeworkWeek(childId);
+    setSchoolHomeworkWeekDays(days);
   }, [childId]);
 
   const refreshHomeworkFeed = useCallback(async () => {
@@ -707,11 +710,14 @@ export default function ChildHomeScreen() {
 
   const backgroundKey = child?.home_background || "giraffe";
   const bgOption = BACKGROUND_OPTIONS.find((bg) => bg.id === backgroundKey);
+  const schoolWeekDateKeys = schoolHomeworkWeekDateKeys();
+  const schoolHomeworkByDate = new Map(schoolHomeworkWeekDays.map((day) => [day?.homework_date, day]));
 
   // One unified "Homework" feed: worksheet practice sessions (episodes) +
   // assigned work, ordered by when they were created/assigned.
   const schoolLinkedAssignmentIds = new Set(
-    (schoolHomeworkDay?.school_homework_items || [])
+    schoolHomeworkWeekDays
+      .flatMap((day) => day?.school_homework_items || [])
       .map((item) => item.linked_assignment_id)
       .filter(Boolean)
   );
@@ -858,12 +864,37 @@ export default function ChildHomeScreen() {
         </Text>
       </View>
 
-      {schoolHomeworkDay && (schoolHomeworkDay.school_homework_items || []).length > 0 && (
+      {schoolWeekDateKeys.length > 0 && (
         <View style={styles.schoolHomeworkSection}>
-          <Text style={styles.schoolHomeworkDate}>
-            {schoolHomeworkDateLabel(schoolHomeworkDay.homework_date, childLanguage)}
-          </Text>
-          {(schoolHomeworkDay.school_homework_items || []).map((item) => {
+          {schoolWeekDateKeys.map((dateKey) => {
+            const day = schoolHomeworkByDate.get(dateKey) || null;
+            const items = day?.school_homework_items || [];
+            const doneCount = items.filter((item) => item.status === "done").length;
+            const expanded = expandedHomeworkDate === dateKey;
+            return (
+              <View key={dateKey} style={styles.schoolHomeworkDayGroup}>
+                <TouchableOpacity
+                  style={styles.schoolHomeworkDayHeader}
+                  onPress={() => setExpandedHomeworkDate(expanded ? "" : dateKey)}
+                >
+                  <Text style={styles.schoolHomeworkDate}>
+                    {expanded ? schoolHomeworkDateLabel(dateKey, childLanguage) : schoolHomeworkShortDateLabel(dateKey, childLanguage)}
+                  </Text>
+                  <View style={styles.schoolHomeworkDayStatus}>
+                    <Text style={styles.schoolHomeworkDayCount}>{doneCount}/{items.length}</Text>
+                    <MaterialCommunityIcons
+                      name={expanded ? "chevron-up" : "chevron-down"}
+                      size={20}
+                      color="#78909c"
+                    />
+                  </View>
+                </TouchableOpacity>
+                {expanded && items.length === 0 && (
+                  <Text style={styles.schoolHomeworkEmpty}>
+                    {childLanguage === "fr" ? "Pas de devoirs enregistrés" : "No homework saved"}
+                  </Text>
+                )}
+                {expanded && items.map((item) => {
             const done = item.status === "done";
             const linked = !!item.linked_assignment_id || !!item.linked_spelling_list_id;
             const hasMaterial = (item.school_homework_materials || []).length > 0;
@@ -908,6 +939,9 @@ export default function ChildHomeScreen() {
                   <MaterialCommunityIcons name={hasMaterial && !linked ? "file-document-outline" : "chevron-right"} size={22} color="#90a4ae" />
                 )}
               </TouchableOpacity>
+            );
+                })}
+              </View>
             );
           })}
         </View>
@@ -1316,11 +1350,37 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#e0e0e0",
   },
+  schoolHomeworkDayGroup: {
+    borderTopWidth: 1,
+    borderTopColor: "#f0f0f0",
+  },
+  schoolHomeworkDayHeader: {
+    minHeight: 46,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  schoolHomeworkDayStatus: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  schoolHomeworkDayCount: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#607d8b",
+  },
+  schoolHomeworkEmpty: {
+    paddingBottom: 12,
+    fontSize: 13,
+    color: "#78909c",
+  },
   schoolHomeworkDate: {
-    fontSize: 18,
+    flex: 1,
+    fontSize: 16,
     fontWeight: "800",
     color: "#263238",
-    marginBottom: 12,
     textTransform: "capitalize",
   },
   schoolHomeworkItem: {

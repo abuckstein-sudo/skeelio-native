@@ -19,6 +19,8 @@ import {
   listSchoolHomeworkDay,
   replaceSchoolHomeworkDay,
   schoolHomeworkDateLabel,
+  schoolHomeworkShortDateLabel,
+  schoolHomeworkWeekDateKeys,
   SchoolHomeworkDay,
   SchoolHomeworkItem,
   setSchoolHomeworkItemDone,
@@ -33,11 +35,13 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
   const [saving, setSaving] = useState(false);
   const [materialTextByItem, setMaterialTextByItem] = useState<Record<string, string>>({});
   const [materialSavingItemId, setMaterialSavingItemId] = useState<string | null>(null);
-  const homeworkDate = todayDateKey();
+  const [editingMaterialItemIds, setEditingMaterialItemIds] = useState<Record<string, boolean>>({});
+  const weekDateKeys = schoolHomeworkWeekDateKeys();
+  const [homeworkDate, setHomeworkDate] = useState(todayDateKey());
 
   useEffect(() => {
     void fetchHomework();
-  }, [childId]);
+  }, [childId, homeworkDate]);
 
   const fetchHomework = async () => {
     if (!childId) return;
@@ -46,6 +50,7 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
       const day = await listSchoolHomeworkDay(childId, homeworkDate);
       setHomeworkDay(day);
       setRawInput(day?.raw_input || "");
+      setEditingMaterialItemIds({});
     } catch (err) {
       console.error("[school-homework-manager] fetch error:", err);
     } finally {
@@ -68,7 +73,7 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
         sourceType: "manual",
       });
       setHomeworkDay(saved);
-      Alert.alert("Saved", "Today's school homework is ready on the child home screen.");
+      Alert.alert("Saved", "School homework is ready on the child home screen.");
     } catch (err) {
       console.error("[school-homework-manager] save error:", err);
       Alert.alert("Error", "Could not save school homework.");
@@ -90,6 +95,12 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
   const handleAttachPhoto = async (item: SchoolHomeworkItem) => {
     try {
       setMaterialSavingItemId(item.id);
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert("Permission needed", "Allow photo library access to attach a homework photo.");
+        return;
+      }
+
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ["images"],
         allowsEditing: false,
@@ -114,7 +125,9 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
       if (uploadError) throw uploadError;
 
       await addSchoolHomeworkImageMaterial({ item, storagePath: path });
+      setEditingMaterialItemIds((current) => ({ ...current, [item.id]: false }));
       await fetchHomework();
+      Alert.alert("Photo saved", "The child can now open this homework material.");
     } catch (err) {
       console.error("[school-homework-manager] attach photo error:", err);
       Alert.alert("Error", "Could not attach the photo.");
@@ -134,6 +147,7 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
       setMaterialSavingItemId(item.id);
       await addSchoolHomeworkTextMaterial({ item, textContent });
       setMaterialTextByItem((current) => ({ ...current, [item.id]: "" }));
+      setEditingMaterialItemIds((current) => ({ ...current, [item.id]: false }));
       await fetchHomework();
     } catch (err) {
       console.error("[school-homework-manager] add text material error:", err);
@@ -154,6 +168,23 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
           <Text style={styles.dateText}>{schoolHomeworkDateLabel(homeworkDate)}</Text>
         </View>
         {loading ? <ActivityIndicator size="small" color="#2196f3" /> : null}
+      </View>
+
+      <View style={styles.daySelector}>
+        {weekDateKeys.map((dateKey) => {
+          const selected = dateKey === homeworkDate;
+          return (
+            <TouchableOpacity
+              key={dateKey}
+              style={[styles.dayPill, selected && styles.dayPillSelected]}
+              onPress={() => setHomeworkDate(dateKey)}
+            >
+              <Text style={[styles.dayPillText, selected && styles.dayPillTextSelected]}>
+                {schoolHomeworkShortDateLabel(dateKey)}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
       </View>
 
       <TextInput
@@ -199,20 +230,41 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
                 />
               </TouchableOpacity>
               <View style={styles.previewTextWrap}>
+                {(() => {
+                  const materialReady = (item.school_homework_materials || []).length > 0;
+                  const needsSetup = itemNeedsMaterial(item);
+                  const editingMaterial = Boolean(editingMaterialItemIds[item.id]) || needsSetup;
+                  return (
+                    <>
                 <Text style={styles.previewText}>{item.task_text}</Text>
-                <Text style={styles.previewMeta}>
-                  {item.linked_assignment_id || item.linked_spelling_list_id
-                    ? `${item.task_kind} · linked practice`
-                    : (item.school_homework_materials || []).length > 0
-                      ? `${item.task_kind} · material ready`
-                      : itemNeedsMaterial(item)
-                        ? `${item.task_kind} · needs material`
-                        : item.status === "waiting_parent"
-                          ? "waiting for parent"
-                          : item.task_kind}
-                </Text>
-                {(itemNeedsMaterial(item) || item.task_kind === "reading" || item.task_kind === "signature") && (
+                <View style={styles.previewMetaRow}>
+                  <Text style={styles.previewMeta}>
+                    {item.linked_assignment_id || item.linked_spelling_list_id
+                      ? `${item.task_kind} · linked practice`
+                      : materialReady
+                        ? `${item.task_kind} · material ready`
+                        : needsSetup
+                          ? `${item.task_kind} · needs material`
+                          : item.status === "waiting_parent"
+                            ? "waiting for parent"
+                            : item.task_kind}
+                  </Text>
+                  {(materialReady || item.task_kind === "reading" || item.task_kind === "signature") && !editingMaterial && (
+                    <TouchableOpacity
+                      style={styles.editMaterialButton}
+                      onPress={() => setEditingMaterialItemIds((current) => ({ ...current, [item.id]: true }))}
+                    >
+                      <Text style={styles.editMaterialText}>{materialReady ? "Edit" : "Add"}</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+                {editingMaterial && (
                   <View style={styles.materialPanel}>
+                    {materialReady && (
+                      <Text style={styles.materialReadyText}>
+                        Replacing this will keep the homework item and child progress, but update the attached material.
+                      </Text>
+                    )}
                     <View style={styles.materialActions}>
                       <TouchableOpacity
                         style={styles.materialButton}
@@ -241,8 +293,19 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
                         {materialSavingItemId === item.id ? "Saving..." : "Save text"}
                       </Text>
                     </TouchableOpacity>
+                    {materialReady && (
+                      <TouchableOpacity
+                        style={styles.cancelEditButton}
+                        onPress={() => setEditingMaterialItemIds((current) => ({ ...current, [item.id]: false }))}
+                      >
+                        <Text style={styles.cancelEditText}>Cancel</Text>
+                      </TouchableOpacity>
+                    )}
                   </View>
                 )}
+                    </>
+                  );
+                })()}
               </View>
             </View>
           ))}
@@ -286,6 +349,33 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
     backgroundColor: "#fafafa",
+  },
+  daySelector: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+    marginBottom: 12,
+  },
+  dayPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 8,
+    backgroundColor: "#f5f5f5",
+    borderWidth: 1,
+    borderColor: "#e0e0e0",
+  },
+  dayPillSelected: {
+    backgroundColor: "#e3f2fd",
+    borderColor: "#90caf9",
+  },
+  dayPillText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#607d8b",
+    textTransform: "capitalize",
+  },
+  dayPillTextSelected: {
+    color: "#1565c0",
   },
   saveButton: {
     marginTop: 12,
@@ -334,6 +424,24 @@ const styles = StyleSheet.create({
     color: "#777",
     textTransform: "capitalize",
   },
+  previewMetaRow: {
+    marginTop: 2,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+  },
+  editMaterialButton: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    backgroundColor: "#eceff1",
+  },
+  editMaterialText: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#455a64",
+  },
   setupBox: {
     backgroundColor: "#fff8e1",
     borderColor: "#ffe0b2",
@@ -365,6 +473,12 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     marginBottom: 8,
+  },
+  materialReadyText: {
+    marginBottom: 8,
+    fontSize: 12,
+    lineHeight: 17,
+    color: "#607d8b",
   },
   materialButton: {
     flexDirection: "row",
@@ -404,5 +518,16 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "700",
     color: "#fff",
+  },
+  cancelEditButton: {
+    marginTop: 8,
+    alignSelf: "flex-start",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  cancelEditText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#607d8b",
   },
 });

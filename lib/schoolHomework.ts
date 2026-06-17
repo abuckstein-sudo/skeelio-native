@@ -67,12 +67,37 @@ export function todayDateKey(date = new Date()): string {
   return `${year}-${month}-${day}`;
 }
 
+function dateFromKey(dateKey: string): Date {
+  return new Date(`${dateKey}T12:00:00`);
+}
+
+export function schoolHomeworkWeekDateKeys(anchor = new Date()): string[] {
+  const date = new Date(anchor);
+  const day = date.getDay();
+  const mondayOffset = day === 0 ? -6 : 1 - day;
+  date.setDate(date.getDate() + mondayOffset);
+  return Array.from({ length: 7 }, (_, index) => {
+    const current = new Date(date);
+    current.setDate(date.getDate() + index);
+    return todayDateKey(current);
+  });
+}
+
 export function schoolHomeworkDateLabel(dateKey: string, locale: "en" | "fr" = "en"): string {
-  const date = new Date(`${dateKey}T12:00:00`);
+  const date = dateFromKey(dateKey);
   return date.toLocaleDateString(locale === "fr" ? "fr-FR" : "en-US", {
     weekday: "long",
     year: "numeric",
     month: "long",
+    day: "numeric",
+  });
+}
+
+export function schoolHomeworkShortDateLabel(dateKey: string, locale: "en" | "fr" = "en"): string {
+  const date = dateFromKey(dateKey);
+  return date.toLocaleDateString(locale === "fr" ? "fr-FR" : "en-US", {
+    weekday: "short",
+    month: "short",
     day: "numeric",
   });
 }
@@ -135,6 +160,41 @@ function multiplicationTables(taskText: string): number[] {
   return [];
 }
 
+function levenshteinDistance(a: string, b: string): number {
+  const previous = Array.from({ length: b.length + 1 }, (_, index) => index);
+  const current = Array.from({ length: b.length + 1 }, () => 0);
+
+  for (let i = 1; i <= a.length; i += 1) {
+    current[0] = i;
+    for (let j = 1; j <= b.length; j += 1) {
+      current[j] = Math.min(
+        previous[j] + 1,
+        current[j - 1] + 1,
+        previous[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)
+      );
+    }
+    previous.splice(0, previous.length, ...current);
+  }
+
+  return previous[b.length];
+}
+
+function looksLikeSignatureTask(normalized: string): boolean {
+  if (/(faire signer|signer|signature|sign quiz|parent signature)/.test(normalized)) return true;
+
+  const words = normalized.split(/\W+/).filter(Boolean);
+  const hasSchoolProofTarget = /\b(quiz|interro|controle|test|evaluation|mot|cahier)\b/.test(normalized);
+  const hasFaireTypo = words.some((word) => levenshteinDistance(word, "faire") <= 1 || word === "fer");
+  const hasSignerTypo = words.some((word) =>
+    word === "signe" ||
+    word === "signer" ||
+    word === "sugner" ||
+    levenshteinDistance(word, "signer") <= 2
+  );
+
+  return hasSchoolProofTarget && hasFaireTypo && hasSignerTypo;
+}
+
 export function parseSchoolHomeworkInput(rawInput: string, spellingLists: SpellingList[] = []): ParsedSchoolHomeworkItem[] {
   return rawInput
     .split(/\r?\n/g)
@@ -145,7 +205,7 @@ export function parseSchoolHomeworkInput(rawInput: string, spellingLists: Spelli
       const spellingRef = findSpellingListReference(taskText, spellingLists);
       const tables = multiplicationTables(taskText);
 
-      if (/(faire signer|signer|signature|faire signer quiz|sign quiz)/.test(normalized)) {
+      if (looksLikeSignatureTask(normalized)) {
         return {
           task_text: taskText,
           task_kind: "signature" as const,
@@ -229,35 +289,60 @@ export async function replaceSchoolHomeworkDay(params: {
 
   if (dayError) throw dayError;
 
-  const oldLinkedAssignmentIds = ((await supabase
+  const existingItems = ((await supabase
     .from("school_homework_items")
-    .select("linked_assignment_id")
-    .eq("homework_day_id", day.id)
-    .not("linked_assignment_id", "is", null)).data || [])
-    .map((row: any) => row.linked_assignment_id)
-    .filter(Boolean);
+    .select("*, school_homework_materials(*)")
+    .eq("homework_day_id", day.id)).data || []) as SchoolHomeworkItem[];
 
-  await Promise.all(
-    Array.from(new Set(oldLinkedAssignmentIds)).map((assignmentId) =>
-      deleteAssignment(assignmentId).catch((err) => {
-        console.error("[school-homework] old linked assignment delete error:", err);
-      })
-    )
-  );
+  const usedExistingIds = new Set<string>();
 
-  const { error: deleteError } = await supabase
-    .from("school_homework_items")
-    .delete()
-    .eq("homework_day_id", day.id);
+  const findReusableItem = (item: ParsedSchoolHomeworkItem): SchoolHomeworkItem | null => {
+    const itemKey = normalizeText(item.task_text);
+    const sameText = existingItems.find((existing) =>
+      !usedExistingIds.has(existing.id) && normalizeText(existing.task_text) === itemKey
+    );
+    if (sameText) return sameText;
 
-  if (deleteError) throw deleteError;
+    return existingItems.find((existing) =>
+      !usedExistingIds.has(existing.id) &&
+      existing.task_kind === item.task_kind &&
+      normalizeText(existing.task_text).includes(itemKey)
+    ) || null;
+  };
 
   if (parsedItems.length > 0) {
     const linkedItems = await Promise.all(
       parsedItems.map(async (item) => {
+        const reusableItem = findReusableItem(item);
+        if (reusableItem) usedExistingIds.add(reusableItem.id);
+
         const tables = Array.isArray(item.metadata.tables)
           ? (item.metadata.tables as unknown[]).filter((table): table is number => typeof table === "number")
           : [];
+
+        const reusableTables = Array.isArray((reusableItem?.metadata as any)?.tables)
+          ? ((reusableItem?.metadata as any).tables as unknown[]).filter((table): table is number => typeof table === "number")
+          : [];
+        const canReuseAssignment = reusableItem?.linked_assignment_id &&
+          item.task_kind === "multiplication" &&
+          tables.length > 0 &&
+          JSON.stringify(tables) === JSON.stringify(reusableTables);
+
+        if (canReuseAssignment) {
+          return {
+            ...item,
+            id: reusableItem.id,
+            status: reusableItem.status,
+            completed_at: reusableItem.completed_at,
+            completed_by: reusableItem.completed_by,
+            linked_assignment_id: reusableItem.linked_assignment_id,
+            linked_spelling_list_id: reusableItem.linked_spelling_list_id,
+            metadata: {
+              ...item.metadata,
+              linked_practice: "multiplication",
+            },
+          };
+        }
 
         if (item.task_kind === "multiplication" && tables.length > 0) {
           try {
@@ -269,8 +354,21 @@ export async function replaceSchoolHomeworkDay(params: {
               mode: "practice",
               multiplicationTables: tables,
             });
+            if (reusableItem?.linked_assignment_id && reusableItem.linked_assignment_id !== assignment.id) {
+              void deleteAssignment(reusableItem.linked_assignment_id).catch((err) => {
+                console.error("[school-homework] replaced linked assignment delete error:", err);
+              });
+            }
             return {
               ...item,
+              ...(reusableItem
+                ? {
+                    id: reusableItem.id,
+                    status: reusableItem.status,
+                    completed_at: reusableItem.completed_at,
+                    completed_by: reusableItem.completed_by,
+                  }
+                : {}),
               linked_assignment_id: assignment.id,
               metadata: {
                 ...item.metadata,
@@ -282,26 +380,82 @@ export async function replaceSchoolHomeworkDay(params: {
           }
         }
 
-        return item;
+        const hasMaterial = (reusableItem?.school_homework_materials || []).length > 0;
+        return reusableItem
+          ? {
+              ...item,
+              id: reusableItem.id,
+              status: reusableItem.status,
+              completed_at: reusableItem.completed_at,
+              completed_by: reusableItem.completed_by,
+              linked_assignment_id: item.linked_assignment_id || reusableItem.linked_assignment_id,
+              linked_spelling_list_id: item.linked_spelling_list_id || reusableItem.linked_spelling_list_id,
+              metadata: {
+                ...item.metadata,
+                needs_material: (item.metadata as any).needs_material ? !hasMaterial : (item.metadata as any).needs_material,
+              },
+            }
+          : item;
       })
     );
 
-    const { error: itemError } = await supabase.from("school_homework_items").insert(
-      linkedItems.map((item, index) => ({
+    const updates = linkedItems.filter((item) => "id" in item && item.id);
+    await Promise.all(updates.map(async (item: any) => {
+      const sortOrder = linkedItems.findIndex((candidate) => candidate === item);
+      const { error: updateError } = await supabase
+        .from("school_homework_items")
+        .update({
+          task_text: item.task_text,
+          task_kind: item.task_kind,
+          sort_order: sortOrder === -1 ? 0 : sortOrder,
+          metadata: item.metadata,
+          linked_assignment_id: item.linked_assignment_id || null,
+          linked_spelling_list_id: item.linked_spelling_list_id || null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", item.id);
+      if (updateError) throw updateError;
+    }));
+
+    const inserts = linkedItems.filter((item) => !("id" in item));
+    const { error: itemError } = inserts.length > 0 ? await supabase.from("school_homework_items").insert(
+      inserts.map((item, insertIndex) => {
+        const sortOrder = linkedItems.findIndex((candidate) => candidate === item);
+        return {
         homework_day_id: day.id,
         parent_id: parentId,
         child_id: params.childId,
         task_text: item.task_text,
         task_kind: item.task_kind,
         status: item.task_kind === "signature" ? "waiting_parent" : "pending",
-        sort_order: index,
+        sort_order: sortOrder === -1 ? insertIndex : sortOrder,
         metadata: item.metadata,
         linked_assignment_id: item.linked_assignment_id || null,
         linked_spelling_list_id: item.linked_spelling_list_id || null,
-      }))
-    );
+        };
+      })
+    ) : { error: null };
 
     if (itemError) throw itemError;
+  }
+
+  const removedItems = existingItems.filter((item) => !usedExistingIds.has(item.id));
+  const removedAssignmentIds = removedItems.map((item) => item.linked_assignment_id).filter(Boolean) as string[];
+  await Promise.all(
+    Array.from(new Set(removedAssignmentIds)).map((assignmentId) =>
+      deleteAssignment(assignmentId).catch((err) => {
+        console.error("[school-homework] removed linked assignment delete error:", err);
+      })
+    )
+  );
+
+  if (removedItems.length > 0) {
+    const { error: deleteError } = await supabase
+      .from("school_homework_items")
+      .delete()
+      .in("id", removedItems.map((item) => item.id));
+
+    if (deleteError) throw deleteError;
   }
 
   return listSchoolHomeworkDay(params.childId, params.homeworkDate) as Promise<SchoolHomeworkDay>;
@@ -332,6 +486,10 @@ export async function listSchoolHomeworkDay(childId: string, homeworkDate = toda
     ...(data as SchoolHomeworkDay),
     school_homework_items: items.sort((a, b) => a.sort_order - b.sort_order),
   };
+}
+
+export async function listSchoolHomeworkWeek(childId: string, dateKeys = schoolHomeworkWeekDateKeys()): Promise<(SchoolHomeworkDay | null)[]> {
+  return Promise.all(dateKeys.map((dateKey) => listSchoolHomeworkDay(childId, dateKey)));
 }
 
 export async function setSchoolHomeworkItemDone(
@@ -370,6 +528,7 @@ export async function addSchoolHomeworkTextMaterial(params: {
 }): Promise<void> {
   const content = params.textContent.trim();
   if (!content) throw new Error("Material text is empty");
+  await clearSchoolHomeworkMaterials(params.item.id);
 
   const { error: insertError } = await supabase
     .from("school_homework_materials")
@@ -393,6 +552,8 @@ export async function addSchoolHomeworkImageMaterial(params: {
   title?: string;
   bucket?: string;
 }): Promise<void> {
+  await clearSchoolHomeworkMaterials(params.item.id);
+
   const { error: insertError } = await supabase
     .from("school_homework_materials")
     .insert({
@@ -408,6 +569,15 @@ export async function addSchoolHomeworkImageMaterial(params: {
 
   if (insertError) throw insertError;
   await markItemMaterialReady(params.item.id);
+}
+
+async function clearSchoolHomeworkMaterials(itemId: string): Promise<void> {
+  const { error } = await supabase
+    .from("school_homework_materials")
+    .delete()
+    .eq("homework_item_id", itemId);
+
+  if (error) throw error;
 }
 
 async function markItemMaterialReady(itemId: string): Promise<void> {
