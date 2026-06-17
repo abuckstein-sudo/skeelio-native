@@ -110,7 +110,8 @@ function multiplicationTables(taskText: string): number[] {
     }
   }
 
-  const single = normalized.match(/\b(?:table|tables).*?(\d{1,2})\s*x?\b/);
+  const single = normalized.match(/\b(?:table|tables|multiplication|multiplier).*?(\d{1,2})\s*x?\b/) ||
+    normalized.match(/\b(\d{1,2})\s*x\b/);
   if (single) {
     const table = Number(single[1]);
     if (Number.isInteger(table) && table >= 0 && table <= 12) return [table];
