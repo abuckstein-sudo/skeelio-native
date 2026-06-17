@@ -27,6 +27,7 @@ interface Attempt {
   expected_answer: string;
   child_answer: string;
   was_correct: boolean;
+  aided: boolean | null;
   created_at: string;
 }
 
@@ -88,7 +89,7 @@ export default function ParentProofSection({ childId }: { childId: string }) {
       setAttemptLoading(true);
       const { data, error } = await supabase
         .from("episode_attempts")
-        .select("sub_skill, question, expected_answer, child_answer, was_correct, created_at")
+        .select("sub_skill, question, expected_answer, child_answer, was_correct, aided, created_at")
         .eq("episode_id", episode.id)
         .order("created_at");
 
@@ -124,7 +125,7 @@ export default function ParentProofSection({ childId }: { childId: string }) {
   if (loading) {
     return (
       <View style={styles.container}>
-        <Text style={styles.title}>Worksheet Skills</Text>
+        <Text style={styles.title}>Recent worksheet practice</Text>
         <ActivityIndicator size="large" color="#2196f3" />
       </View>
     );
@@ -133,7 +134,7 @@ export default function ParentProofSection({ childId }: { childId: string }) {
   if (episodes.length === 0) {
     return (
       <View style={styles.container}>
-        <Text style={styles.title}>Worksheet Skills</Text>
+        <Text style={styles.title}>Recent worksheet practice</Text>
         <View style={styles.emptyState}>
           <MaterialCommunityIcons name="file-document-outline" size={48} color="#ccc" />
           <Text style={styles.emptyText}>
@@ -146,7 +147,7 @@ export default function ParentProofSection({ childId }: { childId: string }) {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Worksheet Skills</Text>
+      <Text style={styles.title}>Recent worksheet practice</Text>
 
       <FlatList
         data={episodes}
@@ -280,6 +281,12 @@ export default function ParentProofSection({ childId }: { childId: string }) {
                         {attempt.sub_skill && (
                           <View style={styles.subSkillTag}>
                             <Text style={styles.subSkillText}>{attempt.sub_skill}</Text>
+                          </View>
+                        )}
+                        {attempt.aided && (
+                          <View style={styles.helpTag}>
+                            <MaterialCommunityIcons name="lightbulb-outline" size={12} color="#795548" />
+                            <Text style={styles.helpTagText}>Used help</Text>
                           </View>
                         )}
                       </View>
@@ -522,6 +529,22 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: "#1976d2",
     fontWeight: "500",
+  },
+  helpTag: {
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: "#fff8e1",
+    borderRadius: 4,
+    marginTop: 4,
+  },
+  helpTagText: {
+    fontSize: 11,
+    color: "#795548",
+    fontWeight: "600",
   },
   noAttemptsText: {
     fontSize: 13,

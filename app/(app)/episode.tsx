@@ -38,6 +38,17 @@ interface PracticeItem {
   answer: string | number | boolean;
   expected_answer?: string;
   verified: boolean;
+  hint?: {
+    title?: string;
+    visual_rows?: {
+      label?: string;
+      c?: number | string;
+      d?: number | string;
+      u?: number | string;
+      value?: number;
+    }[];
+    steps?: string[];
+  };
 }
 
 interface EpisodeData {
@@ -75,13 +86,16 @@ export default function EpisodeScreen() {
   const [feedbackMessage, setFeedbackMessage] = useState<string>("");
   const [feedbackUserAnswer, setFeedbackUserAnswer] = useState<string>("");
   const [explanation, setExplanation] = useState<string>("");
+  const [hintVisible, setHintVisible] = useState(false);
+  const [hintLevel, setHintLevel] = useState(0);
   const [unairedStreak, setUnairedStreak] = useState(0);
   const [isFirstAttempt, setIsFirstAttempt] = useState(true);
   const [totalAttempts, setTotalAttempts] = useState(0);
   const [firstTrySuccesses, setFirstTrySuccesses] = useState(0);
-  const firstTryHistoryRef = useRef<{ correct: boolean; key: string }[]>([]);
+  const firstTryHistoryRef = useRef<{ correct: boolean; key: string; aided: boolean }[]>([]);
   const [firstTryWrong, setFirstTryWrong] = useState(0);
   const initialFetchStartedRef = useRef(false);
+  const shownQuestionKeysRef = useRef<Set<string>>(new Set());
 
   // Track wrong attempts per sub-skill for adaptive teaching
   const [wrongCountPerSubSkill, setWrongCountPerSubSkill] = useState<Record<string, number>>({});
@@ -169,20 +183,20 @@ export default function EpisodeScreen() {
       try {
         const { data: prior } = await supabase
           .from("episode_attempts")
-          .select("question, was_correct, created_at")
+          .select("question, was_correct, aided, created_at")
           .eq("episode_id", episodeId)
           .order("created_at", { ascending: true });
         if (!prior || prior.length === 0) return;
         const seen = new Set<string>();
-        const rebuilt: { correct: boolean; key: string }[] = [];
+        const rebuilt: { correct: boolean; key: string; aided: boolean }[] = [];
         for (const a of prior) {
           const key = a.question as string;
           if (seen.has(key)) continue;
           seen.add(key);
-          rebuilt.push({ correct: !!a.was_correct, key });
+          rebuilt.push({ correct: !!a.was_correct, key, aided: !!a.aided });
         }
         firstTryHistoryRef.current = rebuilt;
-        setFirstTrySuccesses(rebuilt.filter((h) => h.correct).length);
+        setFirstTrySuccesses(rebuilt.filter((h) => h.correct && !h.aided).length);
         setFirstTryWrong(rebuilt.filter((h) => !h.correct).length);
       } catch (err) {
         console.error("[episode] resume rebuild error:", err);
@@ -263,13 +277,20 @@ export default function EpisodeScreen() {
         throw invokeError;
       }
 
-      const items = (result.practice || []) as PracticeItem[];
+      const rawItems = (result.practice || []) as PracticeItem[];
+      const items = rawItems.filter((item) => {
+        const key = normalizeQuestionKey(item.question);
+        if (shownQuestionKeysRef.current.has(key)) return false;
+        shownQuestionKeysRef.current.add(key);
+        return true;
+      });
 
       // No-stall guard: AI returned nothing on a refetch -> end gracefully, never freeze.
       if (items.length === 0 && currentItem !== null) {
         const hist = firstTryHistoryRef.current;
-        const distinct = new Set(hist.map((h) => h.key)).size;
-        const rate = hist.length ? hist.filter((h) => h.correct).length / hist.length : 0;
+        const unaided = hist.filter((h) => !h.aided);
+        const distinct = new Set(unaided.map((h) => h.key)).size;
+        const rate = unaided.length ? unaided.filter((h) => h.correct).length / unaided.length : 0;
         const supplyMastered =
           distinct >= SKILL_SESSION.masteryMinDistinctItems && rate >= ASSESSMENT.onTrackUnaidedRate;
         await completeEpisode(supplyMastered);
@@ -333,6 +354,13 @@ export default function EpisodeScreen() {
 
     return normalized;
   };
+
+  const normalizeQuestionKey = (text: string): string =>
+    text
+      .normalize("NFC")
+      .toLowerCase()
+      .replace(/\s+/g, " ")
+      .trim();
 
   const normalizeNumberInput = (text: string): number => {
     // Remove € symbol and spaces
@@ -403,7 +431,12 @@ export default function EpisodeScreen() {
     return String(answerValue);
   };
 
-  const logAttempt = async (item: PracticeItem, childAnswer: string, wasCorrect: boolean) => {
+  const logAttempt = async (
+    item: PracticeItem,
+    childAnswer: string,
+    wasCorrect: boolean,
+    aided = false
+  ) => {
     if (!episodeId || !parentId || !childId) return;
 
     try {
@@ -416,7 +449,7 @@ export default function EpisodeScreen() {
         expected_answer: String((item as any).expected_answer ?? item.answer ?? ''),
         child_answer: String(childAnswer),
         was_correct: wasCorrect,
-        aided: false,
+        aided,
         attempt_index: 0,
       });
     } catch (err) {
@@ -429,7 +462,7 @@ export default function EpisodeScreen() {
     let best = 0;
     let current = 0;
     for (const entry of firstTryHistoryRef.current) {
-      current = entry.correct ? current + 1 : 0;
+      current = entry.correct && !entry.aided ? current + 1 : 0;
       best = Math.max(best, current);
     }
     return best;
@@ -482,6 +515,20 @@ export default function EpisodeScreen() {
     }
   };
 
+  const getItemHint = (item: PracticeItem) =>
+    item.hint || {
+      title: "Aide",
+      steps: [
+        "Relis la question et entoure ce qu'il faut chercher.",
+        "Utilise la même méthode que sur la fiche avant de répondre.",
+      ],
+    };
+
+  const handleShowHint = () => {
+    setHintVisible(true);
+    setHintLevel((level) => Math.min(level + 1, 2));
+  };
+
   const handleSubmitAnswer = () => {
     if (!userAnswer.trim()) {
       Alert.alert("Erreur", "Veuillez entrer une réponse");
@@ -496,15 +543,19 @@ export default function EpisodeScreen() {
 
     // Log first-try attempt (if episodeId present)
     if (isFirstAttempt && currentItem) {
-      logAttempt(currentItem, userAnswer, correct);
-      firstTryHistoryRef.current.push({ correct, key: currentItem.question });
+      logAttempt(currentItem, userAnswer, correct, hintVisible);
+      firstTryHistoryRef.current.push({ correct, key: currentItem.question, aided: hintVisible });
     }
 
     if (correct && isFirstAttempt) {
-      // Correct on first try — increment unaided streak
-      setFeedbackMessage("Bravo ! 🎉");
-      setUnairedStreak(unairedStreak + 1);
-      setFirstTrySuccesses(firstTrySuccesses + 1);
+      // Correct on first try without help counts toward unaided mastery.
+      setFeedbackMessage(hintVisible ? "Bien joué avec l'aide !" : "Bravo ! 🎉");
+      if (hintVisible) {
+        setUnairedStreak(0);
+      } else {
+        setUnairedStreak(unairedStreak + 1);
+        setFirstTrySuccesses(firstTrySuccesses + 1);
+      }
       // Auto advance after delay
       setTimeout(() => {
         void advanceToNextItem();
@@ -578,15 +629,19 @@ export default function EpisodeScreen() {
 
     // Log first-try attempt (if episodeId present)
     if (isFirstAttempt && currentItem) {
-      logAttempt(currentItem, choice, correct);
-      firstTryHistoryRef.current.push({ correct, key: currentItem.question });
+      logAttempt(currentItem, choice, correct, hintVisible);
+      firstTryHistoryRef.current.push({ correct, key: currentItem.question, aided: hintVisible });
     }
 
     if (correct && isFirstAttempt) {
-      // Correct on first try — increment unaided streak
-      setFeedbackMessage("Bravo ! 🎉");
-      setUnairedStreak(unairedStreak + 1);
-      setFirstTrySuccesses(firstTrySuccesses + 1);
+      // Correct on first try without help counts toward unaided mastery.
+      setFeedbackMessage(hintVisible ? "Bien joué avec l'aide !" : "Bravo ! 🎉");
+      if (hintVisible) {
+        setUnairedStreak(0);
+      } else {
+        setUnairedStreak(unairedStreak + 1);
+        setFirstTrySuccesses(firstTrySuccesses + 1);
+      }
       // Auto advance after delay
       setTimeout(() => {
         void advanceToNextItem();
@@ -633,12 +688,13 @@ export default function EpisodeScreen() {
   const completeEpisode = async (mastered: boolean) => {
     if (episodeId) {
       try {
+        const unaidedCorrect = firstTryHistoryRef.current.filter((h) => h.correct && !h.aided).length;
         await supabase.from('tutor_episodes').update({
           status: 'complete',
           completed_at: new Date().toISOString(),
           mastered,
           items_attempted: firstTryHistoryRef.current.length,
-          first_try_correct: firstTryHistoryRef.current.filter((h) => h.correct).length,
+          first_try_correct: unaidedCorrect,
           unaided_streak_max: Math.max(unaidedStreakMax, maxCorrectRun()),
         }).eq('id', episodeId);
 
@@ -646,7 +702,7 @@ export default function EpisodeScreen() {
           episodeId,
           mastered,
           items_attempted: firstTryHistoryRef.current.length,
-          first_try_correct: firstTryHistoryRef.current.filter((h) => h.correct).length,
+          first_try_correct: unaidedCorrect,
           unaided_streak_max: Math.max(unaidedStreakMax, maxCorrectRun()),
         });
       } catch (err) {
@@ -659,20 +715,22 @@ export default function EpisodeScreen() {
   const advanceToNextItem = async () => {
     // Check if we've reached mastery or item cap
     const history = firstTryHistoryRef.current;
-    const recent = history.slice(-SKILL_SESSION.masteryWindow);
+    const unaidedHistory = history.filter((h) => !h.aided);
+    const recent = unaidedHistory.slice(-SKILL_SESSION.masteryWindow);
     const correctInWindow = recent.filter((h) => h.correct).length;
     const distinctInWindow = new Set(recent.map((h) => h.key)).size;
     const mastered =
-      history.length >= SKILL_SESSION.masteryWindow &&
+      unaidedHistory.length >= SKILL_SESSION.masteryWindow &&
       correctInWindow >= SKILL_SESSION.masteryFirstTryCorrect &&
       distinctInWindow >= SKILL_SESSION.masteryMinDistinctItems;
 
     if (mastered) {
       // MASTERY REACHED
       await completeEpisode(true);
+      const unaidedCorrect = unaidedHistory.filter((h) => h.correct).length;
       Alert.alert(
         "Bravo ! 🎉",
-        `Tu as réussi ${history.filter((h) => h.correct).length} sur ${history.length} du premier coup. Tu maîtrises bien ça ! 🎉`
+        `Tu as réussi ${unaidedCorrect} sur ${unaidedHistory.length} sans aide. Tu maîtrises bien ça ! 🎉`
       );
       navigateAfterEpisodeComplete();
       return;
@@ -681,7 +739,8 @@ export default function EpisodeScreen() {
     if (history.length >= SKILL_SESSION.sessionCap) {
       // Item cap reached without mastery - honest, kind, non-celebratory
       await completeEpisode(false);
-      const message = `Beau travail ! Tu as réussi ${history.filter((h) => h.correct).length} sur ${history.length} du premier coup. C'est encore un peu difficile — on va s'entraîner encore. 💪`;
+      const unaidedCorrect = unaidedHistory.filter((h) => h.correct).length;
+      const message = `Beau travail ! Tu as réussi ${unaidedCorrect} sur ${unaidedHistory.length} sans aide. C'est encore un peu difficile — on va s'entraîner encore. 💪`;
       Alert.alert("À bientôt !", message);
       navigateAfterEpisodeComplete();
       return;
@@ -699,6 +758,8 @@ export default function EpisodeScreen() {
       setFeedbackMessage("");
       setFeedbackUserAnswer("");
       setExplanation("");
+      setHintVisible(false);
+      setHintLevel(0);
       setIsFirstAttempt(true);
     } else if (episodeData) {
       // Queue is empty, trigger a fetch and wait for currentItem to be set
@@ -805,6 +866,48 @@ export default function EpisodeScreen() {
               <Text style={{ textAlign: "center", color: "#888", fontSize: 13, marginTop: 6 }}>
                 Réussis 10 sur 12 du premier coup pour maîtriser cette compétence
               </Text>
+
+              <TouchableOpacity
+                style={styles.hintButton}
+                onPress={handleShowHint}
+                disabled={loading}
+              >
+                <MaterialCommunityIcons name="lightbulb-outline" size={18} color="#795548" />
+                <Text style={styles.hintButtonText}>
+                  {hintVisible ? "Encore un indice" : "Aide"}
+                </Text>
+              </TouchableOpacity>
+
+              {hintVisible && (
+                <View style={styles.hintBox}>
+                  <Text style={styles.hintTitle}>{getItemHint(currentItem).title}</Text>
+                  {getItemHint(currentItem).visual_rows?.map((row, index) => (
+                    <View style={styles.cduVisualRow} key={`${row.label || "row"}-${index}`}>
+                      <Text style={styles.cduVisualLabel}>{row.label || index + 1}</Text>
+                      <View style={styles.cduCell}>
+                        <Text style={styles.cduCellLabel}>c</Text>
+                        <Text style={styles.cduCellValue}>{row.c}</Text>
+                      </View>
+                      <View style={styles.cduCell}>
+                        <Text style={styles.cduCellLabel}>d</Text>
+                        <Text style={styles.cduCellValue}>{row.d}</Text>
+                      </View>
+                      <View style={styles.cduCell}>
+                        <Text style={styles.cduCellLabel}>u</Text>
+                        <Text style={styles.cduCellValue}>{row.u}</Text>
+                      </View>
+                      {typeof row.value === "number" && (
+                        <Text style={styles.cduValueText}>{row.value}</Text>
+                      )}
+                    </View>
+                  ))}
+                  {getItemHint(currentItem).steps?.slice(0, hintLevel === 1 ? 1 : undefined).map((step, index) => (
+                    <Text style={styles.hintStep} key={`${step}-${index}`}>
+                      {index + 1}. {step}
+                    </Text>
+                  ))}
+                </View>
+              )}
 
               {/* Math Number Input */}
               {currentItem.kind === "math" && currentItem.answer_type === "number" && (
@@ -1102,6 +1205,85 @@ const styles = StyleSheet.create({
     color: "#333",
     lineHeight: 22,
     marginBottom: 20,
+  },
+  hintButton: {
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: "#fff8e1",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#ffe0b2",
+    marginTop: 14,
+    marginBottom: 12,
+  },
+  hintButtonText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#795548",
+  },
+  hintBox: {
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    backgroundColor: "#fffdf5",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#ffe0b2",
+    marginBottom: 16,
+    gap: 8,
+  },
+  hintTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#5d4037",
+  },
+  cduVisualRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    flexWrap: "wrap",
+  },
+  cduVisualLabel: {
+    minWidth: 28,
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#5d4037",
+  },
+  cduCell: {
+    width: 42,
+    borderWidth: 1,
+    borderColor: "#d7ccc8",
+    borderRadius: 6,
+    overflow: "hidden",
+    backgroundColor: "#fff",
+  },
+  cduCellLabel: {
+    textAlign: "center",
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#795548",
+    backgroundColor: "#efebe9",
+    paddingVertical: 2,
+  },
+  cduCellValue: {
+    textAlign: "center",
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#333",
+    paddingVertical: 5,
+  },
+  cduValueText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#5d4037",
+  },
+  hintStep: {
+    fontSize: 14,
+    color: "#4e342e",
+    lineHeight: 20,
   },
   inputSection: {
     gap: 12,

@@ -369,6 +369,22 @@ function cduText(c: number, d: number, u: number): string {
   return `${c}c + ${d}d + ${u}u`;
 }
 
+function cduHint(
+  rows: Array<{ label: string; c: number | string; d: number | string; u: number | string }>,
+  steps: string[]
+): Record<string, unknown> {
+  return {
+    title: "Aide avec c, d, u",
+    visual_rows: rows.map((row) => ({
+      label: row.label,
+      c: row.c,
+      d: row.d,
+      u: row.u,
+    })),
+    steps,
+  };
+}
+
 function buildCduPlaceValuePractice(
   concept: Record<string, unknown>,
   allSubSkills: string[],
@@ -384,87 +400,118 @@ function buildCduPlaceValuePractice(
   };
   const rotate = (index: number, min: number, span: number) => min + ((seed + index * 7) % span);
   const items: Record<string, unknown>[] = [];
+  const valueItems = [
+    { c: rotate(1, 1, 5), d: rotate(2, 1, 8), u: rotate(3, 0, 9) },
+    { c: rotate(4, 2, 5), d: rotate(5, 0, 9), u: rotate(6, 1, 8) },
+    { c: rotate(7, 1, 6), d: rotate(8, 2, 7), u: rotate(9, 2, 7) },
+  ];
 
-  const a = { c: rotate(1, 2, 6), d: rotate(2, 3, 7), u: rotate(3, 1, 8) };
-  const b = { c: rotate(4, 1, 7), d: rotate(5, 2, 8), u: rotate(6, 0, 9) };
-  const aValue = cduValue(a.c, a.d, a.u);
-  const bValue = cduValue(b.c, b.d, b.u);
-  items.push({
-    kind: "math",
-    answer_type: "yesno",
-    sub_skill: skillFor("comparer", 0),
-    unit: "",
-    practice_mode: "same_form",
-    question: `${cduText(a.c, a.d, a.u)} représente ${aValue} unités. ${cduText(b.c, b.d, b.u)} représente ${bValue} unités. Est-ce que ${cduText(a.c, a.d, a.u)} est plus grand que ${cduText(b.c, b.d, b.u)} ?`,
-    answer: aValue > bValue ? "Oui" : "Non",
-    verified: true,
-  });
+  for (const [index, row] of valueItems.entries()) {
+    items.push({
+      kind: "math",
+      answer_type: "number",
+      sub_skill: skillFor("unite", 0),
+      unit: "",
+      practice_mode: "same_form",
+      question: `Combien d'unités au total représente ${cduText(row.c, row.d, row.u)} ?`,
+      answer: cduValue(row.c, row.d, row.u),
+      verified: true,
+      hint: cduHint([{ label: "Nombre", ...row }], [
+        `${row.c}c = ${row.c * 100} unités`,
+        `${row.d}d = ${row.d * 10} unités`,
+        `${row.u}u = ${row.u} unité${row.u > 1 ? "s" : ""}`,
+      ]),
+    });
 
-  const c = { c: rotate(7, 3, 5), d: rotate(8, 4, 7), u: rotate(9, 2, 7) };
-  items.push({
-    kind: "math",
-    answer_type: "number",
-    sub_skill: skillFor("unite", 0),
-    unit: "",
-    practice_mode: "same_form",
-    question: `Combien d'unités au total représente ${cduText(c.c, c.d, c.u)} ?`,
-    answer: cduValue(c.c, c.d, c.u),
-    verified: true,
-  });
+    const digit = index === 0 ? "centaines" : index === 1 ? "dizaines" : "unités";
+    const answer = index === 0 ? row.c : index === 1 ? row.d : row.u;
+    items.push({
+      kind: "math",
+      answer_type: "number",
+      sub_skill: skillFor(digit, 0),
+      unit: "",
+      practice_mode: "same_form",
+      question: `Dans ${cduText(row.c, row.d, row.u)}, combien y a-t-il de ${digit} ?`,
+      answer,
+      verified: true,
+      hint: cduHint([{ label: "Nombre", ...row }], [
+        "Regarde la colonne demandée.",
+        "c = centaines, d = dizaines, u = unités.",
+      ]),
+    });
+  }
 
-  const smaller = { c: rotate(10, 2, 4), d: rotate(11, 1, 5), u: rotate(12, 0, 7) };
-  const extra = rotate(13, 12, 38);
-  const target = cduValue(smaller.c, smaller.d, smaller.u) + extra;
-  items.push({
-    kind: "math",
-    answer_type: "number",
-    sub_skill: skillFor("egaliser", 1),
-    unit: "",
-    practice_mode: "same_form",
-    question: `Jules a ${smaller.c} centaines ${smaller.d} dizaines ${smaller.u} unités, soit ${cduValue(smaller.c, smaller.d, smaller.u)} cubes. Jim a ${target} cubes. Combien de cubes faut-il ajouter à Jules pour qu'il ait autant que Jim ?`,
-    answer: extra,
-    verified: true,
-  });
+  const comparisons = [
+    {
+      a: { c: rotate(10, 2, 5), d: rotate(11, 1, 8), u: rotate(12, 0, 9) },
+      b: { c: rotate(13, 1, 6), d: rotate(14, 0, 9), u: rotate(15, 1, 8) },
+    },
+    {
+      a: { c: rotate(16, 1, 5), d: rotate(17, 2, 7), u: rotate(18, 1, 8) },
+      b: { c: rotate(19, 1, 5), d: rotate(20, 3, 6), u: rotate(21, 0, 9) },
+    },
+    {
+      a: { c: rotate(22, 3, 4), d: rotate(23, 0, 9), u: rotate(24, 2, 7) },
+      b: { c: rotate(25, 2, 5), d: rotate(26, 1, 8), u: rotate(27, 0, 9) },
+    },
+  ];
 
-  const d = { c: rotate(14, 1, 7), d: rotate(15, 2, 8), u: rotate(16, 1, 8) };
-  const missingTens = rotate(17, 1, 7);
-  items.push({
-    kind: "math",
-    answer_type: "number",
-    sub_skill: skillFor("equivalent", 2),
-    unit: "",
-    practice_mode: "same_form",
-    question: `Complète pour que les deux écritures soient équivalentes : ${cduText(d.c, d.d + missingTens, d.u)} = ${d.c}c + ${d.d}d + ${d.u}u + ___d. Quel nombre manque ?`,
-    answer: missingTens,
-    verified: true,
-  });
+  for (const pair of comparisons) {
+    const aValue = cduValue(pair.a.c, pair.a.d, pair.a.u);
+    const bValue = cduValue(pair.b.c, pair.b.d, pair.b.u);
+    items.push({
+      kind: "math",
+      answer_type: "yesno",
+      sub_skill: skillFor("comparer", 0),
+      unit: "",
+      practice_mode: "same_form",
+      question: `${cduText(pair.a.c, pair.a.d, pair.a.u)} représente ${aValue} unités. ${cduText(pair.b.c, pair.b.d, pair.b.u)} représente ${bValue} unités. Est-ce que ${cduText(pair.a.c, pair.a.d, pair.a.u)} est plus grand que ${cduText(pair.b.c, pair.b.d, pair.b.u)} ?`,
+      answer: aValue > bValue ? "Oui" : "Non",
+      verified: true,
+      hint: cduHint([
+        { label: "1", ...pair.a },
+        { label: "2", ...pair.b },
+      ], [
+        "Compare d'abord les centaines.",
+        "Si les centaines sont pareilles, compare les dizaines.",
+        "Si les dizaines sont pareilles, compare les unités.",
+      ]),
+    });
+  }
 
-  const e = { c: rotate(18, 2, 6), d: rotate(19, 10, 18), u: rotate(20, 0, 9) };
-  items.push({
-    kind: "math",
-    answer_type: "number",
-    sub_skill: skillFor("transformer", 0),
-    unit: "",
-    practice_mode: "near_transfer",
-    question: `Transforme en centaines, dizaines et unités : ${e.c} centaines ${e.d} dizaines ${e.u} unités. Combien d'unités cela fait-il au total ?`,
-    answer: cduValue(e.c, e.d, e.u),
-    verified: true,
-  });
+  const missingParts = [
+    { c: rotate(28, 1, 5), d: rotate(29, 1, 8), u: rotate(30, 0, 9), missing: "c" },
+    { c: rotate(31, 2, 5), d: rotate(32, 0, 9), u: rotate(33, 1, 8), missing: "d" },
+    { c: rotate(34, 1, 6), d: rotate(35, 1, 8), u: rotate(36, 2, 7), missing: "u" },
+  ];
 
-  const f = { c: rotate(21, 4, 5), d: rotate(22, 1, 7), u: rotate(23, 1, 8) };
-  const g = { c: f.c - 1, d: f.d + rotate(24, 8, 6), u: f.u + rotate(25, 1, 6) };
-  const fValue = cduValue(f.c, f.d, f.u);
-  const gValue = cduValue(g.c, g.d, g.u);
-  items.push({
-    kind: "math",
-    answer_type: "yesno",
-    sub_skill: skillFor("comparer", 0),
-    unit: "",
-    practice_mode: "near_transfer",
-    question: `Compare les deux collections. Collection A : ${f.c} centaines ${f.d} dizaines ${f.u} unités (${fValue} unités). Collection B : ${g.c} centaines ${g.d} dizaines ${g.u} unités (${gValue} unités). Est-ce que la collection A est plus grande ?`,
-    answer: fValue > gValue ? "Oui" : "Non",
-    verified: true,
-  });
+  for (const row of missingParts) {
+    const answer = row.missing === "c" ? row.c : row.missing === "d" ? row.d : row.u;
+    const shown = row.missing === "c"
+      ? `___c + ${row.d}d + ${row.u}u`
+      : row.missing === "d"
+        ? `${row.c}c + ___d + ${row.u}u`
+        : `${row.c}c + ${row.d}d + ___u`;
+    items.push({
+      kind: "math",
+      answer_type: "number",
+      sub_skill: skillFor("completer", 1),
+      unit: "",
+      practice_mode: "near_transfer",
+      question: `Complète : ${shown} = ${cduValue(row.c, row.d, row.u)} unités. Quel nombre manque ?`,
+      answer,
+      verified: true,
+      hint: cduHint([{
+        label: "À compléter",
+        c: row.missing === "c" ? "?" : row.c,
+        d: row.missing === "d" ? "?" : row.d,
+        u: row.missing === "u" ? "?" : row.u,
+      }], [
+        "Utilise les colonnes c, d, u.",
+        "Cherche seulement le chiffre caché, pas tout le nombre.",
+      ]),
+    });
+  }
 
   return items.slice(0, Math.max(1, maxItems));
 }

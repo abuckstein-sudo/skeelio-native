@@ -15,6 +15,7 @@ import { useAuth } from "@/app/_layout";
 import { supabase } from "@/lib/supabase";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import ChildSnapshot from "@/components/ChildSnapshot";
+import ParentProofSection from "@/components/ParentProofSection";
 import RewardsManager from "@/components/RewardsManager";
 
 interface Child {
@@ -271,6 +272,7 @@ export default function ParentScreen() {
                 grade={selectedChild.grade_level || ""}
                 avatar={selectedChild.selected_avatar || "fox"}
               />
+              <ParentProofSection childId={selectedChild.id} />
               <View style={styles.rewardSection}>
                 <RewardsManager childId={selectedChild.id} onInputFocus={scrollRewardsFormIntoView} />
               </View>
