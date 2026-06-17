@@ -151,7 +151,11 @@ export function parseSchoolHomeworkInput(rawInput: string, spellingLists: Spelli
         };
       }
 
-      if (normalized.includes("multiplication") || normalized.includes("tables")) {
+      if (
+        tables.length > 0 ||
+        normalized.includes("multiplication") ||
+        /\btable(s)?\b/.test(normalized)
+      ) {
         return {
           task_text: taskText,
           task_kind: "multiplication" as const,
