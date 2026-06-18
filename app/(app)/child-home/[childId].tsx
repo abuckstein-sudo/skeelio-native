@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, SafeAreaView, Modal, TextInput, Image, Alert } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, SafeAreaView, Modal, TextInput, Image, Alert, Linking } from "react-native";
 import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
 import { supabase } from "@/lib/supabase";
 import { getOperationStatus, OperationStatus, getWordProblemsStatus, WordProblemsStatus } from "@/lib/tutor/status";
@@ -20,6 +20,7 @@ import {
   SchoolHomeworkMaterial,
   setSchoolHomeworkItemDone,
   signedSchoolHomeworkImageUrl,
+  signedSchoolHomeworkDocumentUrl,
   schoolHomeworkMaterialTitle,
   todayDateKey,
   schoolHomeworkWeekDateKeys,
@@ -629,6 +630,16 @@ export default function ChildHomeScreen() {
 
     const material = (item.school_homework_materials || [])[0];
     if (material) {
+      if (material.material_type === "document") {
+        const url = await signedSchoolHomeworkDocumentUrl(material);
+        if (url) {
+          await Linking.openURL(url);
+        } else {
+          alert("Could not open this document");
+        }
+        return;
+      }
+
       setActiveMaterial(material);
       setActiveMaterialTitle(material.title || item.task_text);
       setActiveMaterialUrl(null);
@@ -1015,7 +1026,11 @@ export default function ChildHomeScreen() {
                   </Text>
                 </View>
                 {canOpen && (
-                  <MaterialCommunityIcons name={hasMaterial && !linked ? "file-document-outline" : "chevron-right"} size={22} color="#90a4ae" />
+                  <MaterialCommunityIcons
+                    name={hasMaterial && !linked ? "file-document-outline" : "chevron-right"}
+                    size={22}
+                    color="#90a4ae"
+                  />
                 )}
               </TouchableOpacity>
             );

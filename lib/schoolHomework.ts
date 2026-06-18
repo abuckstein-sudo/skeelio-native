@@ -10,7 +10,7 @@ import {
   SpellingList,
 } from "./spelling";
 
-export type SchoolHomeworkKind = "generic" | "reading" | "spelling" | "multiplication" | "division" | "signature";
+export type SchoolHomeworkKind = "generic" | "reading" | "worksheet" | "spelling" | "multiplication" | "division" | "signature";
 export type SchoolHomeworkStatus = "pending" | "done" | "waiting_parent";
 
 export type SchoolHomeworkItem = {
@@ -36,7 +36,7 @@ export type SchoolHomeworkMaterial = {
   homework_day_id: string;
   parent_id: string;
   child_id: string;
-  material_type: "image" | "text";
+  material_type: "image" | "text" | "document";
   title: string | null;
   storage_bucket: string | null;
   storage_path: string | null;
@@ -282,6 +282,16 @@ export function parseSchoolHomeworkInput(rawInput: string, spellingLists: Spelli
           task_kind: "reading" as const,
           metadata: {
             reference,
+            needs_material: true,
+          },
+        };
+      }
+
+      if (/(fiche|worksheet|workbook|cahier|exercice|exercices|page|pages)\b/.test(normalized)) {
+        return {
+          task_text: taskText,
+          task_kind: "worksheet" as const,
+          metadata: {
             needs_material: true,
           },
         };
@@ -586,6 +596,9 @@ export function schoolHomeworkMaterialTitle(item: Pick<SchoolHomeworkItem, "task
   if (item.task_kind === "spelling") {
     return metadata.list_number ? `Spelling: Liste ${metadata.list_number}` : `Spelling: ${item.task_text}`;
   }
+  if (item.task_kind === "worksheet") {
+    return `Worksheet: ${item.task_text}`;
+  }
   if (item.task_kind === "signature") {
     return `Signature: ${item.task_text}`;
   }
@@ -692,6 +705,35 @@ export async function addSchoolHomeworkImageMaterial(params: {
   return { createdSpellingPractice };
 }
 
+export async function addSchoolHomeworkDocumentMaterial(params: {
+  item: SchoolHomeworkItem;
+  storagePath: string;
+  title?: string;
+  fileName?: string;
+  mimeType?: string;
+  bucket?: string;
+}): Promise<void> {
+  if (!params.storagePath) throw new Error("Document material is missing");
+  await clearSchoolHomeworkMaterials(params.item.id);
+
+  const { error: insertError } = await supabase
+    .from("school_homework_materials")
+    .insert({
+      homework_item_id: params.item.id,
+      homework_day_id: params.item.homework_day_id,
+      parent_id: params.item.parent_id,
+      child_id: params.item.child_id,
+      material_type: "document",
+      title: params.title || params.fileName || schoolHomeworkMaterialTitle(params.item),
+      storage_bucket: params.bucket || "worksheets",
+      storage_path: params.storagePath,
+      text_content: params.mimeType || null,
+    });
+
+  if (insertError) throw insertError;
+  await markItemMaterialReady(params.item.id);
+}
+
 async function clearSchoolHomeworkMaterials(itemId: string): Promise<void> {
   const { error } = await supabase
     .from("school_homework_materials")
@@ -733,6 +775,23 @@ export async function signedSchoolHomeworkImageUrl(material: SchoolHomeworkMater
 
   if (error) {
     console.error("[school-homework] signed image url error:", error);
+    return null;
+  }
+
+  return data.signedUrl;
+}
+
+export async function signedSchoolHomeworkDocumentUrl(material: SchoolHomeworkMaterial): Promise<string | null> {
+  if (material.material_type !== "document" || !material.storage_bucket || !material.storage_path) {
+    return null;
+  }
+
+  const { data, error } = await supabase.storage
+    .from(material.storage_bucket)
+    .createSignedUrl(material.storage_path, 60 * 10);
+
+  if (error) {
+    console.error("[school-homework] signed document url error:", error);
     return null;
   }
 

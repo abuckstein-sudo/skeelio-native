@@ -10,10 +10,14 @@ import {
   Image,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { decode } from "base64-arraybuffer";
+import * as DocumentPicker from "expo-document-picker";
+import * as FileSystem from "expo-file-system/legacy";
 import * as ImageManipulator from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
 import CameraCaptureModal from "./CameraCaptureModal";
 import {
+  addSchoolHomeworkDocumentMaterial,
   addSchoolHomeworkImageMaterial,
   addSchoolHomeworkTextMaterial,
   extractSchoolHomeworkFromImage,
@@ -29,6 +33,7 @@ import {
   todayDateKey,
 } from "@/lib/schoolHomework";
 import { getChildHomeworkLimit, setChildHomeworkLimit, unlockChildHomeworkForToday } from "@/lib/homeworkTime";
+import { supabase } from "@/lib/supabase";
 
 export default function SchoolHomeworkManager({ childId }: { childId: string }) {
   const [homeworkDay, setHomeworkDay] = useState<SchoolHomeworkDay | null>(null);
@@ -44,6 +49,7 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
   const weekDateKeys = schoolHomeworkWeekDateKeys(weekAnchor);
   const [homeworkDate, setHomeworkDate] = useState(todayDateKey());
   const [agendaCameraVisible, setAgendaCameraVisible] = useState(false);
+  const [materialCameraItem, setMaterialCameraItem] = useState<SchoolHomeworkItem | null>(null);
   const [extractingAgenda, setExtractingAgenda] = useState(false);
   const [inputSourceType, setInputSourceType] = useState<"manual" | "photo">("manual");
 
@@ -125,6 +131,31 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
     }
   };
 
+  const handlePickAgendaPhoto = async () => {
+    if (extractingAgenda) return;
+
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert("Permission needed", "Allow photo library access to choose an agenda photo.");
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images"],
+        allowsEditing: false,
+        quality: 1,
+      });
+
+      if (!result.canceled && result.assets[0]?.uri) {
+        await handleAgendaPhotoCaptured(result.assets[0].uri);
+      }
+    } catch (err) {
+      console.error("[school-homework-manager] agenda library picker error:", err);
+      Alert.alert("Error", "Could not choose an agenda photo.");
+    }
+  };
+
   const handleToggleItem = async (item: SchoolHomeworkItem) => {
     try {
       await setSchoolHomeworkItemDone(item, item.status !== "done", "adult");
@@ -135,25 +166,11 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
     }
   };
 
-  const handleAttachPhoto = async (item: SchoolHomeworkItem) => {
+  const handleAttachPhoto = async (item: SchoolHomeworkItem, uri: string) => {
     try {
       setMaterialSavingItemId(item.id);
-      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!permission.granted) {
-        Alert.alert("Permission needed", "Allow photo library access to attach a homework photo.");
-        return;
-      }
-
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ["images"],
-        allowsEditing: false,
-        quality: 1,
-      });
-
-      if (result.canceled) return;
-
       const manipulated = await ImageManipulator.manipulateAsync(
-        result.assets[0].uri,
+        uri,
         [{ resize: { width: 1100 } }],
         { compress: 0.45, format: ImageManipulator.SaveFormat.JPEG, base64: true }
       );
@@ -176,6 +193,57 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
     } catch (err) {
       console.error("[school-homework-manager] attach photo error:", err);
       Alert.alert("Error", "Could not attach the photo.");
+    } finally {
+      setMaterialSavingItemId(null);
+    }
+  };
+
+  const handleAttachDocument = async (item: SchoolHomeworkItem) => {
+    try {
+      setMaterialSavingItemId(item.id);
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ["application/pdf", "image/*", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"],
+        copyToCacheDirectory: true,
+        multiple: false,
+      });
+
+      if (result.canceled || !result.assets[0]) return;
+
+      const asset = result.assets[0];
+      if (asset.size && asset.size > 12 * 1024 * 1024) {
+        Alert.alert("Document too large", "Please choose a file under 12 MB.");
+        return;
+      }
+
+      const { data: authData, error: authError } = await supabase.auth.getUser();
+      if (authError || !authData?.user?.id) throw new Error("Not authenticated");
+
+      const base64 = await FileSystem.readAsStringAsync(asset.uri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      const safeName = (asset.name || "homework-document")
+        .replace(/[^a-zA-Z0-9._-]+/g, "-")
+        .replace(/^-+|-+$/g, "") || "homework-document";
+      const path = `${authData.user.id}/${item.child_id}/school-homework/${Date.now()}-${safeName}`;
+      const mimeType = asset.mimeType || "application/octet-stream";
+      const { error: uploadError } = await supabase.storage
+        .from("worksheets")
+        .upload(path, decode(base64), { contentType: mimeType, upsert: false });
+
+      if (uploadError) throw uploadError;
+
+      await addSchoolHomeworkDocumentMaterial({
+        item,
+        storagePath: path,
+        fileName: asset.name,
+        mimeType,
+      });
+      setEditingMaterialItemIds((current) => ({ ...current, [item.id]: false }));
+      await fetchHomework();
+      Alert.alert("Document saved", "The child can now open this homework document.");
+    } catch (err) {
+      console.error("[school-homework-manager] attach document error:", err);
+      Alert.alert("Error", "Could not attach the document.");
     } finally {
       setMaterialSavingItemId(null);
     }
@@ -312,7 +380,17 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
             <MaterialCommunityIcons name="camera-outline" size={18} color="#1565c0" />
           )}
           <Text style={styles.photoHomeworkButtonText}>
-            {extractingAgenda ? "Reading agenda..." : "Add from agenda photo"}
+            {extractingAgenda ? "Reading agenda..." : "Take agenda photo"}
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.photoHomeworkButton, extractingAgenda && styles.saveButtonDisabled]}
+          onPress={() => void handlePickAgendaPhoto()}
+          disabled={extractingAgenda}
+        >
+          <MaterialCommunityIcons name="image-outline" size={18} color="#1565c0" />
+          <Text style={styles.photoHomeworkButtonText}>
+            Choose agenda photo
           </Text>
         </TouchableOpacity>
       </View>
@@ -415,6 +493,15 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
                       resizeMode="cover"
                     />
                   )}
+                {!editingMaterial &&
+                  (item.school_homework_materials || [])[0]?.material_type === "document" && (
+                    <View style={styles.documentPreview}>
+                      <MaterialCommunityIcons name="file-document-outline" size={18} color="#1565c0" />
+                      <Text style={styles.documentPreviewText} numberOfLines={1}>
+                        {(item.school_homework_materials || [])[0]?.title || "Document attached"}
+                      </Text>
+                    </View>
+                  )}
                 {editingMaterial && item.task_kind !== "signature" && (
                   <View style={styles.materialPanel}>
                     {materialReady && (
@@ -433,11 +520,19 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
                     <View style={styles.materialActions}>
                       <TouchableOpacity
                         style={styles.materialButton}
-                        onPress={() => void handleAttachPhoto(item)}
+                        onPress={() => setMaterialCameraItem(item)}
                         disabled={materialSavingItemId === item.id}
                       >
                         <MaterialCommunityIcons name="image-plus" size={16} color="#1565c0" />
                         <Text style={styles.materialButtonText}>Photo</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.materialButton}
+                        onPress={() => void handleAttachDocument(item)}
+                        disabled={materialSavingItemId === item.id}
+                      >
+                        <MaterialCommunityIcons name="file-upload-outline" size={16} color="#1565c0" />
+                        <Text style={styles.materialButtonText}>Document</Text>
                       </TouchableOpacity>
                     </View>
                     <TextInput
@@ -489,6 +584,15 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
         }}
         onClose={() => setAgendaCameraVisible(false)}
       />
+      <CameraCaptureModal
+        visible={Boolean(materialCameraItem)}
+        onCaptured={(uri) => {
+          const item = materialCameraItem;
+          setMaterialCameraItem(null);
+          if (item) void handleAttachPhoto(item, uri);
+        }}
+        onClose={() => setMaterialCameraItem(null)}
+      />
     </View>
   );
 }
@@ -531,7 +635,9 @@ const styles = StyleSheet.create({
   inputActionRow: {
     marginTop: 10,
     flexDirection: "row",
+    flexWrap: "wrap",
     alignItems: "center",
+    gap: 8,
   },
   photoHomeworkButton: {
     flexDirection: "row",
@@ -746,7 +852,9 @@ const styles = StyleSheet.create({
   },
   materialActions: {
     flexDirection: "row",
+    flexWrap: "wrap",
     alignItems: "center",
+    gap: 8,
     marginBottom: 8,
   },
   materialPreviewImage: {
@@ -762,6 +870,25 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 17,
     color: "#607d8b",
+  },
+  documentPreview: {
+    marginTop: 8,
+    marginBottom: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    alignSelf: "flex-start",
+    maxWidth: "100%",
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 8,
+    backgroundColor: "#e3f2fd",
+  },
+  documentPreviewText: {
+    flexShrink: 1,
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#1565c0",
   },
   signatureHint: {
     marginTop: 6,
