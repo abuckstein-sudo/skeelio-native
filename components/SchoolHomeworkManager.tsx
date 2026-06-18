@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   View,
   Image,
+  Share,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { decode } from "base64-arraybuffer";
@@ -30,6 +31,8 @@ import {
   schoolHomeworkWeekDateKeys,
   SchoolHomeworkDay,
   SchoolHomeworkItem,
+  signedSchoolHomeworkDocumentUrl,
+  signedSchoolHomeworkImageUrl,
   setSchoolHomeworkItemDone,
   todayDateKey,
 } from "@/lib/schoolHomework";
@@ -54,6 +57,7 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
   const [materialCameraItem, setMaterialCameraItem] = useState<SchoolHomeworkItem | null>(null);
   const [extractingAgenda, setExtractingAgenda] = useState(false);
   const [inputSourceType, setInputSourceType] = useState<"manual" | "photo">("manual");
+  const [editingDay, setEditingDay] = useState(false);
 
   useEffect(() => {
     void fetchHomework();
@@ -70,6 +74,7 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
       setInputSourceType(day?.source_type || "manual");
       setLimitInput(limit?.daily_limit_minutes ? String(limit.daily_limit_minutes) : "");
       setEditingMaterialItemIds({});
+      setEditingDay(!day);
     } catch (err) {
       console.error("[school-homework-manager] fetch error:", err);
     } finally {
@@ -93,6 +98,7 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
       });
       setHomeworkDay(saved);
       setInputSourceType(saved.source_type);
+      setEditingDay(false);
       Alert.alert("Saved", "School homework is ready on the child home screen.");
     } catch (err) {
       console.error("[school-homework-manager] save error:", err);
@@ -121,6 +127,7 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
 
       setRawInput(extracted.items.join("\n"));
       setInputSourceType("photo");
+      setEditingDay(true);
       Alert.alert(
         "Review extracted homework",
         "I filled the homework box from the agenda photo. Check it, edit anything wrong, then save."
@@ -179,9 +186,19 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
 
       if (!manipulated.base64) throw new Error("Could not read selected image");
 
+      const { data: authData, error: authError } = await supabase.auth.getUser();
+      if (authError || !authData?.user?.id) throw new Error("Not authenticated");
+      const path = `${authData.user.id}/${item.child_id}/school-homework/${Date.now()}-photo.jpg`;
+      const { error: uploadError } = await supabase.storage
+        .from("worksheets")
+        .upload(path, decode(manipulated.base64), { contentType: "image/jpeg", upsert: false });
+
+      if (uploadError) throw uploadError;
+
       const materialResult = await addSchoolHomeworkImageMaterial({
         item,
-        dataUrl: `data:image/jpeg;base64,${manipulated.base64}`,
+        storagePath: path,
+        bucket: "worksheets",
         imageBase64: manipulated.base64,
       });
       setEditingMaterialItemIds((current) => ({ ...current, [item.id]: false }));
@@ -293,6 +310,62 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
     });
   };
 
+  const handleShareDay = async () => {
+    if (!homeworkDay || items.length === 0) {
+      Alert.alert("Nothing to share", "Save homework for this day first.");
+      return;
+    }
+
+    try {
+      const lines = [
+        "Skeelio homework agenda",
+        schoolHomeworkDateLabel(homeworkDate),
+        "",
+        ...items.flatMap((item, index) => {
+          const material = (item.school_homework_materials || [])[0];
+          const itemLines = [
+            `${index + 1}. ${item.task_text}`,
+            `   Status: ${item.status === "done" ? "done" : item.status === "waiting_parent" ? "waiting for parent" : "to do"}`,
+          ];
+          if (item.linked_assignment_id || item.linked_spelling_list_id) {
+            itemLines.push("   Practice: available in Skeelio");
+          }
+          if (material?.material_type === "text" && material.text_content) {
+            itemLines.push(`   Note: ${material.text_content}`);
+          }
+          return itemLines;
+        }),
+      ];
+
+      const attachmentLines: string[] = [];
+      for (const item of items) {
+        const material = (item.school_homework_materials || [])[0];
+        if (!material) continue;
+        const isInlineImage = material.material_type === "image" && material.text_content?.startsWith("data:image/");
+        const url = material.material_type === "document"
+          ? await signedSchoolHomeworkDocumentUrl(material)
+          : material.material_type === "image" && !isInlineImage
+            ? await signedSchoolHomeworkImageUrl(material)
+            : null;
+        if (url) {
+          attachmentLines.push(`- ${material.title || item.task_text}: ${url}`);
+        } else if (material.material_type === "image") {
+          attachmentLines.push(`- ${material.title || item.task_text}: photo attached in Skeelio`);
+        }
+      }
+
+      if (attachmentLines.length > 0) {
+        lines.push("", "Attachments:", ...attachmentLines);
+      }
+
+      lines.push("", "Sent from Skeelio");
+      await Share.share({ message: lines.join("\n") });
+    } catch (err) {
+      console.error("[school-homework-manager] share error:", err);
+      Alert.alert("Could not share agenda", "Please try again.");
+    }
+  };
+
   const handleSaveLimit = async () => {
     const minutes = limitInput.trim() ? Number(limitInput.trim()) : null;
     if (minutes !== null && (!Number.isInteger(minutes) || minutes < 1)) {
@@ -369,6 +442,8 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
         </TouchableOpacity>
       </View>
 
+      {editingDay ? (
+        <>
       <TextInput
         style={styles.input}
         value={rawInput}
@@ -601,6 +676,74 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
           ))}
         </View>
       )}
+        </>
+      ) : homeworkDay ? (
+        <View style={styles.savedAgenda}>
+          <View style={styles.savedAgendaHeader}>
+            <View style={styles.savedAgendaTitleWrap}>
+              <Text style={styles.savedAgendaTitle}>Saved agenda</Text>
+              <Text style={styles.savedAgendaMeta}>
+                {doneCount}/{items.length} complete
+                {totalMinutes > 0 ? ` · ${totalMinutes} min` : ""}
+                {waitingCount > 0 ? ` · ${waitingCount} waiting for adult` : ""}
+              </Text>
+            </View>
+            <View style={styles.savedAgendaActions}>
+              <TouchableOpacity style={styles.savedAgendaButton} onPress={() => void handleShareDay()}>
+                <MaterialCommunityIcons name="share-variant-outline" size={16} color="#1565c0" />
+                <Text style={styles.savedAgendaButtonText}>Share</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.savedAgendaButton} onPress={() => setEditingDay(true)}>
+                <MaterialCommunityIcons name="pencil-outline" size={16} color="#1565c0" />
+                <Text style={styles.savedAgendaButtonText}>Edit</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {items.length === 0 ? (
+            <Text style={styles.schoolHomeworkEmpty}>No items saved for this day.</Text>
+          ) : (
+            items.map((item) => {
+              const material = (item.school_homework_materials || [])[0];
+              const done = item.status === "done";
+              return (
+                <View key={item.id} style={styles.savedAgendaItem}>
+                  <TouchableOpacity
+                    style={styles.previewCheck}
+                    onPress={() => void handleToggleItem(item)}
+                    activeOpacity={0.8}
+                  >
+                    <MaterialCommunityIcons
+                      name={done ? "check-circle" : "checkbox-blank-circle-outline"}
+                      size={18}
+                      color={done ? "#4caf50" : "#90a4ae"}
+                    />
+                  </TouchableOpacity>
+                  <View style={styles.previewTextWrap}>
+                    <Text style={[styles.previewText, done && styles.savedAgendaDoneText]}>
+                      {item.task_text}
+                    </Text>
+                    <Text style={styles.previewMeta}>
+                      {item.linked_assignment_id || item.linked_spelling_list_id
+                        ? `${item.task_kind} · linked practice`
+                        : material
+                          ? `${item.task_kind} · ${material.material_type} attached`
+                          : item.status === "waiting_parent"
+                            ? "waiting for parent"
+                            : item.task_kind}
+                    </Text>
+                  </View>
+                  {item.task_kind === "generic" && !item.linked_assignment_id ? (
+                    <TouchableOpacity style={styles.compactPracticeButton} onPress={() => handleCreatePractice(item)}>
+                      <Text style={styles.compactPracticeButtonText}>Practice</Text>
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
+              );
+            })
+          )}
+        </View>
+      ) : null}
       <CameraCaptureModal
         visible={agendaCameraVisible}
         onCaptured={(uri) => {
@@ -786,6 +929,84 @@ const styles = StyleSheet.create({
   previewList: {
     marginTop: 14,
     gap: 8,
+  },
+  savedAgenda: {
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: "#e2e8e5",
+    borderRadius: 8,
+    backgroundColor: "#fff",
+  },
+  savedAgendaHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 10,
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#edf2f2",
+  },
+  savedAgendaTitleWrap: {
+    flex: 1,
+  },
+  savedAgendaTitle: {
+    fontSize: 15,
+    fontWeight: "800",
+    color: "#263238",
+  },
+  savedAgendaMeta: {
+    marginTop: 3,
+    fontSize: 12,
+    lineHeight: 17,
+    color: "#607d8b",
+  },
+  savedAgendaActions: {
+    flexDirection: "row",
+    gap: 6,
+  },
+  savedAgendaButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: "#eef7ff",
+  },
+  savedAgendaButtonText: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#1565c0",
+  },
+  savedAgendaItem: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f0f0f0",
+  },
+  savedAgendaDoneText: {
+    color: "#78909c",
+    textDecorationLine: "line-through",
+  },
+  schoolHomeworkEmpty: {
+    padding: 12,
+    fontSize: 13,
+    lineHeight: 18,
+    color: "#78909c",
+  },
+  compactPracticeButton: {
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: "#e3f2fd",
+  },
+  compactPracticeButtonText: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#1565c0",
   },
   summaryBox: {
     backgroundColor: "#eef7ee",

@@ -20,6 +20,7 @@ import {
   ShopItem,
   updateRedemptionStatus,
 } from "@/lib/rewards";
+import { supabase } from "@/lib/supabase";
 
 interface RewardsManagerProps {
   childId: string;
@@ -36,18 +37,25 @@ export default function RewardsManager({ childId, stars, onInputFocus }: Rewards
   const [title, setTitle] = useState("");
   const [cost, setCost] = useState("50");
   const [description, setDescription] = useState("");
+  const [language, setLanguage] = useState<"en" | "fr">("en");
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [shopItems, requests, currentStars] = await Promise.all([
+      const [shopItems, requests, currentStars, childData] = await Promise.all([
         listShopItemsForChild(childId),
         listRewardRedemptionsForChild(childId),
         getStarsForChild(childId),
+        supabase
+          .from("children")
+          .select("preferred_language")
+          .eq("id", childId)
+          .maybeSingle(),
       ]);
       setItems(shopItems);
       setRedemptions(requests);
       setStarBalance(currentStars);
+      setLanguage((childData.data as any)?.preferred_language === "fr" ? "fr" : "en");
     } finally {
       setLoading(false);
     }
@@ -94,12 +102,31 @@ export default function RewardsManager({ childId, stars, onInputFocus }: Rewards
   };
 
   const handleArchive = async (item: ShopItem) => {
-    try {
-      await archiveShopItem(item.id);
-      await load();
-    } catch {
-      Alert.alert("Could not archive reward", "Please try again.");
-    }
+    const titleText = language === "fr" ? "Supprimer la récompense ?" : "Delete reward?";
+    const bodyText = language === "fr"
+      ? `Es-tu sûr de vouloir supprimer la récompense « ${item.title} » ?`
+      : `Are you sure you want to delete the "${item.title}" reward?`;
+    const cancelText = language === "fr" ? "Annuler" : "Cancel";
+    const deleteText = language === "fr" ? "Supprimer" : "Delete";
+
+    Alert.alert(titleText, bodyText, [
+      { text: cancelText, style: "cancel" },
+      {
+        text: deleteText,
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await archiveShopItem(item.id);
+            await load();
+          } catch {
+            Alert.alert(
+              language === "fr" ? "Suppression impossible" : "Could not delete reward",
+              language === "fr" ? "Réessaie dans un instant." : "Please try again."
+            );
+          }
+        },
+      },
+    ]);
   };
 
   const handleStatus = async (
@@ -220,7 +247,7 @@ export default function RewardsManager({ childId, stars, onInputFocus }: Rewards
                 </Text>
               </View>
               <TouchableOpacity style={styles.iconButton} onPress={() => handleArchive(item)}>
-                <MaterialCommunityIcons name="archive-outline" size={18} color="#64748b" />
+                <MaterialCommunityIcons name="trash-can-outline" size={18} color="#dc2626" />
               </TouchableOpacity>
             </View>
           ))

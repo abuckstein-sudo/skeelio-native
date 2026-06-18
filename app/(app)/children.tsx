@@ -281,8 +281,12 @@ export default function ChildrenScreen() {
         animationType="fade"
         onRequestClose={handlePinCancel}
       >
-        <View style={styles.pinModalOverlay}>
-          <View style={styles.pinModalContainer}>
+        <TouchableOpacity style={styles.pinModalOverlay} activeOpacity={1} onPress={handlePinCancel}>
+          <TouchableOpacity
+            style={styles.pinModalContainer}
+            activeOpacity={1}
+            onPress={(event) => event.stopPropagation()}
+          >
             <Text style={styles.pinModalTitle}>
               {selectedChildForPin?.name}
               {"'s PIN"}
@@ -318,8 +322,8 @@ export default function ChildrenScreen() {
                 <Text style={styles.pinButtonCancelText}>Cancel</Text>
               </TouchableOpacity>
             </View>
-          </View>
-        </View>
+          </TouchableOpacity>
+        </TouchableOpacity>
       </Modal>
     </SafeAreaView>
   );

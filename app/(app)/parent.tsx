@@ -172,7 +172,7 @@ export default function ParentScreen() {
 
   const selectedChild = children.find((c) => c.id === selectedChildId);
   const tabs: { id: ParentTab; label: string; icon: keyof typeof MaterialCommunityIcons.glyphMap }[] = [
-    { id: "today", label: "Today", icon: "calendar-today" },
+    { id: "today", label: "Homework", icon: "calendar-check" },
     { id: "assign", label: "Assign", icon: "playlist-plus" },
     { id: "progress", label: "Progress", icon: "chart-line" },
     { id: "rewards", label: "Rewards", icon: "star-outline" },
@@ -266,7 +266,7 @@ export default function ParentScreen() {
               ))}
             </ScrollView>
             <TouchableOpacity style={styles.editChildButton} onPress={handleEditChild}>
-              <MaterialCommunityIcons name="cog" size={22} color="#2196f3" />
+              <MaterialCommunityIcons name="pencil-outline" size={22} color="#2196f3" />
             </TouchableOpacity>
           </View>
 
@@ -277,7 +277,13 @@ export default function ParentScreen() {
                 <TouchableOpacity
                   key={tab.id}
                   style={[styles.tabButton, selected && styles.tabButtonActive]}
-                  onPress={() => setActiveTab(tab.id)}
+                  onPress={() => {
+                    if (tab.id === "assign") {
+                      handleAssign();
+                      return;
+                    }
+                    setActiveTab(tab.id);
+                  }}
                 >
                   <MaterialCommunityIcons
                     name={tab.icon}
@@ -295,32 +301,7 @@ export default function ParentScreen() {
           {selectedChild && (
             <>
               {activeTab === "today" && (
-                <>
-                  <SchoolHomeworkManager childId={selectedChild.id} />
-                  <View style={styles.previewSection}>
-                    <ChildSnapshot
-                      childId={selectedChild.id}
-                      childName={selectedChild.name}
-                      grade={selectedChild.grade_level || ""}
-                      avatar={selectedChild.selected_avatar || "fox"}
-                    />
-                  </View>
-                </>
-              )}
-
-              {activeTab === "assign" && (
-                <View style={styles.assignPanel}>
-                  <View style={styles.assignPanelHeader}>
-                    <Text style={styles.assignPanelTitle}>Assignment tools</Text>
-                    <Text style={styles.assignPanelBody}>
-                      Create standalone practice, or use the Practice button on a school-homework item to link it directly.
-                    </Text>
-                  </View>
-                  <TouchableOpacity style={styles.primaryActionButton} onPress={handleAssign}>
-                    <MaterialCommunityIcons name="playlist-plus" size={20} color="#fff" />
-                    <Text style={styles.primaryActionButtonText}>Open assignment tools</Text>
-                  </TouchableOpacity>
-                </View>
+                <SchoolHomeworkManager childId={selectedChild.id} />
               )}
 
               {activeTab === "progress" && (
