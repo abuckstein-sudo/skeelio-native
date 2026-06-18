@@ -28,6 +28,7 @@ import {
   deleteAssignment,
   Assignment,
 } from "@/lib/assignments";
+import { linkSchoolHomeworkAssignment } from "@/lib/schoolHomework";
 import {
   listSpellingListsForChild,
   createSpellingList,
@@ -50,9 +51,18 @@ interface Child {
 export default function AssignScreen() {
   const router = useRouter();
   const { session } = useAuth();
-  const params = useLocalSearchParams<{ childId: string; childName?: string }>();
+  const params = useLocalSearchParams<{
+    childId: string;
+    childName?: string;
+    schoolHomeworkItemId?: string;
+    schoolHomeworkItemText?: string;
+    homeworkDate?: string;
+  }>();
   const id = String(params.childId || "");
   const paramName = params.childName ? String(params.childName) : "";
+  const linkedSchoolHomeworkItemId = params.schoolHomeworkItemId ? String(params.schoolHomeworkItemId) : "";
+  const linkedSchoolHomeworkItemText = params.schoolHomeworkItemText ? String(params.schoolHomeworkItemText) : "";
+  const linkedHomeworkDate = params.homeworkDate ? String(params.homeworkDate) : "";
 
   const [child, setChild] = useState<Child | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -66,7 +76,7 @@ export default function AssignScreen() {
   const [selectedWordProblemOp, setSelectedWordProblemOp] = useState<Operation | "mixed">("mixed");
   const [selectedMultiplicationTables, setSelectedMultiplicationTables] = useState<number[]>([]);
   const [questionCount, setQuestionCount] = useState(8);
-  const [dueDate, setDueDate] = useState("");
+  const [dueDate, setDueDate] = useState(linkedHomeworkDate);
   const [assignmentMode, setAssignmentMode] = useState<"practice" | "quiz">("practice");
   const [isCreatingAssignment, setIsCreatingAssignment] = useState(false);
   const [showCompletedAssignments, setShowCompletedAssignments] = useState(true);
@@ -194,7 +204,7 @@ export default function AssignScreen() {
     if (assignmentSubject === "math") {
       setIsCreatingAssignment(true);
       try {
-        await createMathAssignment({
+        const assignment = await createMathAssignment({
           childId: id,
           topic: selectedTopic,
           count: questionCount,
@@ -204,6 +214,7 @@ export default function AssignScreen() {
           multiplicationTables:
             selectedTopic === "multiplication" ? selectedMultiplicationTables : undefined,
         });
+        await linkCreatedSchoolHomeworkAssignment(assignment.id, selectedTopic);
 
         await fetchAssignments();
 
@@ -232,7 +243,7 @@ export default function AssignScreen() {
 
       setIsCreatingAssignment(true);
       try {
-        await createSpellingAssignment(
+        const assignment = await createSpellingAssignment(
           id,
           selectedSpellingList.id,
           selectedSpellingList.title,
@@ -240,6 +251,7 @@ export default function AssignScreen() {
           "practice",
           dueDate || undefined
         );
+        await linkCreatedSchoolHomeworkAssignment(assignment.id, "spelling");
 
         await fetchAssignments();
 
@@ -262,7 +274,7 @@ export default function AssignScreen() {
       setIsCreatingAssignment(true);
       try {
         const { createConjugationAssignment } = await import("@/lib/assignments");
-        await createConjugationAssignment(
+        const assignment = await createConjugationAssignment(
           id,
           conjugationLanguage,
           conjugationVerbGroups,
@@ -270,6 +282,7 @@ export default function AssignScreen() {
           questionCount,
           dueDate || undefined
         );
+        await linkCreatedSchoolHomeworkAssignment(assignment.id, "conjugation");
 
         await fetchAssignments();
 
@@ -324,7 +337,7 @@ export default function AssignScreen() {
 
       await createSpellingItems(newList.id, id, words, generateLanguage);
 
-      await createSpellingAssignment(
+      const assignment = await createSpellingAssignment(
         id,
         newList.id,
         listTitle,
@@ -332,6 +345,7 @@ export default function AssignScreen() {
         "practice",
         dueDate || undefined
       );
+      await linkCreatedSchoolHomeworkAssignment(assignment.id, "spelling");
 
       await fetchAssignments();
       await fetchSpellingLists();
@@ -379,6 +393,15 @@ export default function AssignScreen() {
       console.error("[proceedWithGenerateSpelling] error:", err);
       Alert.alert("Error", "Failed to generate words");
     }
+  };
+
+  const linkCreatedSchoolHomeworkAssignment = async (assignmentId: string, practiceType: string) => {
+    if (!linkedSchoolHomeworkItemId) return;
+    await linkSchoolHomeworkAssignment({
+      itemId: linkedSchoolHomeworkItemId,
+      assignmentId,
+      practiceType,
+    });
   };
 
   const handleGenerateSpellingList = () => {
@@ -745,6 +768,17 @@ export default function AssignScreen() {
       </View>
 
       {error ? <Text style={styles.errorText}>{error}</Text> : null}
+      {linkedSchoolHomeworkItemId ? (
+        <View style={styles.linkedHomeworkBanner}>
+          <MaterialCommunityIcons name="clipboard-text-outline" size={18} color="#1565c0" />
+          <View style={styles.linkedHomeworkTextWrap}>
+            <Text style={styles.linkedHomeworkTitle}>Creating practice from school homework</Text>
+            <Text style={styles.linkedHomeworkText} numberOfLines={2}>
+              {linkedSchoolHomeworkItemText || "This assignment will be linked to the selected homework item."}
+            </Text>
+          </View>
+        </View>
+      ) : null}
 
       <ScrollView
         style={{ flex: 1 }}
@@ -1422,6 +1456,33 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     marginVertical: 8,
     textAlign: "center",
+  },
+  linkedHomeworkBanner: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+    marginHorizontal: 16,
+    marginTop: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 8,
+    backgroundColor: "#eef7ff",
+    borderWidth: 1,
+    borderColor: "#cfe8fb",
+  },
+  linkedHomeworkTextWrap: {
+    flex: 1,
+  },
+  linkedHomeworkTitle: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#1565c0",
+  },
+  linkedHomeworkText: {
+    marginTop: 2,
+    fontSize: 12,
+    color: "#455a64",
+    lineHeight: 16,
   },
   contentContainer: {
     paddingHorizontal: 16,

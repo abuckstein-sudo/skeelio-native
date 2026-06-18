@@ -583,6 +583,35 @@ export async function setSchoolHomeworkItemDone(
   if (error) throw error;
 }
 
+export async function linkSchoolHomeworkAssignment(params: {
+  itemId: string;
+  assignmentId: string;
+  practiceType: string;
+}): Promise<void> {
+  const { data: item, error: readError } = await supabase
+    .from("school_homework_items")
+    .select("metadata")
+    .eq("id", params.itemId)
+    .single();
+
+  if (readError) throw readError;
+
+  const { error } = await supabase
+    .from("school_homework_items")
+    .update({
+      linked_assignment_id: params.assignmentId,
+      metadata: {
+        ...((item as any)?.metadata || {}),
+        linked_practice: params.practiceType,
+        needs_material: false,
+      },
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", params.itemId);
+
+  if (error) throw error;
+}
+
 export function itemNeedsMaterial(item: Pick<SchoolHomeworkItem, "task_kind" | "metadata" | "school_homework_materials">): boolean {
   const hasMaterial = (item.school_homework_materials || []).length > 0;
   return Boolean((item.metadata as any)?.needs_material) && !hasMaterial;

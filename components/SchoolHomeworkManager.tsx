@@ -15,6 +15,7 @@ import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import * as ImageManipulator from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
+import { useRouter } from "expo-router";
 import CameraCaptureModal from "./CameraCaptureModal";
 import {
   addSchoolHomeworkDocumentMaterial,
@@ -36,6 +37,7 @@ import { getChildHomeworkLimit, setChildHomeworkLimit, unlockChildHomeworkForTod
 import { supabase } from "@/lib/supabase";
 
 export default function SchoolHomeworkManager({ childId }: { childId: string }) {
+  const router = useRouter();
   const [homeworkDay, setHomeworkDay] = useState<SchoolHomeworkDay | null>(null);
   const [rawInput, setRawInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -279,6 +281,18 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
     setEditingMaterialItemIds((current) => ({ ...current, [item.id]: true }));
   };
 
+  const handleCreatePractice = (item: SchoolHomeworkItem) => {
+    router.push({
+      pathname: "/(app)/assign",
+      params: {
+        childId,
+        schoolHomeworkItemId: item.id,
+        schoolHomeworkItemText: item.task_text,
+        homeworkDate,
+      },
+    });
+  };
+
   const handleSaveLimit = async () => {
     const minutes = limitInput.trim() ? Number(limitInput.trim()) : null;
     if (minutes !== null && (!Number.isInteger(minutes) || minutes < 1)) {
@@ -459,6 +473,7 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
                 {(() => {
                   const materialReady = (item.school_homework_materials || []).length > 0;
                   const needsSetup = itemNeedsMaterial(item);
+                  const canAddMaterial = item.task_kind === "generic" || needsSetup;
                   const editingMaterial = Boolean(editingMaterialItemIds[item.id]) || needsSetup;
                   return (
                     <>
@@ -475,7 +490,7 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
                             ? "waiting for parent"
                             : item.task_kind}
                   </Text>
-                  {(materialReady || itemNeedsMaterial(item)) && !editingMaterial && (
+                  {(materialReady || canAddMaterial) && !editingMaterial && (
                     <TouchableOpacity
                       style={styles.editMaterialButton}
                       onPress={() => handleStartMaterialEdit(item)}
@@ -534,6 +549,16 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
                         <MaterialCommunityIcons name="file-upload-outline" size={16} color="#1565c0" />
                         <Text style={styles.materialButtonText}>Document</Text>
                       </TouchableOpacity>
+                      {item.task_kind === "generic" && (
+                        <TouchableOpacity
+                          style={styles.materialButton}
+                          onPress={() => handleCreatePractice(item)}
+                          disabled={materialSavingItemId === item.id}
+                        >
+                          <MaterialCommunityIcons name="school-outline" size={16} color="#1565c0" />
+                          <Text style={styles.materialButtonText}>Practice</Text>
+                        </TouchableOpacity>
+                      )}
                     </View>
                     <TextInput
                       style={styles.materialInput}

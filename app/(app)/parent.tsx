@@ -28,6 +28,8 @@ interface Child {
   intro_seen?: boolean;
 }
 
+type ParentTab = "today" | "assign" | "progress" | "rewards";
+
 const AVATAR_EMOJI: Record<string, string> = {
   cat: "🐱",
   owl: "🦉",
@@ -47,6 +49,7 @@ export default function ParentScreen() {
   const [error, setError] = useState("");
   const [showMenu, setShowMenu] = useState(false);
   const [parentName, setParentName] = useState("");
+  const [activeTab, setActiveTab] = useState<ParentTab>("today");
 
   useFocusEffect(
     useCallback(() => {
@@ -168,6 +171,12 @@ export default function ParentScreen() {
   };
 
   const selectedChild = children.find((c) => c.id === selectedChildId);
+  const tabs: { id: ParentTab; label: string; icon: keyof typeof MaterialCommunityIcons.glyphMap }[] = [
+    { id: "today", label: "Today", icon: "calendar-today" },
+    { id: "assign", label: "Assign", icon: "playlist-plus" },
+    { id: "progress", label: "Progress", icon: "chart-line" },
+    { id: "rewards", label: "Rewards", icon: "star-outline" },
+  ];
 
   if (isLoading) {
     return (
@@ -193,11 +202,8 @@ export default function ParentScreen() {
           )}
         </View>
         <View style={styles.headerButtons}>
-          <TouchableOpacity style={styles.menuButton} onPress={handleAssign}>
-            <Text style={{ fontSize: 13, fontWeight: "700", color: "#fff" }}>Assign</Text>
-          </TouchableOpacity>
           <TouchableOpacity style={styles.menuButton} onPress={() => setShowMenu(true)}>
-            <Text style={{ fontSize: 13, fontWeight: "700", color: "#fff" }}>Account</Text>
+            <MaterialCommunityIcons name="account-circle-outline" size={20} color="#fff" />
           </TouchableOpacity>
         </View>
       </View>
@@ -264,20 +270,76 @@ export default function ParentScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* Child Snapshot */}
+          <View style={styles.tabBar}>
+            {tabs.map((tab) => {
+              const selected = activeTab === tab.id;
+              return (
+                <TouchableOpacity
+                  key={tab.id}
+                  style={[styles.tabButton, selected && styles.tabButtonActive]}
+                  onPress={() => setActiveTab(tab.id)}
+                >
+                  <MaterialCommunityIcons
+                    name={tab.icon}
+                    size={17}
+                    color={selected ? "#1565c0" : "#607d8b"}
+                  />
+                  <Text style={[styles.tabButtonText, selected && styles.tabButtonTextActive]}>
+                    {tab.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
           {selectedChild && (
             <>
-              <ChildSnapshot
-                childId={selectedChild.id}
-                childName={selectedChild.name}
-                grade={selectedChild.grade_level || ""}
-                avatar={selectedChild.selected_avatar || "fox"}
-              />
-              <SchoolHomeworkManager childId={selectedChild.id} />
-              <ParentProofSection childId={selectedChild.id} />
-              <View style={styles.rewardSection}>
-                <RewardsManager childId={selectedChild.id} onInputFocus={scrollRewardsFormIntoView} />
-              </View>
+              {activeTab === "today" && (
+                <>
+                  <SchoolHomeworkManager childId={selectedChild.id} />
+                  <View style={styles.previewSection}>
+                    <ChildSnapshot
+                      childId={selectedChild.id}
+                      childName={selectedChild.name}
+                      grade={selectedChild.grade_level || ""}
+                      avatar={selectedChild.selected_avatar || "fox"}
+                    />
+                  </View>
+                </>
+              )}
+
+              {activeTab === "assign" && (
+                <View style={styles.assignPanel}>
+                  <View style={styles.assignPanelHeader}>
+                    <Text style={styles.assignPanelTitle}>Assignment tools</Text>
+                    <Text style={styles.assignPanelBody}>
+                      Create standalone practice, or use the Practice button on a school-homework item to link it directly.
+                    </Text>
+                  </View>
+                  <TouchableOpacity style={styles.primaryActionButton} onPress={handleAssign}>
+                    <MaterialCommunityIcons name="playlist-plus" size={20} color="#fff" />
+                    <Text style={styles.primaryActionButtonText}>Open assignment tools</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {activeTab === "progress" && (
+                <>
+                  <ChildSnapshot
+                    childId={selectedChild.id}
+                    childName={selectedChild.name}
+                    grade={selectedChild.grade_level || ""}
+                    avatar={selectedChild.selected_avatar || "fox"}
+                  />
+                  <ParentProofSection childId={selectedChild.id} />
+                </>
+              )}
+
+              {activeTab === "rewards" && (
+                <View style={styles.rewardSection}>
+                  <RewardsManager childId={selectedChild.id} onInputFocus={scrollRewardsFormIntoView} />
+                </View>
+              )}
             </>
           )}
         </ScrollView>
@@ -371,7 +433,7 @@ const styles = StyleSheet.create({
   },
   menuButton: {
     paddingVertical: 8,
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     borderRadius: 8,
     backgroundColor: "#2196f3",
     alignItems: "center",
@@ -440,6 +502,37 @@ const styles = StyleSheet.create({
   childButtonNameActive: {
     color: "#2196f3",
   },
+  tabBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: "#f6f8f8",
+    borderBottomWidth: 1,
+    borderBottomColor: "#e8eeee",
+  },
+  tabButton: {
+    flex: 1,
+    minHeight: 44,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 3,
+  },
+  tabButtonActive: {
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: "#cfe8fb",
+  },
+  tabButtonText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#607d8b",
+  },
+  tabButtonTextActive: {
+    color: "#1565c0",
+  },
   emptyContainer: {
     flex: 1,
     justifyContent: "center",
@@ -449,6 +542,46 @@ const styles = StyleSheet.create({
   rewardSection: {
     paddingHorizontal: 16,
     paddingTop: 16,
+  },
+  previewSection: {
+    marginTop: 6,
+  },
+  assignPanel: {
+    marginHorizontal: 16,
+    marginTop: 16,
+    padding: 16,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#e2e8e5",
+    backgroundColor: "#fff",
+  },
+  assignPanelHeader: {
+    marginBottom: 14,
+  },
+  assignPanelTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#263238",
+    marginBottom: 5,
+  },
+  assignPanelBody: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: "#607d8b",
+  },
+  primaryActionButton: {
+    minHeight: 46,
+    borderRadius: 8,
+    backgroundColor: "#2196f3",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+  primaryActionButtonText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#fff",
   },
   emptyText: {
     fontSize: 16,
