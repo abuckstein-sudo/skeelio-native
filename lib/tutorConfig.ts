@@ -59,7 +59,7 @@ export const LADDERS: Record<Operation, Tier[]> = {
 // The mastery gate — THIS IS THE PEDAGOGY. Tune these to make it easier/harder.
 // CRITICAL: Mastery is based on UNAIDED correctness only.
 // - An attempt that is correct but used hints (ai_hint_used = true) earns NO mastery credit.
-// - It counts against the rate like a miss: masteryRate = unaided_correct / total_attempts.
+// - Parent-assigned homework reinforces mastery, but counts at lower weight than adaptive practice.
 // - This ensures children advance only when they can solve problems independently.
 export const GATE = {
   minAttemptsToAdvance: TIER_GATE.minUnaidedAttempts,   // need at least this many attempts at a tier

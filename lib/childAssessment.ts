@@ -1,5 +1,5 @@
 import { supabase } from "@/lib/supabase";
-import { tierStats, Attempt } from "@/lib/tutor/ability";
+import { tierStats, Attempt, isSolidTierStat } from "@/lib/tutor/ability";
 import { LADDERS, Operation, gradeExpectedTierIndex } from "@/lib/tutorConfig";
 import { ASSESSMENT, TIER_GATE } from "./masteryConfig";
 
@@ -36,7 +36,7 @@ function isConjugationConcept(concept: unknown): boolean {
 
 export async function buildChildAssessment(childId: string): Promise<ChildAssessment> {
   // Map to hold canonical areas: area name → AssessmentArea
-  const areaMap: Record<CanonicalArea, AssessmentArea> = {};
+  const areaMap: Partial<Record<CanonicalArea, AssessmentArea>> = {};
   const now = new Date();
   const twoWeeksAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
 
@@ -63,7 +63,7 @@ export async function buildChildAssessment(childId: string): Promise<ChildAssess
     for (const op of mathOps) {
       const { data: attemptData } = await supabase
         .from("learning_attempts")
-        .select("tier, was_correct, ai_hint_used, created_at")
+        .select("tier, question_text, was_correct, ai_hint_used, evidence_source, created_at")
         .eq("child_id", childId)
         .eq("topic", op)
         .not("tier", "is", null);
@@ -72,9 +72,23 @@ export async function buildChildAssessment(childId: string): Promise<ChildAssess
         tierId: row.tier,
         correct: row.was_correct,
         hintUsed: row.ai_hint_used || false,
+        questionText: row.question_text,
+        evidenceSource: row.evidence_source,
       }));
 
       const unaidedAttempts = attempts.filter((a) => !a.hintUsed);
+      const masteryEvidence = unaidedAttempts.reduce((sum, a) => {
+        const weight = TIER_GATE.evidenceWeights[
+          String(a.evidenceSource || "unknown") as keyof typeof TIER_GATE.evidenceWeights
+        ] ?? TIER_GATE.evidenceWeights.unknown;
+        return sum + weight;
+      }, 0);
+      const masteryCorrectEvidence = unaidedAttempts.reduce((sum, a) => {
+        const weight = TIER_GATE.evidenceWeights[
+          String(a.evidenceSource || "unknown") as keyof typeof TIER_GATE.evidenceWeights
+        ] ?? TIER_GATE.evidenceWeights.unknown;
+        return sum + (a.correct ? weight : 0);
+      }, 0);
       const recentAttempts = (attemptData || []).filter(
         (a) => new Date(a.created_at) >= twoWeeksAgo
       );
@@ -83,18 +97,17 @@ export async function buildChildAssessment(childId: string): Promise<ChildAssess
       let evidence = "No practice yet";
       let active = recentAttempts.length > 0;
 
-      if (unaidedAttempts.length < ASSESSMENT.notEnoughDataBelowUnaided) {
+      if (masteryEvidence < ASSESSMENT.notEnoughDataBelowUnaided) {
         status = "not_enough_data";
-        evidence = `${unaidedAttempts.length} attempts`;
+        evidence = `${masteryEvidence.toFixed(1).replace(/\.0$/, "")} evidence points`;
       } else {
-        const unaided_correct = unaidedAttempts.filter((a) => a.correct).length;
-        const masteryRate = unaided_correct / unaidedAttempts.length;
+        const masteryRate = masteryCorrectEvidence / masteryEvidence;
         const ladder = LADDERS[op];
         const stats = tierStats(attempts);
         let highestSolidIdx = -1;
         for (let i = ladder.length - 1; i >= 0; i--) {
           const s = stats[ladder[i].id];
-          if (s && s.unaided_attempts >= TIER_GATE.minUnaidedAttempts && s.masteryRate >= TIER_GATE.minUnaidedRate && s.coverageMet) {
+          if (isSolidTierStat(s)) {
             highestSolidIdx = i;
             break;
           }
@@ -104,7 +117,7 @@ export async function buildChildAssessment(childId: string): Promise<ChildAssess
 
         if (expectedIdx === -1) {
           status = masteryRate >= ASSESSMENT.onTrackUnaidedRate ? "on_track" : "needs_work";
-          evidence = `${unaided_correct}/${unaidedAttempts.length} on ${solidLabel}`;
+          evidence = `${masteryCorrectEvidence.toFixed(1).replace(/\.0$/, "")}/${masteryEvidence.toFixed(1).replace(/\.0$/, "")} on ${solidLabel}`;
         } else if (highestSolidIdx >= expectedIdx) {
           status = "on_track";
           evidence = `Solid at ${solidLabel}`;
@@ -114,7 +127,7 @@ export async function buildChildAssessment(childId: string): Promise<ChildAssess
           evidence = `Solid at ${solidLabel}; ready for ${nextLabel}`;
         } else {
           status = "needs_work";
-          evidence = `${unaided_correct}/${unaidedAttempts.length} on ${solidLabel}`;
+          evidence = `${masteryCorrectEvidence.toFixed(1).replace(/\.0$/, "")}/${masteryEvidence.toFixed(1).replace(/\.0$/, "")} on ${solidLabel}`;
         }
       }
 

@@ -405,6 +405,7 @@ export default function HomeworkScreen() {
           user_answer: userAnswer.trim(),
           was_correct: isCorrect,
           ai_hint_used: hintUsedPerQuestion[currentQuestionIndex] || false,
+          evidence_source: "assigned_homework",
         },
       ]);
 

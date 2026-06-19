@@ -139,7 +139,7 @@ export async function createMathAssignment(params: {
   // Fetch attempt data for tier and band calculation
   const { data: attemptData } = await supabase
     .from("learning_attempts")
-    .select("tier, was_correct, ai_hint_used, topic, skill")
+    .select("tier, question_text, was_correct, ai_hint_used, evidence_source, topic, skill")
     .eq("child_id", childId)
     .not("tier", "is", null);
 
@@ -158,6 +158,8 @@ export async function createMathAssignment(params: {
           tierId: row.tier,
           correct: row.was_correct,
           hintUsed: row.ai_hint_used || false,
+          questionText: row.question_text,
+          evidenceSource: row.evidence_source,
         }));
     }
 
@@ -185,6 +187,8 @@ export async function createMathAssignment(params: {
         tierId: row.tier,
         correct: row.was_correct,
         hintUsed: row.ai_hint_used || false,
+        questionText: row.question_text,
+        evidenceSource: row.evidence_source,
       }));
 
     const tables = Array.isArray(operationTables || multiplicationTables)

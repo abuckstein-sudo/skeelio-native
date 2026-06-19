@@ -123,7 +123,7 @@ export default function WordProblemsScreen() {
       for (const op of operations) {
         const { data: attemptData } = await supabase
           .from("learning_attempts")
-          .select("tier, was_correct, ai_hint_used")
+          .select("tier, question_text, was_correct, ai_hint_used, evidence_source")
           .eq("child_id", childId)
           .eq("topic", op)
           .not("tier", "is", null);
@@ -132,6 +132,8 @@ export default function WordProblemsScreen() {
           tierId: row.tier,
           correct: row.was_correct,
           hintUsed: row.ai_hint_used || false,
+          questionText: row.question_text,
+          evidenceSource: row.evidence_source,
         }));
       }
 
@@ -204,6 +206,7 @@ export default function WordProblemsScreen() {
           user_answer: userAnswer.trim(),
           was_correct: isCorrect,
           ai_hint_used: hintLevel > 0,
+          evidence_source: "word_problem",
         },
       ]);
 

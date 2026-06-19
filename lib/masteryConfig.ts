@@ -12,7 +12,14 @@ export const SKILL_SESSION = {
 
 export const TIER_GATE = {
   minUnaidedAttempts: 12, // was 8
+  minAdaptiveUnaidedAttempts: 6,
   minUnaidedRate: 0.85,
+  evidenceWeights: {
+    adaptive_practice: 1,
+    assigned_homework: 0.5,
+    word_problem: 1,
+    unknown: 1,
+  },
 };
 
 export const ASSESSMENT = {

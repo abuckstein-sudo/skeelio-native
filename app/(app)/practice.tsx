@@ -16,7 +16,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "@/lib/supabase";
 import { addStars } from "@/lib/addStars";
 import { generateQuestion, pickTeachExample } from "@/lib/tutor/generate";
-import { currentTierAndBand, Attempt, tierStats } from "@/lib/tutor/ability";
+import { currentTierAndBand, Attempt, tierStats, isSolidTierStat } from "@/lib/tutor/ability";
 import { LADDERS, GATE, Operation, FACT_TIERS } from "@/lib/tutorConfig";
 import { computeExampleSteps } from "@/lib/tutor/steps";
 import {
@@ -141,7 +141,7 @@ export default function PracticeScreen() {
   // Outcome state
   const [sessionComplete, setSessionComplete] = useState(false);
   const [outcomeMessage, setOutcomeMessage] = useState<string>("");
-  const [outcomeBand, setOutcomeBand] = useState<"solid" | "developing" | "struggling">("developing");
+  const [outcomeBand, setOutcomeBand] = useState<"solid" | "developing" | "struggling" | "needs-teach">("developing");
 
   // Teach state
   const [teachData, setTeachData] = useState<TeachData | null>(null);
@@ -172,7 +172,7 @@ export default function PracticeScreen() {
         // Fetch attempt log for this operation
         const { data: attemptData, error: attemptError } = await supabase
           .from("learning_attempts")
-          .select("tier, was_correct, ai_hint_used")
+          .select("tier, question_text, was_correct, ai_hint_used, evidence_source")
           .eq("child_id", childId)
           .eq("topic", topic)
           .not("tier", "is", null); // Ignore old data without tier
@@ -186,6 +186,8 @@ export default function PracticeScreen() {
           tierId: row.tier,
           correct: row.was_correct,
           hintUsed: row.ai_hint_used || false,
+          questionText: row.question_text,
+          evidenceSource: row.evidence_source,
         }));
 
         // Get current tier and band
@@ -225,10 +227,7 @@ export default function PracticeScreen() {
           LADDERS.multiplication.forEach((tier) => {
             const stat = stats[tier.id];
             if (stat) {
-              const isSolid =
-                stat.unaided_attempts >= GATE.minAttemptsToAdvance &&
-                stat.masteryRate >= GATE.accuracyToAdvance &&
-                stat.coverageMet;
+              const isSolid = isSolidTierStat(stat);
               const masteryPct = (stat.masteryRate * 100).toFixed(1);
               const solidStr = isSolid ? "YES" : "NO";
               console.log(
@@ -425,6 +424,7 @@ export default function PracticeScreen() {
           user_answer: userAnswer.trim(),
           was_correct: isCorrect,
           ai_hint_used: hintUsedPerQuestion[currentQuestionIndex],
+          evidence_source: "adaptive_practice",
         },
       ]);
 
@@ -499,7 +499,7 @@ export default function PracticeScreen() {
 
       const { data: attemptData } = await supabase
         .from("learning_attempts")
-        .select("tier, was_correct")
+        .select("tier, question_text, was_correct, ai_hint_used, evidence_source")
         .eq("child_id", childId)
         .eq("topic", topic)
         .not("tier", "is", null);
@@ -507,6 +507,9 @@ export default function PracticeScreen() {
       const attempts: Attempt[] = (attemptData || []).map((row: any) => ({
         tierId: row.tier,
         correct: row.was_correct,
+        hintUsed: row.ai_hint_used || false,
+        questionText: row.question_text,
+        evidenceSource: row.evidence_source,
       }));
 
       const { tierId: nextTierId, band, advanceReady } = currentTierAndBand(
