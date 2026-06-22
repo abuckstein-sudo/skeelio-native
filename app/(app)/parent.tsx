@@ -29,6 +29,9 @@ interface Child {
 }
 
 type ParentTab = "today" | "assign" | "progress" | "rewards";
+type ParentAction =
+  | { id: ParentTab; label: string; icon: keyof typeof MaterialCommunityIcons.glyphMap; color: string; softColor: string }
+  | { id: "child-mode"; label: string; icon: keyof typeof MaterialCommunityIcons.glyphMap; color: string; softColor: string };
 
 const AVATAR_EMOJI: Record<string, string> = {
   cat: "🐱",
@@ -137,7 +140,11 @@ export default function ParentScreen() {
   };
 
   const handleBack = () => {
-    router.back();
+    router.push("/children");
+  };
+
+  const handleOpenChildMode = () => {
+    router.push("/children");
   };
 
   const scrollRewardsFormIntoView = useCallback(() => {
@@ -171,11 +178,12 @@ export default function ParentScreen() {
   };
 
   const selectedChild = children.find((c) => c.id === selectedChildId);
-  const tabs: { id: ParentTab; label: string; icon: keyof typeof MaterialCommunityIcons.glyphMap; color: string; softColor: string }[] = [
+  const actions: ParentAction[] = [
     { id: "today", label: "Homework", icon: "calendar-check", color: "#0ea5e9", softColor: "#e0f2fe" },
     { id: "assign", label: "Assign", icon: "playlist-plus", color: "#f97316", softColor: "#ffedd5" },
     { id: "progress", label: "Progress", icon: "chart-line", color: "#22c55e", softColor: "#dcfce7" },
     { id: "rewards", label: "Rewards", icon: "star-outline", color: "#a855f7", softColor: "#f3e8ff" },
+    { id: "child-mode", label: "Child mode", icon: "account-child-circle", color: "#14b8a6", softColor: "#ccfbf1" },
   ];
 
   if (isLoading) {
@@ -271,8 +279,8 @@ export default function ParentScreen() {
           </View>
 
           <View style={styles.actionTileGrid}>
-            {tabs.map((tab) => {
-              const selected = activeTab === tab.id;
+            {actions.map((tab) => {
+              const selected = tab.id !== "child-mode" && activeTab === tab.id;
               return (
                 <TouchableOpacity
                   key={tab.id}
@@ -281,6 +289,10 @@ export default function ParentScreen() {
                     { backgroundColor: selected ? tab.color : tab.softColor, borderColor: tab.color },
                   ]}
                   onPress={() => {
+                    if (tab.id === "child-mode") {
+                      handleOpenChildMode();
+                      return;
+                    }
                     if (tab.id === "assign") {
                       handleAssign();
                       return;
