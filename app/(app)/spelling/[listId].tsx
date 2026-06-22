@@ -18,6 +18,7 @@ import { supabase } from "@/lib/supabase";
 import { addStars } from "@/lib/addStars";
 import { markAssignmentComplete } from "@/lib/assignments";
 import QuitButton from "@/components/QuitButton";
+import HandwritingAnswerPad from "@/components/HandwritingAnswerPad";
 import { appLanguageForChild, AppLanguage } from "@/lib/appLanguage";
 import {
   speakWord,
@@ -59,6 +60,8 @@ const COPY = {
     correct: "Correct!",
     reveal: "The word is",
     placeholder: "Type the word...",
+    type: "Type",
+    write: "Write",
     check: "Check",
     finish: "Finish",
     next: "Next",
@@ -80,6 +83,8 @@ const COPY = {
     correct: "Correct !",
     reveal: "Le mot est",
     placeholder: "Écris le mot...",
+    type: "Taper",
+    write: "Écrire",
     check: "Valider",
     finish: "Terminer",
     next: "Suivant",
@@ -118,6 +123,7 @@ export default function SpellingPracticeScreen() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [sessionComplete, setSessionComplete] = useState(false);
   const [isSentenceLoading, setIsSentenceLoading] = useState(false);
+  const [answerInputMode, setAnswerInputMode] = useState<"type" | "write">("type");
 
   const inputRef = useRef<TextInput>(null);
 
@@ -523,9 +529,34 @@ export default function SpellingPracticeScreen() {
                 editable={!isSubmitting}
                 maxLength={50}
                 autoFocus={true}
-                showSoftInputOnFocus={true}
+                showSoftInputOnFocus={answerInputMode === "type"}
                 blurOnSubmit={false}
               />
+              <View style={styles.inputModeRow}>
+                <TouchableOpacity
+                  style={[styles.inputModeButton, answerInputMode === "type" && styles.inputModeButtonActive]}
+                  onPress={() => setAnswerInputMode("type")}
+                >
+                  <Text style={[styles.inputModeButtonText, answerInputMode === "type" && styles.inputModeButtonTextActive]}>
+                    {copy.type}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.inputModeButton, answerInputMode === "write" && styles.inputModeButtonActive]}
+                  onPress={() => setAnswerInputMode("write")}
+                >
+                  <Text style={[styles.inputModeButtonText, answerInputMode === "write" && styles.inputModeButtonTextActive]}>
+                    {copy.write}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+              {answerInputMode === "write" && (
+                <HandwritingAnswerPad
+                  language={appLanguage}
+                  questionText={currentItem.item_text}
+                  onRecognized={setUserAnswer}
+                />
+              )}
 
               <TouchableOpacity
                 style={[
@@ -718,6 +749,32 @@ const styles = StyleSheet.create({
     fontSize: 18,
     marginBottom: 12,
     textAlign: "center",
+  },
+  inputModeRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 10,
+  },
+  inputModeButton: {
+    flex: 1,
+    paddingVertical: 9,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#cbd5e1",
+    backgroundColor: "#f8fafc",
+    alignItems: "center",
+  },
+  inputModeButtonActive: {
+    backgroundColor: "#dbeafe",
+    borderColor: "#2563eb",
+  },
+  inputModeButtonText: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#475569",
+  },
+  inputModeButtonTextActive: {
+    color: "#1d4ed8",
   },
   button: {
     backgroundColor: "#0000ff",

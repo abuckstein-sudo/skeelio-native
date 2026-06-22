@@ -16,6 +16,7 @@ import {
 import { StrategyView } from "@/lib/tutor/visuals";
 import { appLanguageForChild, AppLanguage } from "@/lib/appLanguage";
 import QuitButton from "@/components/QuitButton";
+import HandwritingAnswerPad from "@/components/HandwritingAnswerPad";
 
 interface Answer {
   questionIndex: number;
@@ -39,6 +40,9 @@ const COPY = {
     back: "Back",
     quizMode: "Quiz mode — no hints available",
     answerPlaceholder: "Your answer",
+    inputType: "Answer type",
+    type: "Type",
+    write: "Write",
     check: "Check",
     finish: "Finish",
     finishing: "Finishing...",
@@ -62,6 +66,9 @@ const COPY = {
     back: "Retour",
     quizMode: "Mode quiz — pas d'indice",
     answerPlaceholder: "Ta réponse",
+    inputType: "Type de réponse",
+    type: "Taper",
+    write: "Écrire",
     check: "Valider",
     finish: "Terminer",
     finishing: "Finalisation...",
@@ -141,6 +148,7 @@ export default function HomeworkScreen() {
   } | null>(null);
   const [isCompleting, setIsCompleting] = useState(false);
   const [appLanguage, setAppLanguage] = useState<AppLanguage>("en");
+  const [answerInputMode, setAnswerInputMode] = useState<"type" | "write">("type");
 
   // Hint state
   const [currentHintLevel, setCurrentHintLevel] = useState(0);
@@ -624,17 +632,43 @@ export default function HomeworkScreen() {
         {/* Zone 2: Fixed footer (input + button) — outside ScrollView, above keyboard */}
         <View style={styles.footer}>
           <TextInput
-            style={styles.answerInput}
+            style={[styles.answerInput, answerInputMode === "write" && styles.answerInputRecognized]}
             placeholder={copy.answerPlaceholder}
             value={userAnswer}
             onChangeText={setUserAnswer}
-            keyboardType="number-pad"
+            keyboardType={question.question_type === "numeric" ? "number-pad" : "default"}
             editable={!isSubmitting}
             ref={inputRef}
             autoFocus={true}
-            showSoftInputOnFocus={true}
+            showSoftInputOnFocus={answerInputMode === "type"}
             blurOnSubmit={false}
           />
+          <View style={styles.inputModeRow}>
+            <Text style={styles.inputModeLabel}>{copy.inputType}</Text>
+            <TouchableOpacity
+              style={[styles.inputModeButton, answerInputMode === "type" && styles.inputModeButtonActive]}
+              onPress={() => setAnswerInputMode("type")}
+            >
+              <Text style={[styles.inputModeButtonText, answerInputMode === "type" && styles.inputModeButtonTextActive]}>
+                {copy.type}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.inputModeButton, answerInputMode === "write" && styles.inputModeButtonActive]}
+              onPress={() => setAnswerInputMode("write")}
+            >
+              <Text style={[styles.inputModeButtonText, answerInputMode === "write" && styles.inputModeButtonTextActive]}>
+                {copy.write}
+              </Text>
+            </TouchableOpacity>
+          </View>
+          {answerInputMode === "write" && !isAnswered && (
+            <HandwritingAnswerPad
+              language={appLanguage}
+              questionText={question.question_text}
+              onRecognized={setUserAnswer}
+            />
+          )}
 
           {/* Feedback */}
           {feedback && (
@@ -815,6 +849,42 @@ const styles = StyleSheet.create({
     padding: 12,
     fontSize: 16,
     color: "#1a1a1a",
+  },
+  answerInputRecognized: {
+    backgroundColor: "#f8fafc",
+  },
+  inputModeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  inputModeLabel: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#64748b",
+    marginRight: "auto",
+  },
+  inputModeButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: "#f1f5f9",
+    borderWidth: 1,
+    borderColor: "#cbd5e1",
+  },
+  inputModeButtonActive: {
+    backgroundColor: "#dbeafe",
+    borderColor: "#2563eb",
+  },
+  inputModeButtonText: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#475569",
+  },
+  inputModeButtonTextActive: {
+    color: "#1d4ed8",
   },
   answerInputDisabled: {
     backgroundColor: "#f5f5f5",

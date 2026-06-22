@@ -171,11 +171,11 @@ export default function ParentScreen() {
   };
 
   const selectedChild = children.find((c) => c.id === selectedChildId);
-  const tabs: { id: ParentTab; label: string; icon: keyof typeof MaterialCommunityIcons.glyphMap }[] = [
-    { id: "today", label: "Homework", icon: "calendar-check" },
-    { id: "assign", label: "Assign", icon: "playlist-plus" },
-    { id: "progress", label: "Progress", icon: "chart-line" },
-    { id: "rewards", label: "Rewards", icon: "star-outline" },
+  const tabs: { id: ParentTab; label: string; icon: keyof typeof MaterialCommunityIcons.glyphMap; color: string; softColor: string }[] = [
+    { id: "today", label: "Homework", icon: "calendar-check", color: "#0ea5e9", softColor: "#e0f2fe" },
+    { id: "assign", label: "Assign", icon: "playlist-plus", color: "#f97316", softColor: "#ffedd5" },
+    { id: "progress", label: "Progress", icon: "chart-line", color: "#22c55e", softColor: "#dcfce7" },
+    { id: "rewards", label: "Rewards", icon: "star-outline", color: "#a855f7", softColor: "#f3e8ff" },
   ];
 
   if (isLoading) {
@@ -270,13 +270,16 @@ export default function ParentScreen() {
             </TouchableOpacity>
           </View>
 
-          <View style={styles.tabBar}>
+          <View style={styles.actionTileGrid}>
             {tabs.map((tab) => {
               const selected = activeTab === tab.id;
               return (
                 <TouchableOpacity
                   key={tab.id}
-                  style={[styles.tabButton, selected && styles.tabButtonActive]}
+                  style={[
+                    styles.actionTile,
+                    { backgroundColor: selected ? tab.color : tab.softColor, borderColor: tab.color },
+                  ]}
                   onPress={() => {
                     if (tab.id === "assign") {
                       handleAssign();
@@ -285,12 +288,14 @@ export default function ParentScreen() {
                     setActiveTab(tab.id);
                   }}
                 >
-                  <MaterialCommunityIcons
-                    name={tab.icon}
-                    size={17}
-                    color={selected ? "#1565c0" : "#607d8b"}
-                  />
-                  <Text style={[styles.tabButtonText, selected && styles.tabButtonTextActive]}>
+                  <View style={[styles.actionTileIcon, { backgroundColor: selected ? "rgba(255,255,255,0.22)" : "#fff" }]}>
+                    <MaterialCommunityIcons
+                      name={tab.icon}
+                      size={24}
+                      color={selected ? "#fff" : tab.color}
+                    />
+                  </View>
+                  <Text style={[styles.actionTileText, selected && styles.actionTileTextActive]}>
                     {tab.label}
                   </Text>
                 </TouchableOpacity>
@@ -483,36 +488,41 @@ const styles = StyleSheet.create({
   childButtonNameActive: {
     color: "#2196f3",
   },
-  tabBar: {
+  actionTileGrid: {
     flexDirection: "row",
+    flexWrap: "wrap",
     alignItems: "center",
-    gap: 6,
+    gap: 10,
     paddingHorizontal: 12,
-    paddingVertical: 10,
-    backgroundColor: "#f6f8f8",
+    paddingVertical: 14,
+    backgroundColor: "#f8fafc",
     borderBottomWidth: 1,
-    borderBottomColor: "#e8eeee",
+    borderBottomColor: "#e2e8f0",
   },
-  tabButton: {
-    flex: 1,
-    minHeight: 44,
+  actionTile: {
+    width: "48%",
+    minHeight: 82,
+    borderRadius: 8,
+    borderWidth: 1,
+    padding: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+  actionTileIcon: {
+    width: 38,
+    height: 38,
     borderRadius: 8,
     alignItems: "center",
     justifyContent: "center",
-    gap: 3,
   },
-  tabButtonActive: {
-    backgroundColor: "#fff",
-    borderWidth: 1,
-    borderColor: "#cfe8fb",
-  },
-  tabButtonText: {
-    fontSize: 11,
+  actionTileText: {
+    fontSize: 14,
     fontWeight: "700",
-    color: "#607d8b",
+    color: "#0f172a",
   },
-  tabButtonTextActive: {
-    color: "#1565c0",
+  actionTileTextActive: {
+    color: "#fff",
   },
   emptyContainer: {
     flex: 1,

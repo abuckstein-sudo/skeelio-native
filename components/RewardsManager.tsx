@@ -37,6 +37,9 @@ export default function RewardsManager({ childId, stars, onInputFocus }: Rewards
   const [title, setTitle] = useState("");
   const [cost, setCost] = useState("50");
   const [description, setDescription] = useState("");
+  const [rewardType, setRewardType] = useState<"stars" | "behavior">("stars");
+  const [behaviorGoalType, setBehaviorGoalType] = useState<"homework_days" | "practice_sessions" | "perfect_sessions" | "helper_confirmed">("homework_days");
+  const [behaviorGoalCount, setBehaviorGoalCount] = useState("5");
   const [language, setLanguage] = useState<"en" | "fr">("en");
 
   const load = useCallback(async () => {
@@ -79,6 +82,11 @@ export default function RewardsManager({ childId, stars, onInputFocus }: Rewards
       Alert.alert("Invalid cost", "Choose a star cost greater than 0.");
       return;
     }
+    const goalCount = Number(behaviorGoalCount);
+    if (rewardType === "behavior" && (!Number.isInteger(goalCount) || goalCount <= 0)) {
+      Alert.alert("Invalid goal", "Choose a whole number greater than 0.");
+      return;
+    }
 
     setSaving(true);
     try {
@@ -88,11 +96,17 @@ export default function RewardsManager({ childId, stars, onInputFocus }: Rewards
         title,
         description,
         costStars,
+        rewardType,
+        behaviorGoalType,
+        behaviorGoalCount: rewardType === "behavior" ? goalCount : null,
         imageEmoji: "🎁",
       });
       setTitle("");
       setDescription("");
       setCost("50");
+      setRewardType("stars");
+      setBehaviorGoalType("homework_days");
+      setBehaviorGoalCount("5");
       await load();
     } catch {
       Alert.alert("Could not save reward", "Please try again.");
@@ -142,6 +156,10 @@ export default function RewardsManager({ childId, stars, onInputFocus }: Rewards
   };
 
   const pending = redemptions.filter((r) => r.status === "requested");
+  const costStars = Number(cost);
+  const effortPreview = Number.isFinite(costStars) && costStars > 0
+    ? estimateStarEffort(costStars)
+    : "Enter stars to see the effort.";
 
   return (
     <View style={styles.section}>
@@ -185,6 +203,20 @@ export default function RewardsManager({ childId, stars, onInputFocus }: Rewards
 
       <View style={styles.form}>
         <Text style={styles.blockTitle}>Add a reward</Text>
+        <View style={styles.rewardTypeRow}>
+          <TouchableOpacity
+            style={[styles.typeButton, rewardType === "stars" && styles.typeButtonActive]}
+            onPress={() => setRewardType("stars")}
+          >
+            <Text style={[styles.typeButtonText, rewardType === "stars" && styles.typeButtonTextActive]}>Stars</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.typeButton, rewardType === "behavior" && styles.typeButtonActive]}
+            onPress={() => setRewardType("behavior")}
+          >
+            <Text style={[styles.typeButtonText, rewardType === "behavior" && styles.typeButtonTextActive]}>Behavior</Text>
+          </TouchableOpacity>
+        </View>
         <TextInput
           style={styles.input}
           placeholder="Reward name"
@@ -228,6 +260,44 @@ export default function RewardsManager({ childId, stars, onInputFocus }: Rewards
             <Text style={styles.addButtonText}>Add</Text>
           </TouchableOpacity>
         </View>
+        {rewardType === "stars" ? (
+          <View style={styles.effortBox}>
+            <MaterialCommunityIcons name="calculator-variant-outline" size={18} color="#1565c0" />
+            <Text style={styles.effortText}>{effortPreview}</Text>
+          </View>
+        ) : (
+          <View style={styles.behaviorBox}>
+            <Text style={styles.behaviorLabel}>Earn by completing</Text>
+            <View style={styles.costRow}>
+              <TextInput
+                style={[styles.input, styles.behaviorCountInput]}
+                value={behaviorGoalCount}
+                onChangeText={setBehaviorGoalCount}
+                keyboardType="number-pad"
+                placeholder="Count"
+                onFocus={onInputFocus}
+              />
+              <View style={styles.behaviorOptions}>
+                {[
+                  ["homework_days", "homework days"],
+                  ["practice_sessions", "practice sessions"],
+                  ["perfect_sessions", "perfect sessions"],
+                  ["helper_confirmed", "helper-confirmed sessions"],
+                ].map(([value, label]) => (
+                  <TouchableOpacity
+                    key={value}
+                    style={[styles.behaviorOption, behaviorGoalType === value && styles.behaviorOptionActive]}
+                    onPress={() => setBehaviorGoalType(value as any)}
+                  >
+                    <Text style={[styles.behaviorOptionText, behaviorGoalType === value && styles.behaviorOptionTextActive]}>
+                      {label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          </View>
+        )}
       </View>
 
       <View style={styles.itemsBox}>
@@ -242,7 +312,9 @@ export default function RewardsManager({ childId, stars, onInputFocus }: Rewards
                   {item.image_emoji || "🎁"} {item.title}
                 </Text>
                 <Text style={styles.itemMeta}>
-                  ⭐ {item.cost_stars}
+                  {item.reward_type === "behavior"
+                    ? behaviorSummary(item)
+                    : `⭐ ${item.cost_stars}`}
                   {item.description ? ` • ${item.description}` : ""}
                 </Text>
               </View>
@@ -255,6 +327,23 @@ export default function RewardsManager({ childId, stars, onInputFocus }: Rewards
       </View>
     </View>
   );
+}
+
+function estimateStarEffort(costStars: number) {
+  const homeworkSessions = Math.ceil(costStars / 8);
+  const perfectSessions = Math.ceil(costStars / 13);
+  return `About ${homeworkSessions} normal homework sessions, or ${perfectSessions} very strong sessions.`;
+}
+
+function behaviorSummary(item: ShopItem) {
+  const count = item.behavior_goal_count || 1;
+  const labels: Record<string, string> = {
+    homework_days: "homework days",
+    practice_sessions: "practice sessions",
+    perfect_sessions: "perfect sessions",
+    helper_confirmed: "helper-confirmed sessions",
+  };
+  return `${count} ${labels[item.behavior_goal_type || "homework_days"]}`;
 }
 
 const styles = StyleSheet.create({
@@ -327,6 +416,32 @@ const styles = StyleSheet.create({
   form: {
     marginBottom: 14,
   },
+  rewardTypeRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 10,
+  },
+  typeButton: {
+    flex: 1,
+    paddingVertical: 9,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#cbd5e1",
+    backgroundColor: "#f8fafc",
+    alignItems: "center",
+  },
+  typeButtonActive: {
+    backgroundColor: "#dbeafe",
+    borderColor: "#2563eb",
+  },
+  typeButtonText: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#475569",
+  },
+  typeButtonTextActive: {
+    color: "#1d4ed8",
+  },
   input: {
     borderWidth: 1,
     borderColor: "#cbd5e1",
@@ -344,6 +459,64 @@ const styles = StyleSheet.create({
   costInput: {
     flex: 1,
     marginBottom: 0,
+  },
+  effortBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 8,
+    padding: 10,
+    borderRadius: 8,
+    backgroundColor: "#eff6ff",
+  },
+  effortText: {
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 16,
+    color: "#1e3a8a",
+    fontWeight: "700",
+  },
+  behaviorBox: {
+    marginTop: 10,
+    padding: 10,
+    borderRadius: 8,
+    backgroundColor: "#f0fdf4",
+  },
+  behaviorLabel: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#166534",
+    marginBottom: 8,
+  },
+  behaviorCountInput: {
+    width: 76,
+    marginBottom: 0,
+  },
+  behaviorOptions: {
+    flex: 1,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+  },
+  behaviorOption: {
+    paddingHorizontal: 9,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: "#bbf7d0",
+  },
+  behaviorOptionActive: {
+    backgroundColor: "#16a34a",
+    borderColor: "#16a34a",
+  },
+  behaviorOptionText: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: "#166534",
+  },
+  behaviorOptionTextActive: {
+    color: "#fff",
   },
   addButton: {
     flexDirection: "row",

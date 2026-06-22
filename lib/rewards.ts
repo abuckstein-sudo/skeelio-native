@@ -7,6 +7,9 @@ export type ShopItem = {
   title: string;
   description: string | null;
   cost_stars: number;
+  reward_type?: "stars" | "behavior";
+  behavior_goal_type?: "homework_days" | "practice_sessions" | "perfect_sessions" | "helper_confirmed" | null;
+  behavior_goal_count?: number | null;
   category: string | null;
   image_emoji: string | null;
   status: "active" | "paused" | "archived";
@@ -71,6 +74,9 @@ export async function createShopItemForChild(input: {
   title: string;
   description?: string;
   costStars: number;
+  rewardType?: "stars" | "behavior";
+  behaviorGoalType?: "homework_days" | "practice_sessions" | "perfect_sessions" | "helper_confirmed" | null;
+  behaviorGoalCount?: number | null;
   imageEmoji?: string;
 }): Promise<ShopItem> {
   const parentId = await getParentId();
@@ -82,6 +88,9 @@ export async function createShopItemForChild(input: {
       title: input.title.trim(),
       description: input.description?.trim() || null,
       cost_stars: input.costStars,
+      reward_type: input.rewardType || "stars",
+      behavior_goal_type: input.rewardType === "behavior" ? input.behaviorGoalType || "homework_days" : null,
+      behavior_goal_count: input.rewardType === "behavior" ? input.behaviorGoalCount || 1 : null,
       image_emoji: input.imageEmoji?.trim() || null,
       status: "active",
     })

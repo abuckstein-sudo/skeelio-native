@@ -73,21 +73,17 @@ export default function OnboardingScreen() {
     }
   };
 
-  const goToAddChild = () => {
-    router.push({
-      pathname: "/child-settings/[childId]",
-      params: { childId: "new", mode: "add", fromOnboarding: "1" },
-    });
-  };
-
   const handleDone = async () => {
     if (isPreview) {
-      goToAddChild();
+      router.push({
+        pathname: "/child-settings/[childId]",
+        params: { childId: "new", mode: "add", fromOnboarding: "1" },
+      });
       return;
     }
 
     await markSeen();
-    goToAddChild();
+    router.replace("/parent");
   };
 
   const handleSkip = async () => {
@@ -97,7 +93,7 @@ export default function OnboardingScreen() {
     }
 
     await markSeen();
-    router.replace("/children");
+    router.replace("/parent");
   };
 
   if (!language) {

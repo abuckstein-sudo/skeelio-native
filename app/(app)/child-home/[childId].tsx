@@ -24,6 +24,7 @@ import {
   schoolHomeworkMaterialTitle,
   todayDateKey,
   schoolHomeworkWeekDateKeys,
+  replaceSchoolHomeworkDay,
 } from "@/lib/schoolHomework";
 import { addHomeworkActiveSeconds, ChildHomeworkLimit, getChildHomeworkLimit } from "@/lib/homeworkTime";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -41,6 +42,7 @@ interface Child {
   intro_seen?: boolean;
   preferred_language?: string | null;
   languages?: string[] | null;
+  allow_child_homework_entry?: boolean;
 }
 
 const AVATAR_EMOJI: Record<string, string> = {
@@ -118,6 +120,14 @@ const SETUP_COPY = {
     freePlay: "Free play",
     freePlayBody: "Choose practice tiles",
     settings: "Settings",
+    addHomework: "Add homework",
+    addHomeworkPlaceholder: "Write one homework item per line",
+    saveHomework: "Save homework",
+    cancel: "Cancel",
+    helpedBy: "Who helped you?",
+    helpedByPlaceholder: "Name",
+    IWorkedAlone: "I worked alone",
+    saveHelper: "Save",
     pickAvatar: "Pick Your Avatar",
     pickBackground: "Pick Your Background",
     backgroundLabels: {
@@ -176,6 +186,14 @@ const SETUP_COPY = {
     freePlay: "Jeu libre",
     freePlayBody: "Choisis une activité",
     settings: "Réglages",
+    addHomework: "Ajouter un devoir",
+    addHomeworkPlaceholder: "Écris un devoir par ligne",
+    saveHomework: "Enregistrer",
+    cancel: "Annuler",
+    helpedBy: "Qui t'a aidé ?",
+    helpedByPlaceholder: "Prénom",
+    IWorkedAlone: "J'ai travaillé seul(e)",
+    saveHelper: "Enregistrer",
     pickAvatar: "Choisis ton avatar",
     pickBackground: "Choisis ton fond",
     backgroundLabels: {
@@ -254,6 +272,11 @@ export default function ChildHomeScreen() {
   const [activeMaterialUrl, setActiveMaterialUrl] = useState<string | null>(null);
   const [activeMaterialTitle, setActiveMaterialTitle] = useState("");
   const [settingsModalVisible, setSettingsModalVisible] = useState(false);
+  const [childHomeworkModalDate, setChildHomeworkModalDate] = useState<string | null>(null);
+  const [childHomeworkInput, setChildHomeworkInput] = useState("");
+  const [savingChildHomework, setSavingChildHomework] = useState(false);
+  const [helperItem, setHelperItem] = useState<SchoolHomeworkItem | null>(null);
+  const [helperName, setHelperName] = useState("");
   const [newPin, setNewPin] = useState("");
   const [confirmPin, setConfirmPin] = useState("");
   const [pinSetupError, setPinSetupError] = useState("");
@@ -442,7 +465,7 @@ export default function ChildHomeScreen() {
 
     const { data, error: dbError } = await supabase
       .from("children")
-      .select("id, name, grade_level, selected_avatar, home_background, pin, pin_setup_required, intro_seen, preferred_language, languages, max_addition_number, max_times_table, math_subtraction_level, math_division_level")
+      .select("id, name, grade_level, selected_avatar, home_background, pin, pin_setup_required, intro_seen, preferred_language, languages, allow_child_homework_entry, max_addition_number, max_times_table, math_subtraction_level, math_division_level")
       .eq("id", childId)
       .single();
 
@@ -652,12 +675,56 @@ export default function ChildHomeScreen() {
   };
 
   const handleSchoolHomeworkToggle = async (item: SchoolHomeworkItem) => {
+    if (item.status !== "done") {
+      setHelperItem(item);
+      setHelperName("");
+      return;
+    }
     try {
-      await setSchoolHomeworkItemDone(item, item.status !== "done", "child");
+      await setSchoolHomeworkItemDone(item, false, "child");
       await fetchSchoolHomework();
     } catch (err) {
       console.error("[child-home] school homework toggle error:", err);
       alert("Could not update homework");
+    }
+  };
+
+  const completeHelperItem = async (completedBy: "child" | "helper", name?: string) => {
+    if (!helperItem) return;
+    try {
+      await setSchoolHomeworkItemDone(helperItem, true, completedBy, name);
+      setHelperItem(null);
+      setHelperName("");
+      await fetchSchoolHomework();
+    } catch (err) {
+      console.error("[child-home] helper completion error:", err);
+      alert("Could not update homework");
+    }
+  };
+
+  const openChildHomeworkModal = (dateKey: string, existingText = "") => {
+    setChildHomeworkModalDate(dateKey);
+    setChildHomeworkInput(existingText);
+  };
+
+  const handleSaveChildHomework = async () => {
+    if (!childId || !childHomeworkModalDate || !childHomeworkInput.trim()) return;
+    try {
+      setSavingChildHomework(true);
+      await replaceSchoolHomeworkDay({
+        childId,
+        homeworkDate: childHomeworkModalDate,
+        rawInput: childHomeworkInput,
+        sourceType: "child",
+      });
+      setChildHomeworkModalDate(null);
+      setChildHomeworkInput("");
+      await fetchSchoolHomework();
+    } catch (err) {
+      console.error("[child-home] child homework save error:", err);
+      alert("Could not save homework");
+    } finally {
+      setSavingChildHomework(false);
     }
   };
 
@@ -801,6 +868,9 @@ export default function ChildHomeScreen() {
   const bgOption = BACKGROUND_OPTIONS.find((bg) => bg.id === backgroundKey);
   const schoolWeekDateKeys = schoolHomeworkWeekDateKeys();
   const schoolHomeworkByDate = new Map(schoolHomeworkWeekDays.map((day) => [day?.homework_date, day]));
+  const childCanAddHomework = Boolean(child.allow_child_homework_entry);
+  const hasDatedAssignments = pendingAssignments.some((assignment) => Boolean(assignment.due_date));
+  const hasSchoolHomework = schoolHomeworkWeekDays.some((day) => (day?.school_homework_items || []).length > 0) || hasDatedAssignments;
 
   // One unified "Homework" feed: worksheet practice sessions (episodes) +
   // assigned work, ordered by when they were created/assigned.
@@ -820,7 +890,7 @@ export default function ChildHomeScreen() {
       subtitle: e.status === "in_progress" ? "Reprendre" : "À faire",
       episode: e,
     })),
-    ...pendingAssignments.filter((a) => !schoolLinkedAssignmentIds.has(a.id)).map((a) => {
+    ...pendingAssignments.filter((a) => !schoolLinkedAssignmentIds.has(a.id) && !a.due_date).map((a) => {
       const isSpelling = a.subject === "spelling";
       const base = (a.focus || a.subject || "Practice") as string;
       const title = isSpelling
@@ -953,13 +1023,20 @@ export default function ChildHomeScreen() {
         </Text>
       </View>
 
-      {schoolWeekDateKeys.length > 0 && (
+      {(hasSchoolHomework || childCanAddHomework) && (
         <View style={styles.schoolHomeworkSection}>
           {schoolWeekDateKeys.map((dateKey) => {
             const day = schoolHomeworkByDate.get(dateKey) || null;
             const items = day?.school_homework_items || [];
+            const datedAssignments = pendingAssignments.filter((assignment) => {
+              if (!assignment.due_date || schoolLinkedAssignmentIds.has(assignment.id)) return false;
+              return assignment.due_date.slice(0, 10) === dateKey;
+            });
             const doneCount = items.filter((item) => item.status === "done").length;
+            const remainingCount = items.length + datedAssignments.length;
             const expanded = expandedHomeworkDate === dateKey;
+            const existingChildText = day?.source_type === "child" ? day.raw_input || "" : "";
+            const canChildEditDate = childCanAddHomework && (!day || day.source_type === "child" || items.length === 0);
             return (
               <View key={dateKey} style={styles.schoolHomeworkDayGroup}>
                 <TouchableOpacity
@@ -970,7 +1047,17 @@ export default function ChildHomeScreen() {
                     {expanded ? schoolHomeworkDateLabel(dateKey, childLanguage) : schoolHomeworkShortDateLabel(dateKey, childLanguage)}
                   </Text>
                   <View style={styles.schoolHomeworkDayStatus}>
-                    <Text style={styles.schoolHomeworkDayCount}>{doneCount}/{items.length}</Text>
+                    {remainingCount > 0 && (
+                      <Text style={styles.schoolHomeworkDayCount}>{doneCount}/{remainingCount}</Text>
+                    )}
+                    {canChildEditDate && (
+                      <TouchableOpacity
+                        style={styles.childHomeworkPlus}
+                        onPress={() => openChildHomeworkModal(dateKey, existingChildText)}
+                      >
+                        <MaterialCommunityIcons name="plus" size={18} color="#fff" />
+                      </TouchableOpacity>
+                    )}
                     <MaterialCommunityIcons
                       name={expanded ? "chevron-up" : "chevron-down"}
                       size={20}
@@ -979,10 +1066,35 @@ export default function ChildHomeScreen() {
                   </View>
                 </TouchableOpacity>
                 {expanded && items.length === 0 && (
+                  datedAssignments.length === 0 &&
                   <Text style={styles.schoolHomeworkEmpty}>
                     {childLanguage === "fr" ? "Pas de devoirs enregistrés" : "No homework saved"}
                   </Text>
                 )}
+                {expanded && datedAssignments.map((assignment) => {
+                  const isSpelling = assignment.subject === "spelling";
+                  const base = (assignment.focus || assignment.subject || "Practice") as string;
+                  const title = isSpelling
+                    ? `Spelling: ${(assignment.custom_questions as any)?.title || "Spelling List"}`
+                    : base.charAt(0).toUpperCase() + base.slice(1);
+                  return (
+                    <TouchableOpacity
+                      key={assignment.id}
+                      style={styles.schoolHomeworkItem}
+                      activeOpacity={0.8}
+                      onPress={() => handleHomeworkTap(assignment.id)}
+                    >
+                      <MaterialCommunityIcons name="play-circle-outline" size={26} color="#2196f3" />
+                      <View style={styles.schoolHomeworkTextWrap}>
+                        <Text style={styles.schoolHomeworkText}>{title}</Text>
+                        <Text style={styles.schoolHomeworkMeta}>
+                          {assignment.question_count} {isSpelling ? "words" : "questions"} · {childLanguage === "fr" ? "appuie pour pratiquer" : "tap to practice"}
+                        </Text>
+                      </View>
+                      <MaterialCommunityIcons name="chevron-right" size={22} color="#90a4ae" />
+                    </TouchableOpacity>
+                  );
+                })}
                 {expanded && items.map((item) => {
             const done = item.status === "done";
             const linked = !!item.linked_assignment_id || !!item.linked_spelling_list_id;
@@ -1041,6 +1153,21 @@ export default function ChildHomeScreen() {
         </View>
       )}
 
+      {childCanAddHomework && !hasSchoolHomework && (
+        <TouchableOpacity
+          style={styles.emptyAddHomeworkCard}
+          onPress={() => openChildHomeworkModal(todayDateKey())}
+        >
+          <MaterialCommunityIcons name="plus-circle" size={30} color="#1565c0" />
+          <View style={styles.emptyAddHomeworkTextWrap}>
+            <Text style={styles.emptyAddHomeworkTitle}>{setupCopy.addHomework}</Text>
+            <Text style={styles.emptyAddHomeworkBody}>
+              {childLanguage === "fr" ? "Ajoute un devoir si tu en as un aujourd'hui." : "Add homework if you have something to do today."}
+            </Text>
+          </View>
+        </TouchableOpacity>
+      )}
+
       <Modal
         visible={materialModalVisible}
         transparent
@@ -1082,6 +1209,88 @@ export default function ChildHomeScreen() {
                 <MaterialCommunityIcons name="close" size={24} color="#fff" />
               </TouchableOpacity>
             )}
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={Boolean(childHomeworkModalDate)}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setChildHomeworkModalDate(null)}
+      >
+        <View style={styles.childHomeworkModalBackdrop}>
+          <View style={styles.childHomeworkModal}>
+            <Text style={styles.childHomeworkModalTitle}>{setupCopy.addHomework}</Text>
+            {childHomeworkModalDate && (
+              <Text style={styles.childHomeworkModalDate}>
+                {schoolHomeworkDateLabel(childHomeworkModalDate, childLanguage)}
+              </Text>
+            )}
+            <TextInput
+              style={styles.childHomeworkInput}
+              value={childHomeworkInput}
+              onChangeText={setChildHomeworkInput}
+              placeholder={setupCopy.addHomeworkPlaceholder}
+              placeholderTextColor="#78909c"
+              multiline
+              textAlignVertical="top"
+              autoFocus
+            />
+            <View style={styles.childHomeworkModalActions}>
+              <TouchableOpacity
+                style={styles.childHomeworkCancelButton}
+                onPress={() => setChildHomeworkModalDate(null)}
+                disabled={savingChildHomework}
+              >
+                <Text style={styles.childHomeworkCancelText}>{setupCopy.cancel}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.childHomeworkSaveButton, (!childHomeworkInput.trim() || savingChildHomework) && styles.childHomeworkSaveButtonDisabled]}
+                onPress={() => void handleSaveChildHomework()}
+                disabled={!childHomeworkInput.trim() || savingChildHomework}
+              >
+                <Text style={styles.childHomeworkSaveText}>
+                  {savingChildHomework ? "..." : setupCopy.saveHomework}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={Boolean(helperItem)}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setHelperItem(null)}
+      >
+        <View style={styles.childHomeworkModalBackdrop}>
+          <View style={styles.childHomeworkModal}>
+            <Text style={styles.childHomeworkModalTitle}>{setupCopy.helpedBy}</Text>
+            <TextInput
+              style={styles.helperInput}
+              value={helperName}
+              onChangeText={setHelperName}
+              placeholder={setupCopy.helpedByPlaceholder}
+              placeholderTextColor="#78909c"
+              autoFocus
+            />
+            <View style={styles.childHomeworkModalActions}>
+              <TouchableOpacity
+                style={styles.childHomeworkCancelButton}
+                onPress={() => void completeHelperItem("child")}
+              >
+                <Text style={styles.childHomeworkCancelText}>{setupCopy.IWorkedAlone}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.childHomeworkSaveButton, !helperName.trim() && styles.childHomeworkSaveButtonDisabled]}
+                onPress={() => void completeHelperItem("helper", helperName)}
+                disabled={!helperName.trim()}
+              >
+                <Text style={styles.childHomeworkSaveText}>{setupCopy.saveHelper}</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -1484,6 +1693,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 4,
   },
+  childHomeworkPlus: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: "#2196f3",
+    alignItems: "center",
+    justifyContent: "center",
+    marginLeft: 4,
+  },
   schoolHomeworkDayCount: {
     fontSize: 13,
     fontWeight: "800",
@@ -1532,6 +1750,110 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#78909c",
     textTransform: "capitalize",
+  },
+  emptyAddHomeworkCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    backgroundColor: "#e3f2fd",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#bbdefb",
+    padding: 14,
+    marginBottom: 18,
+  },
+  emptyAddHomeworkTextWrap: {
+    flex: 1,
+  },
+  emptyAddHomeworkTitle: {
+    fontSize: 15,
+    fontWeight: "800",
+    color: "#1565c0",
+  },
+  emptyAddHomeworkBody: {
+    fontSize: 12,
+    lineHeight: 16,
+    color: "#455a64",
+    marginTop: 2,
+  },
+  childHomeworkModalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    justifyContent: "flex-end",
+  },
+  childHomeworkModal: {
+    backgroundColor: "#fff",
+    borderTopLeftRadius: 14,
+    borderTopRightRadius: 14,
+    padding: 18,
+  },
+  childHomeworkModalTitle: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: "#263238",
+  },
+  childHomeworkModalDate: {
+    fontSize: 13,
+    color: "#607d8b",
+    marginTop: 4,
+    marginBottom: 12,
+    textTransform: "capitalize",
+  },
+  childHomeworkInput: {
+    minHeight: 132,
+    borderWidth: 1,
+    borderColor: "#cfd8dc",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 16,
+    color: "#263238",
+    backgroundColor: "#fafafa",
+  },
+  helperInput: {
+    marginTop: 14,
+    borderWidth: 1,
+    borderColor: "#cfd8dc",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    fontSize: 16,
+    color: "#263238",
+    backgroundColor: "#fafafa",
+  },
+  childHomeworkModalActions: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 14,
+  },
+  childHomeworkCancelButton: {
+    flex: 1,
+    minHeight: 46,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#eceff1",
+  },
+  childHomeworkCancelText: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#455a64",
+  },
+  childHomeworkSaveButton: {
+    flex: 1,
+    minHeight: 46,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#2196f3",
+  },
+  childHomeworkSaveButtonDisabled: {
+    opacity: 0.5,
+  },
+  childHomeworkSaveText: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#fff",
   },
   materialModalBackdrop: {
     flex: 1,

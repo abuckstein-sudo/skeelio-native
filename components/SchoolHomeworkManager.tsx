@@ -23,6 +23,7 @@ import {
   addSchoolHomeworkImageMaterial,
   addSchoolHomeworkTextMaterial,
   extractSchoolHomeworkFromImage,
+  getChildHomeworkEntryEnabled,
   itemNeedsMaterial,
   listSchoolHomeworkDay,
   replaceSchoolHomeworkDay,
@@ -34,6 +35,7 @@ import {
   signedSchoolHomeworkDocumentUrl,
   signedSchoolHomeworkImageUrl,
   setSchoolHomeworkItemDone,
+  setChildHomeworkEntryEnabled,
   todayDateKey,
 } from "@/lib/schoolHomework";
 import { getChildHomeworkLimit, setChildHomeworkLimit, unlockChildHomeworkForToday } from "@/lib/homeworkTime";
@@ -56,8 +58,10 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
   const [agendaCameraVisible, setAgendaCameraVisible] = useState(false);
   const [materialCameraItem, setMaterialCameraItem] = useState<SchoolHomeworkItem | null>(null);
   const [extractingAgenda, setExtractingAgenda] = useState(false);
-  const [inputSourceType, setInputSourceType] = useState<"manual" | "photo">("manual");
+  const [inputSourceType, setInputSourceType] = useState<"manual" | "photo" | "child">("manual");
   const [editingDay, setEditingDay] = useState(false);
+  const [childEntryEnabled, setChildEntryEnabled] = useState(false);
+  const [savingChildEntry, setSavingChildEntry] = useState(false);
 
   useEffect(() => {
     void fetchHomework();
@@ -68,17 +72,35 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
     setLoading(true);
     try {
       const day = await listSchoolHomeworkDay(childId, homeworkDate);
-      const limit = await getChildHomeworkLimit(childId);
+      const [limit, entryEnabled] = await Promise.all([
+        getChildHomeworkLimit(childId),
+        getChildHomeworkEntryEnabled(childId),
+      ]);
       setHomeworkDay(day);
       setRawInput(day?.raw_input || "");
       setInputSourceType(day?.source_type || "manual");
       setLimitInput(limit?.daily_limit_minutes ? String(limit.daily_limit_minutes) : "");
+      setChildEntryEnabled(entryEnabled);
       setEditingMaterialItemIds({});
       setEditingDay(!day);
     } catch (err) {
       console.error("[school-homework-manager] fetch error:", err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleToggleChildEntry = async () => {
+    try {
+      setSavingChildEntry(true);
+      const next = !childEntryEnabled;
+      await setChildHomeworkEntryEnabled(childId, next);
+      setChildEntryEnabled(next);
+    } catch (err) {
+      console.error("[school-homework-manager] child entry toggle error:", err);
+      Alert.alert("Error", "Could not update child homework entry.");
+    } finally {
+      setSavingChildEntry(false);
     }
   };
 
@@ -327,6 +349,9 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
             `${index + 1}. ${item.task_text}`,
             `   Status: ${item.status === "done" ? "done" : item.status === "waiting_parent" ? "waiting for parent" : "to do"}`,
           ];
+          if (item.helper_name) {
+            itemLines.push(`   Helped by: ${item.helper_name}`);
+          }
           if (item.linked_assignment_id || item.linked_spelling_list_id) {
             itemLines.push("   Practice: available in Skeelio");
           }
@@ -418,6 +443,26 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
         </View>
         {loading ? <ActivityIndicator size="small" color="#2196f3" /> : null}
       </View>
+
+      <TouchableOpacity
+        style={[styles.childEntryToggle, childEntryEnabled && styles.childEntryToggleOn]}
+        onPress={() => void handleToggleChildEntry()}
+        disabled={savingChildEntry}
+      >
+        <MaterialCommunityIcons
+          name={childEntryEnabled ? "toggle-switch" : "toggle-switch-off-outline"}
+          size={28}
+          color={childEntryEnabled ? "#166534" : "#64748b"}
+        />
+        <View style={styles.childEntryToggleTextWrap}>
+          <Text style={styles.childEntryToggleTitle}>Child can add homework</Text>
+          <Text style={styles.childEntryToggleBody}>
+            {childEntryEnabled
+              ? "On: child-entered homework appears immediately, and you can edit it."
+              : "Off: only parent-entered homework appears on the child screen."}
+          </Text>
+        </View>
+      </TouchableOpacity>
 
       <View style={styles.daySelector}>
         <TouchableOpacity style={styles.weekButton} onPress={() => shiftWeek(-1)}>
@@ -731,7 +776,8 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
                           : item.status === "waiting_parent"
                             ? "waiting for parent"
                             : item.task_kind}
-                    </Text>
+                    {item.helper_name ? ` · helped by ${item.helper_name}` : ""}
+                  </Text>
                   </View>
                   {item.task_kind === "generic" && !item.linked_assignment_id ? (
                     <TouchableOpacity style={styles.compactPracticeButton} onPress={() => handleCreatePractice(item)}>
@@ -786,6 +832,35 @@ const styles = StyleSheet.create({
   dateText: {
     fontSize: 13,
     color: "#666",
+    marginTop: 2,
+  },
+  childEntryToggle: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#cbd5e1",
+    backgroundColor: "#f8fafc",
+    marginBottom: 12,
+  },
+  childEntryToggleOn: {
+    borderColor: "#86efac",
+    backgroundColor: "#f0fdf4",
+  },
+  childEntryToggleTextWrap: {
+    flex: 1,
+  },
+  childEntryToggleTitle: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#0f172a",
+  },
+  childEntryToggleBody: {
+    fontSize: 12,
+    lineHeight: 16,
+    color: "#475569",
     marginTop: 2,
   },
   input: {

@@ -7,6 +7,7 @@ import {
   SafeAreaView,
   ActivityIndicator,
   ScrollView,
+  TextInput,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { supabase } from "@/lib/supabase";
@@ -26,6 +27,7 @@ import {
   type TeachingPattern,
 } from "@/lib/conjugation";
 import QuitButton from "@/components/QuitButton";
+import HandwritingAnswerPad from "@/components/HandwritingAnswerPad";
 import { appLanguageForChild, AppLanguage } from "@/lib/appLanguage";
 
 interface Answer {
@@ -68,6 +70,9 @@ const COPY = {
     selectBoth: "Please select both a tense and a verb group",
     failedLoad: "Failed to load questions",
     loading: "Loading...",
+    choose: "Choose",
+    write: "Write",
+    recognizedAnswer: "Recognized answer",
   },
   fr: {
     chooseLanguage: "Choisis la langue",
@@ -93,6 +98,9 @@ const COPY = {
     selectBoth: "Choisis un temps et un groupe de verbes",
     failedLoad: "Impossible de charger les questions",
     loading: "Chargement...",
+    choose: "Choisir",
+    write: "Écrire",
+    recognizedAnswer: "Réponse reconnue",
   },
 } as const;
 
@@ -146,6 +154,8 @@ export default function ConjugationPracticeScreen() {
   const [correctCount, setCorrectCount] = useState(0);
   const [answers, setAnswers] = useState<Answer[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [answerMode, setAnswerMode] = useState<"choose" | "write">("choose");
+  const [writtenAnswer, setWrittenAnswer] = useState("");
 
   const currentQuestion = questions[currentIndex];
 
@@ -480,6 +490,7 @@ export default function ConjugationPracticeScreen() {
       const nextIndex = currentIndex + 1;
       setCurrentIndex(nextIndex);
       setFeedback({ type: "idle" });
+      setWrittenAnswer("");
       const shuffled = shuffleOptions(questions[nextIndex].options, questions[nextIndex].correct_answer);
       setShuffledOptions(shuffled);
     } else {
@@ -681,6 +692,22 @@ export default function ConjugationPracticeScreen() {
           </Text>
         </View>
 
+        <View style={styles.answerModeRow}>
+          <TouchableOpacity
+            style={[styles.answerModeButton, answerMode === "choose" && styles.answerModeButtonActive]}
+            onPress={() => setAnswerMode("choose")}
+          >
+            <Text style={[styles.answerModeButtonText, answerMode === "choose" && styles.answerModeButtonTextActive]}>{copy.choose}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.answerModeButton, answerMode === "write" && styles.answerModeButtonActive]}
+            onPress={() => setAnswerMode("write")}
+          >
+            <Text style={[styles.answerModeButtonText, answerMode === "write" && styles.answerModeButtonTextActive]}>{copy.write}</Text>
+          </TouchableOpacity>
+        </View>
+
+        {answerMode === "choose" ? (
         <View style={styles.optionsContainer}>
           {shuffledOptions.map((option, idx) => {
             const isCorrect = option === currentQuestion.correct_answer;
@@ -702,6 +729,35 @@ export default function ConjugationPracticeScreen() {
             );
           })}
         </View>
+        ) : (
+          <View style={styles.writingContainer}>
+            <TextInput
+              style={styles.writtenInput}
+              value={writtenAnswer}
+              onChangeText={setWrittenAnswer}
+              placeholder={copy.recognizedAnswer}
+              placeholderTextColor="#94a3b8"
+              editable={feedback.type === "idle" && !isSubmitting}
+              autoCapitalize="none"
+            />
+            {feedback.type === "idle" && (
+              <HandwritingAnswerPad
+                language={appLanguage}
+                questionText={`${currentQuestion.pronoun} ${currentQuestion.verb} ${currentQuestion.tense}`}
+                onRecognized={setWrittenAnswer}
+              />
+            )}
+            {feedback.type === "idle" && (
+              <TouchableOpacity
+                style={[styles.submitWrittenButton, (!writtenAnswer.trim() || isSubmitting) && styles.submitWrittenButtonDisabled]}
+                onPress={() => handleSelectOption(writtenAnswer.trim())}
+                disabled={!writtenAnswer.trim() || isSubmitting}
+              >
+                <Text style={styles.submitWrittenButtonText}>{copy.write}</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
 
         {feedback.type !== "idle" && (
           <View style={styles.feedbackContainer}>
@@ -923,10 +979,67 @@ const styles = StyleSheet.create({
     borderBottomColor: "#333",
     paddingHorizontal: 4,
   },
+  answerModeRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginHorizontal: 16,
+    marginBottom: 12,
+  },
+  answerModeButton: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#cbd5e1",
+    backgroundColor: "#f8fafc",
+    alignItems: "center",
+  },
+  answerModeButtonActive: {
+    backgroundColor: "#dbeafe",
+    borderColor: "#2563eb",
+  },
+  answerModeButtonText: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#475569",
+  },
+  answerModeButtonTextActive: {
+    color: "#1d4ed8",
+  },
   optionsContainer: {
     gap: 12,
     marginHorizontal: 16,
     marginBottom: 24,
+  },
+  writingContainer: {
+    marginHorizontal: 16,
+    gap: 10,
+    marginBottom: 24,
+  },
+  writtenInput: {
+    borderWidth: 2,
+    borderColor: "#cbd5e1",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    fontSize: 18,
+    color: "#111827",
+    backgroundColor: "#fff",
+  },
+  submitWrittenButton: {
+    minHeight: 44,
+    borderRadius: 8,
+    backgroundColor: "#2563eb",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  submitWrittenButtonDisabled: {
+    opacity: 0.55,
+  },
+  submitWrittenButtonText: {
+    color: "#fff",
+    fontWeight: "800",
+    fontSize: 14,
   },
   optionButton: {
     padding: 16,

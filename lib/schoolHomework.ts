@@ -26,7 +26,8 @@ export type SchoolHomeworkItem = {
   linked_assignment_id: string | null;
   linked_spelling_list_id: string | null;
   completed_at: string | null;
-  completed_by: "child" | "adult" | null;
+  completed_by: "child" | "adult" | "helper" | null;
+  helper_name?: string | null;
   school_homework_materials?: SchoolHomeworkMaterial[];
 };
 
@@ -49,7 +50,7 @@ export type SchoolHomeworkDay = {
   parent_id: string;
   child_id: string;
   homework_date: string;
-  source_type: "manual" | "photo";
+  source_type: "manual" | "photo" | "child";
   raw_input: string | null;
   status: "active" | "complete" | "archived";
   total_active_seconds: number;
@@ -331,7 +332,7 @@ export async function replaceSchoolHomeworkDay(params: {
   childId: string;
   homeworkDate: string;
   rawInput: string;
-  sourceType?: "manual" | "photo";
+  sourceType?: "manual" | "photo" | "child";
 }): Promise<SchoolHomeworkDay> {
   const { data: authData, error: authError } = await supabase.auth.getUser();
   if (authError || !authData?.user?.id) throw new Error("Not authenticated");
@@ -562,7 +563,8 @@ export async function listSchoolHomeworkWeek(childId: string, dateKeys = schoolH
 export async function setSchoolHomeworkItemDone(
   item: Pick<SchoolHomeworkItem, "id" | "status">,
   done: boolean,
-  completedBy: "child" | "adult" = "child"
+  completedBy: "child" | "adult" | "helper" = "child",
+  helperName?: string | null
 ): Promise<void> {
   const nextStatus: SchoolHomeworkStatus = done
     ? "done"
@@ -576,9 +578,34 @@ export async function setSchoolHomeworkItemDone(
       status: nextStatus,
       completed_at: done ? new Date().toISOString() : null,
       completed_by: done ? completedBy : null,
+      helper_name: done && helperName ? helperName.trim() : null,
       updated_at: new Date().toISOString(),
     })
     .eq("id", item.id);
+
+  if (error) throw error;
+}
+
+export async function getChildHomeworkEntryEnabled(childId: string): Promise<boolean> {
+  const { data, error } = await supabase
+    .from("children")
+    .select("allow_child_homework_entry")
+    .eq("id", childId)
+    .maybeSingle();
+
+  if (error) {
+    console.error("[school-homework] child entry setting read error:", error);
+    return false;
+  }
+
+  return Boolean((data as any)?.allow_child_homework_entry);
+}
+
+export async function setChildHomeworkEntryEnabled(childId: string, enabled: boolean): Promise<void> {
+  const { error } = await supabase
+    .from("children")
+    .update({ allow_child_homework_entry: enabled })
+    .eq("id", childId);
 
   if (error) throw error;
 }
