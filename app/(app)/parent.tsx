@@ -173,8 +173,8 @@ export default function ParentScreen() {
 
   const selectedChild = children.find((c) => c.id === selectedChildId);
   const actions: ParentAction[] = [
-    { id: "today", label: "Homework", icon: "calendar-check", color: "#0ea5e9", softColor: "#e0f2fe" },
-    { id: "assign", label: "Assign", icon: "playlist-plus", color: "#f97316", softColor: "#ffedd5" },
+    { id: "today", label: "Agenda", icon: "calendar-check", color: "#0ea5e9", softColor: "#e0f2fe" },
+    { id: "assign", label: "Practice", icon: "playlist-plus", color: "#f97316", softColor: "#ffedd5" },
     { id: "progress", label: "Progress", icon: "chart-line", color: "#22c55e", softColor: "#dcfce7" },
     { id: "rewards", label: "Rewards", icon: "star-outline", color: "#a855f7", softColor: "#f3e8ff" },
   ];

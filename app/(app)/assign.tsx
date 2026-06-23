@@ -908,10 +908,13 @@ export default function AssignScreen() {
               keyboardShouldPersistTaps="handled"
             >
               <View style={styles.modalContent}>
-                <Text style={styles.modalTitle}>Assign Homework</Text>
+                <Text style={styles.modalTitle}>Create practice assignment</Text>
 
                 {/* Subject Selector */}
-                <Text style={styles.formLabel}>Subject</Text>
+                <View style={styles.stepHeader}>
+                  <Text style={styles.stepNumber}>1</Text>
+                  <Text style={styles.stepTitle}>Subject</Text>
+                </View>
                 <View style={styles.topicPickerRow}>
                   <TouchableOpacity
                     style={[styles.topicButton, assignmentSubject === "math" && styles.topicButtonActive]}
@@ -942,6 +945,10 @@ export default function AssignScreen() {
                 {/* Math Form */}
                 {assignmentSubject === "math" && (
                   <>
+                    <View style={styles.stepHeader}>
+                      <Text style={styles.stepNumber}>2</Text>
+                      <Text style={styles.stepTitle}>Details</Text>
+                    </View>
                     <Text style={styles.formLabel}>Topic</Text>
                     <View style={styles.topicPickerRow}>
                       {["addition", "subtraction", "multiplication", "division", "word_problems"].map((topic) => (
@@ -1034,6 +1041,10 @@ export default function AssignScreen() {
                       </TouchableOpacity>
                     </View>
 
+                    <View style={styles.stepHeader}>
+                      <Text style={styles.stepNumber}>3</Text>
+                      <Text style={styles.stepTitle}>Mode and day</Text>
+                    </View>
                     <Text style={styles.formLabel}>Mode</Text>
                     <View style={styles.modeToggleRow}>
                       <TouchableOpacity
@@ -1062,12 +1073,19 @@ export default function AssignScreen() {
                       onChangeText={setDueDate}
                       editable={!isCreatingAssignment}
                     />
+                    {linkedSchoolHomeworkItemId && dueDate ? (
+                      <Text style={styles.linkedDateNote}>Prefilled from the selected school-homework day.</Text>
+                    ) : null}
                   </>
                 )}
 
                 {/* Spelling Form */}
                 {assignmentSubject === "spelling" && (
                   <>
+                    <View style={styles.stepHeader}>
+                      <Text style={styles.stepNumber}>2</Text>
+                      <Text style={styles.stepTitle}>Details</Text>
+                    </View>
                     <Text style={styles.formLabel}>Choose List</Text>
                     <View style={styles.subjectPickerRow}>
                       {spellingLists.length === 0 ? (
@@ -1128,6 +1146,10 @@ export default function AssignScreen() {
                       </>
                     )}
 
+                    <View style={styles.stepHeader}>
+                      <Text style={styles.stepNumber}>3</Text>
+                      <Text style={styles.stepTitle}>Homework day</Text>
+                    </View>
                     <Text style={styles.formLabel}>Homework day (optional)</Text>
                     <TextInput
                       style={styles.dateInput}
@@ -1136,12 +1158,19 @@ export default function AssignScreen() {
                       onChangeText={setDueDate}
                       editable={!isCreatingAssignment}
                     />
+                    {linkedSchoolHomeworkItemId && dueDate ? (
+                      <Text style={styles.linkedDateNote}>Prefilled from the selected school-homework day.</Text>
+                    ) : null}
                   </>
                 )}
 
                 {/* Conjugation Form */}
                 {assignmentSubject === "conjugation" && (
                   <>
+                    <View style={styles.stepHeader}>
+                      <Text style={styles.stepNumber}>2</Text>
+                      <Text style={styles.stepTitle}>Details</Text>
+                    </View>
                     {conjugationLanguages.length > 1 && (
                       <>
                         <Text style={styles.formLabel}>Language</Text>
@@ -1219,6 +1248,30 @@ export default function AssignScreen() {
                       editable={!isCreatingAssignment}
                     />
 
+                    <View style={styles.stepHeader}>
+                      <Text style={styles.stepNumber}>3</Text>
+                      <Text style={styles.stepTitle}>Mode and day</Text>
+                    </View>
+                    <Text style={styles.formLabel}>Mode</Text>
+                    <View style={styles.modeToggleRow}>
+                      <TouchableOpacity
+                        style={[styles.modeButton, assignmentMode === "practice" && styles.modeButtonActive]}
+                        onPress={() => setAssignmentMode("practice")}
+                      >
+                        <Text style={[styles.modeButtonText, assignmentMode === "practice" && styles.modeButtonTextActive]}>
+                          Practice
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.modeButton, assignmentMode === "quiz" && styles.modeButtonActive]}
+                        onPress={() => setAssignmentMode("quiz")}
+                      >
+                        <Text style={[styles.modeButtonText, assignmentMode === "quiz" && styles.modeButtonTextActive]}>
+                          Quiz
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+
                     <Text style={styles.formLabel}>Homework day (optional)</Text>
                     <TextInput
                       style={styles.dateInput}
@@ -1227,6 +1280,9 @@ export default function AssignScreen() {
                       onChangeText={setDueDate}
                       editable={!isCreatingAssignment}
                     />
+                    {linkedSchoolHomeworkItemId && dueDate ? (
+                      <Text style={styles.linkedDateNote}>Prefilled from the selected school-homework day.</Text>
+                    ) : null}
                   </>
                 )}
 
@@ -1698,6 +1754,29 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     textAlign: "center",
   },
+  stepHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 6,
+    marginBottom: 10,
+  },
+  stepNumber: {
+    width: 24,
+    height: 24,
+    borderRadius: 8,
+    backgroundColor: "#e3f2fd",
+    color: "#1565c0",
+    fontSize: 13,
+    fontWeight: "800",
+    textAlign: "center",
+    lineHeight: 24,
+  },
+  stepTitle: {
+    fontSize: 15,
+    fontWeight: "800",
+    color: "#263238",
+  },
   formLabel: {
     fontSize: 13,
     fontWeight: "600",
@@ -1799,6 +1878,13 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginBottom: 20,
     color: "#333",
+  },
+  linkedDateNote: {
+    marginTop: -12,
+    marginBottom: 18,
+    fontSize: 12,
+    lineHeight: 16,
+    color: "#607d8b",
   },
   numberInput: {
     borderWidth: 1,

@@ -43,6 +43,7 @@ import { supabase } from "@/lib/supabase";
 
 export default function SchoolHomeworkManager({ childId }: { childId: string }) {
   const router = useRouter();
+  const [viewMode, setViewMode] = useState<"agenda" | "practice">("agenda");
   const [homeworkDay, setHomeworkDay] = useState<SchoolHomeworkDay | null>(null);
   const [rawInput, setRawInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -62,6 +63,7 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
   const [editingDay, setEditingDay] = useState(false);
   const [childEntryEnabled, setChildEntryEnabled] = useState(false);
   const [savingChildEntry, setSavingChildEntry] = useState(false);
+  const [showMoreOptions, setShowMoreOptions] = useState(false);
 
   useEffect(() => {
     void fetchHomework();
@@ -332,6 +334,13 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
     });
   };
 
+  const handleCreatePracticeAssignment = () => {
+    router.push({
+      pathname: "/(app)/assign",
+      params: { childId },
+    });
+  };
+
   const handleShareDay = async () => {
     if (!homeworkDay || items.length === 0) {
       Alert.alert("Nothing to share", "Save homework for this day first.");
@@ -438,32 +447,45 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
     <View style={styles.container}>
       <View style={styles.headerRow}>
         <View>
-          <Text style={styles.title}>School homework</Text>
-          <Text style={styles.dateText}>{schoolHomeworkDateLabel(homeworkDate)}</Text>
+          <Text style={styles.title}>Homework setup</Text>
+          <Text style={styles.dateText}>
+            {viewMode === "agenda" ? schoolHomeworkDateLabel(homeworkDate) : "Create practice separately from the daily agenda"}
+          </Text>
         </View>
         {loading ? <ActivityIndicator size="small" color="#2196f3" /> : null}
       </View>
 
-      <TouchableOpacity
-        style={[styles.childEntryToggle, childEntryEnabled && styles.childEntryToggleOn]}
-        onPress={() => void handleToggleChildEntry()}
-        disabled={savingChildEntry}
-      >
-        <MaterialCommunityIcons
-          name={childEntryEnabled ? "toggle-switch" : "toggle-switch-off-outline"}
-          size={28}
-          color={childEntryEnabled ? "#166534" : "#64748b"}
-        />
-        <View style={styles.childEntryToggleTextWrap}>
-          <Text style={styles.childEntryToggleTitle}>Child can add homework</Text>
-          <Text style={styles.childEntryToggleBody}>
-            {childEntryEnabled
-              ? "On: child-entered homework appears immediately, and you can edit it."
-              : "Off: only parent-entered homework appears on the child screen."}
+      <View style={styles.viewTabs}>
+        <TouchableOpacity
+          style={[styles.viewTab, viewMode === "agenda" && styles.viewTabActive]}
+          onPress={() => setViewMode("agenda")}
+        >
+          <MaterialCommunityIcons
+            name="calendar-text-outline"
+            size={16}
+            color={viewMode === "agenda" ? "#1565c0" : "#64748b"}
+          />
+          <Text style={[styles.viewTabText, viewMode === "agenda" && styles.viewTabTextActive]}>
+            School agenda
           </Text>
-        </View>
-      </TouchableOpacity>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.viewTab, viewMode === "practice" && styles.viewTabActive]}
+          onPress={() => setViewMode("practice")}
+        >
+          <MaterialCommunityIcons
+            name="school-outline"
+            size={16}
+            color={viewMode === "practice" ? "#1565c0" : "#64748b"}
+          />
+          <Text style={[styles.viewTabText, viewMode === "practice" && styles.viewTabTextActive]}>
+            Practice
+          </Text>
+        </TouchableOpacity>
+      </View>
 
+      {viewMode === "agenda" ? (
+        <>
       <View style={styles.daySelector}>
         <TouchableOpacity style={styles.weekButton} onPress={() => shiftWeek(-1)}>
           <MaterialCommunityIcons name="chevron-left" size={18} color="#455a64" />
@@ -486,6 +508,64 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
           <MaterialCommunityIcons name="chevron-right" size={18} color="#455a64" />
         </TouchableOpacity>
       </View>
+
+      <TouchableOpacity
+        style={styles.moreOptionsButton}
+        onPress={() => setShowMoreOptions((current) => !current)}
+      >
+        <MaterialCommunityIcons
+          name={showMoreOptions ? "chevron-up" : "chevron-down"}
+          size={18}
+          color="#455a64"
+        />
+        <Text style={styles.moreOptionsText}>
+          {showMoreOptions ? "Hide options" : "More options"}
+        </Text>
+      </TouchableOpacity>
+
+      {showMoreOptions && (
+        <View style={styles.advancedPanel}>
+          <TouchableOpacity
+            style={[styles.childEntryToggle, childEntryEnabled && styles.childEntryToggleOn]}
+            onPress={() => void handleToggleChildEntry()}
+            disabled={savingChildEntry}
+          >
+            <MaterialCommunityIcons
+              name={childEntryEnabled ? "toggle-switch" : "toggle-switch-off-outline"}
+              size={28}
+              color={childEntryEnabled ? "#166534" : "#64748b"}
+            />
+            <View style={styles.childEntryToggleTextWrap}>
+              <Text style={styles.childEntryToggleTitle}>Child can add homework</Text>
+              <Text style={styles.childEntryToggleBody}>
+                {childEntryEnabled
+                  ? "On: child-entered homework appears immediately, and you can edit it."
+                  : "Off: only parent-entered homework appears on the child screen."}
+              </Text>
+            </View>
+          </TouchableOpacity>
+
+          <View style={styles.limitPanel}>
+            <Text style={styles.limitTitle}>Daily homework limit</Text>
+            <View style={styles.limitRow}>
+              <TextInput
+                style={styles.limitInput}
+                value={limitInput}
+                onChangeText={setLimitInput}
+                keyboardType="number-pad"
+                placeholder="Minutes"
+                placeholderTextColor="#999"
+              />
+              <TouchableOpacity style={styles.limitButton} onPress={handleSaveLimit} disabled={savingLimit}>
+                <Text style={styles.limitButtonText}>{savingLimit ? "Saving..." : "Save"}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.unlockButton} onPress={handleUnlockToday}>
+                <Text style={styles.unlockButtonText}>Unlock today</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      )}
 
       {editingDay ? (
         <>
@@ -538,26 +618,6 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
         <Text style={styles.saveButtonText}>{saving ? "Saving..." : "Save homework"}</Text>
       </TouchableOpacity>
 
-      <View style={styles.limitPanel}>
-        <Text style={styles.limitTitle}>Daily homework limit</Text>
-        <View style={styles.limitRow}>
-          <TextInput
-            style={styles.limitInput}
-            value={limitInput}
-            onChangeText={setLimitInput}
-            keyboardType="number-pad"
-            placeholder="Minutes"
-            placeholderTextColor="#999"
-          />
-          <TouchableOpacity style={styles.limitButton} onPress={handleSaveLimit} disabled={savingLimit}>
-            <Text style={styles.limitButtonText}>{savingLimit ? "Saving..." : "Save"}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.unlockButton} onPress={handleUnlockToday}>
-            <Text style={styles.unlockButtonText}>Unlock today</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-
       {items.length > 0 && (
         <View style={styles.previewList}>
           <View style={styles.summaryBox}>
@@ -568,7 +628,7 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
               {waitingCount > 0 ? ` · ${waitingCount} waiting for adult` : ""}
             </Text>
           </View>
-          {setupItems.length > 0 && (
+          {showMoreOptions && setupItems.length > 0 && (
             <View style={styles.setupBox}>
               <Text style={styles.setupTitle}>Needs info</Text>
               <Text style={styles.setupBody}>
@@ -594,7 +654,7 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
                   const materialReady = (item.school_homework_materials || []).length > 0;
                   const needsSetup = itemNeedsMaterial(item);
                   const canAddMaterial = item.task_kind === "generic" || needsSetup;
-                  const editingMaterial = Boolean(editingMaterialItemIds[item.id]) || needsSetup;
+                  const editingMaterial = showMoreOptions && (Boolean(editingMaterialItemIds[item.id]) || needsSetup);
                   return (
                     <>
                 <Text style={styles.previewText}>{item.task_text}</Text>
@@ -610,7 +670,7 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
                             ? "waiting for parent"
                             : item.task_kind}
                   </Text>
-                  {(materialReady || canAddMaterial) && !editingMaterial && (
+                  {showMoreOptions && (materialReady || canAddMaterial) && !editingMaterial && (
                     <TouchableOpacity
                       style={styles.editMaterialButton}
                       onPress={() => handleStartMaterialEdit(item)}
@@ -734,10 +794,12 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
               </Text>
             </View>
             <View style={styles.savedAgendaActions}>
-              <TouchableOpacity style={styles.savedAgendaButton} onPress={() => void handleShareDay()}>
-                <MaterialCommunityIcons name="share-variant-outline" size={16} color="#1565c0" />
-                <Text style={styles.savedAgendaButtonText}>Share</Text>
-              </TouchableOpacity>
+              {showMoreOptions && (
+                <TouchableOpacity style={styles.savedAgendaButton} onPress={() => void handleShareDay()}>
+                  <MaterialCommunityIcons name="share-variant-outline" size={16} color="#1565c0" />
+                  <Text style={styles.savedAgendaButtonText}>Share</Text>
+                </TouchableOpacity>
+              )}
               <TouchableOpacity style={styles.savedAgendaButton} onPress={() => setEditingDay(true)}>
                 <MaterialCommunityIcons name="pencil-outline" size={16} color="#1565c0" />
                 <Text style={styles.savedAgendaButtonText}>Edit</Text>
@@ -790,6 +852,22 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
           )}
         </View>
       ) : null}
+        </>
+      ) : (
+        <View style={styles.practicePanel}>
+          <View style={styles.practicePanelIcon}>
+            <MaterialCommunityIcons name="school-outline" size={24} color="#f97316" />
+          </View>
+          <Text style={styles.practicePanelTitle}>Practice assignments</Text>
+          <Text style={styles.practicePanelBody}>
+            Create math, spelling, or conjugation practice here. If you start from a saved agenda item, Skeelio will prefill the day and link it back to the child{"'"}s homework feed.
+          </Text>
+          <TouchableOpacity style={styles.practicePanelButton} onPress={handleCreatePracticeAssignment}>
+            <MaterialCommunityIcons name="playlist-plus" size={18} color="#fff" />
+            <Text style={styles.practicePanelButtonText}>Create practice assignment</Text>
+          </TouchableOpacity>
+        </View>
+      )}
       <CameraCaptureModal
         visible={agendaCameraVisible}
         onCaptured={(uri) => {
@@ -833,6 +911,55 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: "#666",
     marginTop: 2,
+  },
+  viewTabs: {
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 12,
+  },
+  viewTab: {
+    flex: 1,
+    minHeight: 40,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#dbe3ea",
+    backgroundColor: "#f8fafc",
+  },
+  viewTabActive: {
+    borderColor: "#90caf9",
+    backgroundColor: "#e3f2fd",
+  },
+  viewTabText: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#64748b",
+  },
+  viewTabTextActive: {
+    color: "#1565c0",
+  },
+  moreOptionsButton: {
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 8,
+    backgroundColor: "#f1f5f9",
+    marginBottom: 12,
+  },
+  moreOptionsText: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#455a64",
+  },
+  advancedPanel: {
+    gap: 10,
+    marginBottom: 12,
   },
   childEntryToggle: {
     flexDirection: "row",
@@ -1082,6 +1209,50 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "800",
     color: "#1565c0",
+  },
+  practicePanel: {
+    alignItems: "flex-start",
+    padding: 14,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#fed7aa",
+    backgroundColor: "#fff7ed",
+  },
+  practicePanelIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 8,
+    backgroundColor: "#ffedd5",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 10,
+  },
+  practicePanelTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#9a3412",
+  },
+  practicePanelBody: {
+    marginTop: 5,
+    marginBottom: 12,
+    fontSize: 13,
+    lineHeight: 18,
+    color: "#7c2d12",
+  },
+  practicePanelButton: {
+    minHeight: 42,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: "#f97316",
+  },
+  practicePanelButtonText: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#fff",
   },
   summaryBox: {
     backgroundColor: "#eef7ee",
