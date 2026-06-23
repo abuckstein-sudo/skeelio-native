@@ -280,7 +280,8 @@ export default function AssignScreen() {
           conjugationVerbGroups,
           conjugationTenses,
           questionCount,
-          dueDate || undefined
+          dueDate || undefined,
+          assignmentMode
         );
         await linkCreatedSchoolHomeworkAssignment(assignment.id, "conjugation");
 

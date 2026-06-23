@@ -397,7 +397,8 @@ export async function createConjugationAssignment(
   verbGroups: string[],
   tenses: string[],
   questionCount: number,
-  dueDate?: string | null
+  dueDate?: string | null,
+  mode: "practice" | "quiz" = "practice"
 ): Promise<Assignment> {
   // Get the current authenticated user
   const { data: authData, error: authError } = await supabase.auth.getUser();
@@ -429,7 +430,7 @@ export async function createConjugationAssignment(
       child_id: childId,
       subject: "conjugation",
       focus,
-      mode: "practice",
+      mode,
       question_count: questionCount,
       due_date: dueDate || null,
       status: "pending",
