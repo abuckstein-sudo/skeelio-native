@@ -1,7 +1,9 @@
 import { useCallback, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, PanResponder, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import Svg, { Path } from "react-native-svg";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import { runOnJS } from "react-native-reanimated";
 import { supabase } from "@/lib/supabase";
 
 export type HandwritingStroke = { points: { x: number; y: number }[] };
@@ -19,6 +21,21 @@ export default function HandwritingAnswerPad({ language = "en", questionText, on
   const [recognizing, setRecognizing] = useState(false);
   const bounds = useRef({ width: 320, height: 180 });
 
+  const startStroke = useCallback((x: number, y: number) => {
+    onDrawingChange?.(true);
+    setActiveStroke({ points: [{ x, y }] });
+  }, [onDrawingChange]);
+
+  const addPoint = useCallback((x: number, y: number) => {
+    setActiveStroke((current) => {
+      if (!current) return { points: [{ x, y }] };
+      const points = current.points;
+      const last = points[points.length - 1];
+      if (last && Math.hypot(last.x - x, last.y - y) < 2) return current;
+      return { points: [...points, { x, y }] };
+    });
+  }, []);
+
   const finishActiveStroke = useCallback(() => {
     setActiveStroke((current) => {
       if (current && current.points.length > 1) {
@@ -29,31 +46,21 @@ export default function HandwritingAnswerPad({ language = "en", questionText, on
     onDrawingChange?.(false);
   }, [onDrawingChange]);
 
-  const panResponder = useMemo(() => PanResponder.create({
-    onStartShouldSetPanResponderCapture: () => true,
-    onMoveShouldSetPanResponderCapture: () => true,
-    onStartShouldSetPanResponder: () => true,
-    onMoveShouldSetPanResponder: () => true,
-    onPanResponderTerminationRequest: () => false,
-    onPanResponderGrant: (evt) => {
-      const { locationX, locationY } = evt.nativeEvent;
-      onDrawingChange?.(true);
-      setActiveStroke({ points: [{ x: locationX, y: locationY }] });
-    },
-    onPanResponderMove: (evt) => {
-      const { locationX, locationY } = evt.nativeEvent;
-      setActiveStroke((current) => {
-        if (!current) return { points: [{ x: locationX, y: locationY }] };
-        const points = current.points;
-        const last = points[points.length - 1];
-        if (last && Math.hypot(last.x - locationX, last.y - locationY) < 2) return current;
-        return { points: [...points, { x: locationX, y: locationY }] };
-      });
-    },
-    onPanResponderRelease: finishActiveStroke,
-    onPanResponderTerminate: finishActiveStroke,
-    onShouldBlockNativeResponder: () => true,
-  }), [finishActiveStroke, onDrawingChange]);
+  const drawGesture = useMemo(() => Gesture.Pan()
+    .minDistance(0)
+    .shouldCancelWhenOutside(false)
+    .onBegin((event) => {
+      runOnJS(startStroke)(event.x, event.y);
+    })
+    .onUpdate((event) => {
+      runOnJS(addPoint)(event.x, event.y);
+    })
+    .onEnd(() => {
+      runOnJS(finishActiveStroke)();
+    })
+    .onFinalize(() => {
+      runOnJS(finishActiveStroke)();
+    }), [addPoint, finishActiveStroke, startStroke]);
 
   const allStrokes = activeStroke ? [...strokes, activeStroke] : strokes;
 
@@ -82,35 +89,37 @@ export default function HandwritingAnswerPad({ language = "en", questionText, on
 
   return (
     <View style={styles.container}>
-      <View
-        style={styles.pad}
-        onLayout={(event) => {
-          bounds.current = {
-            width: event.nativeEvent.layout.width,
-            height: event.nativeEvent.layout.height,
-          };
-        }}
-        {...panResponder.panHandlers}
-      >
-        <Svg width="100%" height="100%" pointerEvents="none">
-          {allStrokes.map((stroke, index) => (
-            <Path
-              key={index}
-              d={pathForStroke(stroke)}
-              stroke="#111827"
-              strokeWidth={4}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              fill="none"
-            />
-          ))}
-        </Svg>
-        {allStrokes.length === 0 && (
-          <Text style={styles.placeholder} pointerEvents="none">
-            {language === "fr" ? "Écris ta réponse ici" : "Write your answer here"}
-          </Text>
-        )}
-      </View>
+      <GestureDetector gesture={drawGesture}>
+        <View
+          style={styles.pad}
+          collapsable={false}
+          onLayout={(event) => {
+            bounds.current = {
+              width: event.nativeEvent.layout.width,
+              height: event.nativeEvent.layout.height,
+            };
+          }}
+        >
+          <Svg width="100%" height="100%" pointerEvents="none">
+            {allStrokes.map((stroke, index) => (
+              <Path
+                key={index}
+                d={pathForStroke(stroke)}
+                stroke="#111827"
+                strokeWidth={4}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                fill="none"
+              />
+            ))}
+          </Svg>
+          {allStrokes.length === 0 && (
+            <Text style={styles.placeholder} pointerEvents="none">
+              {language === "fr" ? "Écris ta réponse ici" : "Write your answer here"}
+            </Text>
+          )}
+        </View>
+      </GestureDetector>
       <View style={styles.actions}>
         <TouchableOpacity
           style={styles.secondaryButton}

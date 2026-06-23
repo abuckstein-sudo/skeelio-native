@@ -8,12 +8,6 @@ import { getOperationStatus, OperationStatus, getWordProblemsStatus, WordProblem
 import { Operation } from "@/lib/tutorConfig";
 import { listAssignmentsForChild, Assignment } from "@/lib/assignments";
 import {
-  listWorksheetSkillsForChild,
-  worksheetSkillLabel,
-  worksheetSkillProgressText,
-  WorksheetSkill,
-} from "@/lib/worksheetSkills";
-import {
   listSchoolHomeworkWeek,
   schoolHomeworkDateLabel,
   schoolHomeworkShortDateLabel,
@@ -118,9 +112,9 @@ const SETUP_COPY = {
     start: "Start",
     homework: "Homework",
     homeworkBody: "Do assigned work first",
-    greetingReady: "Let's get started!",
+    greetingHomework: "let's do your homework!",
     greetingChoice: "What would you like to work on today?",
-    completed: "Finished today",
+    greetingTimeUp: "you have worked hard today. Ask your adult for more time if you need it.",
     freePlay: "Free play",
     freePlayBody: "Choose practice tiles",
     settings: "Settings",
@@ -184,9 +178,9 @@ const SETUP_COPY = {
     start: "Commencer",
     homework: "Devoirs",
     homeworkBody: "Fais d'abord le travail assigné",
-    greetingReady: "On commence !",
+    greetingHomework: "on fait tes devoirs !",
     greetingChoice: "Que veux-tu travailler aujourd'hui ?",
-    completed: "Terminé aujourd'hui",
+    greetingTimeUp: "tu as bien travaillé aujourd'hui. Demande plus de temps à ton adulte si besoin.",
     freePlay: "Jeu libre",
     freePlayBody: "Choisis une activité",
     settings: "Réglages",
@@ -239,17 +233,6 @@ const getChildHomeLanguage = (child: Child | null): ChildHomeLanguage => {
   return appLanguageForChild(child);
 };
 
-const wasCompletedToday = (completedAt?: string | null) => {
-  if (!completedAt) return false;
-  const completed = new Date(completedAt);
-  const now = new Date();
-  return (
-    completed.getFullYear() === now.getFullYear() &&
-    completed.getMonth() === now.getMonth() &&
-    completed.getDate() === now.getDate()
-  );
-};
-
 export default function ChildHomeScreen() {
   const router = useRouter();
   const { childId } = useLocalSearchParams<{ childId: string }>();
@@ -262,9 +245,7 @@ export default function ChildHomeScreen() {
   );
   const [wordProblemsStatus, setWordProblemsStatus] = useState<WordProblemsStatus | null>(null);
   const [pendingAssignments, setPendingAssignments] = useState<Assignment[]>([]);
-  const [completedAssignments, setCompletedAssignments] = useState<Assignment[]>([]);
   const [pendingEpisodes, setPendingEpisodes] = useState<any[]>([]);
-  const [completedWorksheetSkills, setCompletedWorksheetSkills] = useState<WorksheetSkill[]>([]);
   const [schoolHomeworkWeekDays, setSchoolHomeworkWeekDays] = useState<(SchoolHomeworkDay | null)[]>([]);
   const [expandedHomeworkDate, setExpandedHomeworkDate] = useState(todayDateKey());
   const [homeworkLimit, setHomeworkLimit] = useState<ChildHomeworkLimit | null>(null);
@@ -308,16 +289,7 @@ export default function ChildHomeScreen() {
     if (!childId) return;
     const assignments = await listAssignmentsForChild(childId);
     const pending = assignments.filter((a) => a.status === "pending");
-  const completed = assignments
-      .filter((a) => a.status === "complete" && wasCompletedToday(a.completed_at))
-      .sort((a, b) => {
-        const dateA = a.completed_at ? new Date(a.completed_at).getTime() : 0;
-        const dateB = b.completed_at ? new Date(b.completed_at).getTime() : 0;
-        return dateB - dateA;
-      })
-      .slice(0, 5);
     setPendingAssignments(pending);
-    setCompletedAssignments(completed);
 
   }, [childId]);
 
@@ -341,21 +313,6 @@ export default function ChildHomeScreen() {
       console.error("[child-home] failed to fetch pending episodes:", err);
       setPendingEpisodes([]);
     }
-  }, [childId]);
-
-  const fetchCompletedWorksheetSkills = useCallback(async () => {
-    if (!childId) return;
-    const skills = await listWorksheetSkillsForChild(childId);
-    setCompletedWorksheetSkills(
-      skills
-        .filter((skill) => skill.status === "complete")
-        .sort((a, b) => {
-          const dateA = a.completed_at ? new Date(a.completed_at).getTime() : 0;
-          const dateB = b.completed_at ? new Date(b.completed_at).getTime() : 0;
-          return dateB - dateA;
-        })
-        .slice(0, 5)
-    );
   }, [childId]);
 
   const fetchSchoolHomework = useCallback(async () => {
@@ -438,10 +395,9 @@ export default function ChildHomeScreen() {
     await Promise.all([
       fetchPendingAssignments(),
       fetchPendingEpisodes(),
-      fetchCompletedWorksheetSkills(),
       fetchSchoolHomework(),
     ]);
-  }, [fetchPendingAssignments, fetchPendingEpisodes, fetchCompletedWorksheetSkills, fetchSchoolHomework]);
+  }, [fetchPendingAssignments, fetchPendingEpisodes, fetchSchoolHomework]);
 
   useEffect(() => {
     if (childId) {
@@ -682,13 +638,6 @@ export default function ChildHomeScreen() {
       setHelperItem(item);
       setHelperName("");
       return;
-    }
-    try {
-      await setSchoolHomeworkItemDone(item, false, "child");
-      await fetchSchoolHomework();
-    } catch (err) {
-      console.error("[child-home] school homework toggle error:", err);
-      alert("Could not update homework");
     }
   };
 
@@ -942,6 +891,10 @@ export default function ChildHomeScreen() {
   });
   const hasSchoolHomework = visibleSchoolDateKeys.length > 0;
   const todayHasHomework = visibleSchoolDateKeys.includes(todayDateKey());
+  const remainingSchoolHomeworkCount = schoolHomeworkWeekDays.reduce(
+    (count, day) => count + (day?.school_homework_items || []).filter((item) => item.status !== "done").length,
+    0
+  );
 
   // One unified "Homework" feed: worksheet practice sessions (episodes) +
   // assigned work, ordered by when they were created/assigned.
@@ -979,37 +932,15 @@ export default function ChildHomeScreen() {
     }),
   ].sort((x, y) => (x.createdAt < y.createdAt ? -1 : x.createdAt > y.createdAt ? 1 : 0));
 
-  const completedHomeworkFeed = [
-    ...completedWorksheetSkills.map((skill) => ({
-      type: "worksheet" as const,
-      id: skill.id,
-      title: worksheetSkillLabel(skill),
-      completedAt: skill.completed_at,
-      subtitle: worksheetSkillProgressText(skill),
-    })),
-    ...completedAssignments.map((a) => {
-      const isSpelling = a.subject === "spelling";
-      const base = (a.focus || a.subject || "Practice") as string;
-      const title = isSpelling
-        ? `Spelling: ${(a.custom_questions as any)?.title || "Spelling List"}`
-        : base.charAt(0).toUpperCase() + base.slice(1);
-      return {
-        id: a.id,
-        title,
-        completedAt: a.completed_at,
-        subtitle: typeof a.correct_count === "number"
-          ? `Score: ${a.correct_count}/${a.question_count}`
-          : `${a.question_count} ${isSpelling ? "word" : "question"}${a.question_count !== 1 ? "s" : ""}`,
-      };
-    }),
-  ].sort((a, b) => {
-    const dateA = a.completedAt ? new Date(a.completedAt).getTime() : 0;
-    const dateB = b.completedAt ? new Date(b.completedAt).getTime() : 0;
-    return dateB - dateA;
-  }).slice(0, 5);
-
   const setupCopy = SETUP_COPY[getChildHomeLanguage(child)];
   const childLanguage = getChildHomeLanguage(child);
+  const limitMinutes = homeworkLimit?.daily_limit_minutes;
+  const timeIsUp = Boolean(
+    limitMinutes &&
+    homeworkLimit?.unlocked_date !== todayDateKey() &&
+    homeworkTimerSeconds >= limitMinutes * 60
+  );
+  const hasRemainingHomework = homeworkFeed.length > 0 || remainingSchoolHomeworkCount > 0;
   const introSlides = setupCopy.introSlides;
   const currentIntroSlide = introSlides[introSlideIndex];
   const introVisible = !!child && !child.pin_setup_required && !child.intro_seen;
@@ -1089,8 +1020,12 @@ export default function ChildHomeScreen() {
           </Text>
         )}
         <Text style={styles.greetingText}>
-          {getChildHomeLanguage(child) === "fr" ? `Salut ${child.name} ! ` : `Hi ${child.name}! `}
-          {pendingAssignments.length > 0 || pendingEpisodes.length > 0 ? setupCopy.greetingReady : setupCopy.greetingChoice}
+          {getChildHomeLanguage(child) === "fr" ? `Salut ${child.name}, ` : `Hi ${child.name}, `}
+          {timeIsUp
+            ? setupCopy.greetingTimeUp
+            : hasRemainingHomework
+              ? setupCopy.greetingHomework
+              : setupCopy.greetingChoice}
         </Text>
       </View>
 
@@ -1198,7 +1133,7 @@ export default function ChildHomeScreen() {
                 <TouchableOpacity
                   style={styles.schoolHomeworkCheck}
                   onPress={() => void handleSchoolHomeworkToggle(item)}
-                  disabled={item.status === "waiting_parent"}
+                  disabled={item.status === "waiting_parent" || done}
                 >
                   <MaterialCommunityIcons
                     name={done ? "checkbox-marked-circle" : "checkbox-blank-circle-outline"}
@@ -1376,32 +1311,37 @@ export default function ChildHomeScreen() {
         onRequestClose={() => setHelperItem(null)}
       >
         <View style={styles.childHomeworkModalBackdrop}>
-          <View style={styles.childHomeworkModal}>
-            <Text style={styles.childHomeworkModalTitle}>{setupCopy.helpedBy}</Text>
-            <TextInput
-              style={styles.helperInput}
-              value={helperName}
-              onChangeText={setHelperName}
-              placeholder={setupCopy.helpedByPlaceholder}
-              placeholderTextColor="#78909c"
-              autoFocus
-            />
-            <View style={styles.childHomeworkModalActions}>
-              <TouchableOpacity
-                style={styles.childHomeworkCancelButton}
-                onPress={() => void completeHelperItem("child")}
-              >
-                <Text style={styles.childHomeworkCancelText}>{setupCopy.IWorkedAlone}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.childHomeworkSaveButton, !helperName.trim() && styles.childHomeworkSaveButtonDisabled]}
-                onPress={() => void completeHelperItem("helper", helperName)}
-                disabled={!helperName.trim()}
-              >
-                <Text style={styles.childHomeworkSaveText}>{setupCopy.saveHelper}</Text>
-              </TouchableOpacity>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            style={styles.childHomeworkKeyboardAvoider}
+          >
+            <View style={styles.childHomeworkModal}>
+              <Text style={styles.childHomeworkModalTitle}>{setupCopy.helpedBy}</Text>
+              <TextInput
+                style={styles.helperInput}
+                value={helperName}
+                onChangeText={setHelperName}
+                placeholder={setupCopy.helpedByPlaceholder}
+                placeholderTextColor="#78909c"
+                autoFocus
+              />
+              <View style={styles.childHomeworkModalActions}>
+                <TouchableOpacity
+                  style={styles.childHomeworkCancelButton}
+                  onPress={() => void completeHelperItem("child")}
+                >
+                  <Text style={styles.childHomeworkCancelText}>{setupCopy.IWorkedAlone}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.childHomeworkSaveButton, !helperName.trim() && styles.childHomeworkSaveButtonDisabled]}
+                  onPress={() => void completeHelperItem("helper", helperName)}
+                  disabled={!helperName.trim()}
+                >
+                  <Text style={styles.childHomeworkSaveText}>{setupCopy.saveHelper}</Text>
+                </TouchableOpacity>
+              </View>
             </View>
-          </View>
+          </KeyboardAvoidingView>
         </View>
       </Modal>
 
@@ -1425,26 +1365,6 @@ export default function ChildHomeScreen() {
               </View>
               <Text style={styles.playButton}>▶</Text>
             </TouchableOpacity>
-          ))}
-        </View>
-      )}
-
-      {completedHomeworkFeed.length > 0 && (
-        <View style={styles.completedHomeworkSection}>
-          <Text style={styles.homeworkSectionTitle}>✅ {setupCopy.completed}</Text>
-          {completedHomeworkFeed.map((item) => (
-            <View key={item.id} style={styles.completedHomeworkCard}>
-              <View style={styles.homeworkInfo}>
-                <Text style={styles.homeworkCardTopic} numberOfLines={2}>{item.title}</Text>
-                <Text style={styles.homeworkCardCount}>
-                  {item.subtitle}
-                  {item.completedAt
-                    ? ` • ${new Date(item.completedAt).toLocaleDateString()}`
-                    : ""}
-                </Text>
-              </View>
-              <Text style={styles.completedCheck}>✓</Text>
-            </View>
           ))}
         </View>
       )}

@@ -28,6 +28,7 @@ interface Child {
   pin_setup_required?: boolean;
   selected_avatar?: string | null;
   intro_seen?: boolean;
+  created_at?: string;
 }
 
 const AVATAR_EMOJI: Record<string, string> = {
@@ -106,7 +107,8 @@ export default function ChildrenScreen() {
 
     const { data, error: dbError } = await supabase
       .from("children")
-      .select("id, name, grade_level, school_system, pin, pin_setup_required, selected_avatar, intro_seen");
+      .select("id, name, grade_level, school_system, pin, pin_setup_required, selected_avatar, intro_seen, created_at")
+      .order("created_at", { ascending: true });
 
     if (dbError) {
       console.log("[nav] children fetch error:", dbError.message);

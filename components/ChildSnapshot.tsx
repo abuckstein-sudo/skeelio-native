@@ -5,12 +5,11 @@ import {
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
-  ScrollView,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { supabase } from "@/lib/supabase";
-import { buildChildAssessment, ChildAssessment, AssessmentArea } from "@/lib/childAssessment";
+import { buildChildAssessment, ChildAssessment } from "@/lib/childAssessment";
 
 const SUBJECT_TO_AREA: Record<string, string> = {
   addition: "Addition",
@@ -52,42 +51,26 @@ interface ChildSnapshotProps {
   avatar: string;
 }
 
-interface ParentInsight {
-  noticed: string;
-  learning: { label: string; plain: string };
-  tips: string[];
-}
-
 export default function ChildSnapshot({
   childId,
   childName,
   grade,
-  avatar,
 }: ChildSnapshotProps) {
   const router = useRouter();
   const [pendingCount, setPendingCount] = useState(0);
   const [stars, setStars] = useState(0);
-  const [recentConcept, setRecentConcept] = useState<string | null>(null);
-  const [recentConceptDescription, setRecentConceptDescription] = useState<string | null>(null);
-
-  const [expandedCard, setExpandedCard] = useState<"status" | "learning" | "help" | null>(null);
+  const [expandedCard, setExpandedCard] = useState<"status" | null>(null);
   const [focusSubjects, setFocusSubjects] = useState<string[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  const [insight, setInsight] = useState<ParentInsight | null>(null);
-  const [insightLoading, setInsightLoading] = useState(false);
 
   const [assessment, setAssessment] = useState<ChildAssessment | null>(null);
   const [assessmentLoading, setAssessmentLoading] = useState(false);
 
   useEffect(() => {
     fetchData();
-    fetchInsight();
     fetchAssessment();
   }, [childId]);
 
   const fetchData = async () => {
-    setLoading(true);
     try {
       // Fetch pending episodes count
       const { count: pendingCount } = await supabase
@@ -116,46 +99,8 @@ export default function ChildSnapshot({
         Array.isArray(childRow?.focus_subjects) ? childRow.focus_subjects : []
       );
 
-      // Fetch most recent concept
-      const { data: episodeData } = await supabase
-        .from("tutor_episodes")
-        .select("concept")
-        .eq("child_id", childId)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .single();
-
-      if (episodeData?.concept) {
-        const concept = episodeData.concept as any;
-        setRecentConcept(concept.label || null);
-        setRecentConceptDescription(concept.description || null);
-      }
     } catch (err) {
       console.error("[snapshot] fetch error:", err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchInsight = async () => {
-    setInsightLoading(true);
-    try {
-      const { data, error } = await supabase.functions.invoke(
-        "parent-insight",
-        { body: { childId } }
-      );
-
-      if (error) {
-        console.error("[snapshot] insight error:", error);
-        setInsight(null);
-      } else {
-        setInsight(data as ParentInsight);
-      }
-    } catch (err) {
-      console.error("[snapshot] insight fetch error:", err);
-      setInsight(null);
-    } finally {
-      setInsightLoading(false);
     }
   };
 
@@ -192,21 +137,6 @@ export default function ChildSnapshot({
 
     return { onTrack, needsWork, notEnough, readyToLevelUp };
   };
-
-  const getActiveAreas = (): AssessmentArea[] => {
-    return (assessment?.areas || []).filter((a) => a.active);
-  };
-
-  const AVATAR_EMOJI: Record<string, string> = {
-    cat: "🐱",
-    owl: "🦉",
-    fox: "🦊",
-    bear: "🐻",
-    rabbit: "🐰",
-    panda: "🐼",
-  };
-
-  const avatarEmoji = AVATAR_EMOJI[avatar] || AVATAR_EMOJI.fox;
 
   return (
     <View style={styles.container}>
@@ -305,93 +235,6 @@ export default function ChildSnapshot({
         )}
       </TouchableOpacity>
 
-      {/* Card 2: What childName is learning */}
-      <TouchableOpacity
-        style={styles.card}
-        onPress={() =>
-          setExpandedCard(expandedCard === "learning" ? null : "learning")
-        }
-        activeOpacity={0.7}
-      >
-        <View style={styles.cardHeader}>
-          <View style={styles.cardHeaderContent}>
-            <Text style={styles.cardTitle}>
-              What {childName} is learning
-            </Text>
-            <Text style={styles.cardCollapsed}>
-              {getActiveAreas().length > 0
-                ? getActiveAreas().map((a) => a.area).join(", ")
-                : insight?.learning?.label || recentConcept || "—"}
-            </Text>
-          </View>
-          <MaterialCommunityIcons
-            name={expandedCard === "learning" ? "chevron-up" : "chevron-down"}
-            size={24}
-            color="#999"
-          />
-        </View>
-
-        {expandedCard === "learning" && (
-          <View style={styles.cardExpanded}>
-            {getActiveAreas().length > 0 ? (
-              <View style={styles.activeAreasList}>
-                {getActiveAreas().map((area, idx) => (
-                  <View key={idx} style={styles.activeAreaItem}>
-                    <Text style={styles.activeAreaLabel}>{area.area}</Text>
-                    <Text style={styles.activeAreaEvidence}>{area.evidence}</Text>
-                  </View>
-                ))}
-              </View>
-            ) : (
-              <Text style={styles.expandedText}>
-                {insight?.learning?.plain || recentConceptDescription || "More soon."}
-              </Text>
-            )}
-          </View>
-        )}
-      </TouchableOpacity>
-
-      {/* Card 3: Help at home */}
-      <TouchableOpacity
-        style={styles.card}
-        onPress={() =>
-          setExpandedCard(expandedCard === "help" ? null : "help")
-        }
-        activeOpacity={0.7}
-      >
-        <View style={styles.cardHeader}>
-          <View style={styles.cardHeaderContent}>
-            <Text style={styles.cardTitle}>Help at home</Text>
-            <Text style={styles.cardCollapsed}>
-              Fun ways to practice together
-            </Text>
-          </View>
-          <MaterialCommunityIcons
-            name={expandedCard === "help" ? "chevron-up" : "chevron-down"}
-            size={24}
-            color="#999"
-          />
-        </View>
-
-        {expandedCard === "help" && (
-          <View style={styles.cardExpanded}>
-            {insight?.tips && insight.tips.length > 0 ? (
-              <View style={styles.tipsList}>
-                {insight.tips.map((tip, idx) => (
-                  <View key={idx} style={styles.tipItem}>
-                    <Text style={styles.tipBullet}>•</Text>
-                    <Text style={styles.tipText}>{tip}</Text>
-                  </View>
-                ))}
-              </View>
-            ) : (
-              <Text style={styles.expandedText}>
-                Activity ideas coming soon.
-              </Text>
-            )}
-          </View>
-        )}
-      </TouchableOpacity>
     </View>
   );
 }

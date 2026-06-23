@@ -18,6 +18,7 @@ import * as ImageManipulator from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
 import CameraCaptureModal from "./CameraCaptureModal";
+import DatePickerModal from "./DatePickerModal";
 import {
   addSchoolHomeworkDocumentMaterial,
   addSchoolHomeworkImageMaterial,
@@ -28,8 +29,6 @@ import {
   listSchoolHomeworkDay,
   replaceSchoolHomeworkDay,
   schoolHomeworkDateLabel,
-  schoolHomeworkShortDateLabel,
-  schoolHomeworkWeekDateKeys,
   SchoolHomeworkDay,
   SchoolHomeworkItem,
   signedSchoolHomeworkDocumentUrl,
@@ -53,8 +52,6 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
   const [editingMaterialItemIds, setEditingMaterialItemIds] = useState<Record<string, boolean>>({});
   const [limitInput, setLimitInput] = useState("");
   const [savingLimit, setSavingLimit] = useState(false);
-  const [weekAnchor, setWeekAnchor] = useState(new Date());
-  const weekDateKeys = schoolHomeworkWeekDateKeys(weekAnchor);
   const [homeworkDate, setHomeworkDate] = useState(todayDateKey());
   const [agendaCameraVisible, setAgendaCameraVisible] = useState(false);
   const [materialCameraItem, setMaterialCameraItem] = useState<SchoolHomeworkItem | null>(null);
@@ -64,6 +61,7 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
   const [childEntryEnabled, setChildEntryEnabled] = useState(false);
   const [savingChildEntry, setSavingChildEntry] = useState(false);
   const [showMoreOptions, setShowMoreOptions] = useState(false);
+  const [datePickerVisible, setDatePickerVisible] = useState(false);
 
   useEffect(() => {
     void fetchHomework();
@@ -152,6 +150,7 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
       setRawInput(extracted.items.join("\n"));
       setInputSourceType("photo");
       setEditingDay(true);
+      setViewMode("agenda");
       Alert.alert(
         "Review extracted homework",
         "I filled the homework box from the agenda photo. Check it, edit anything wrong, then save."
@@ -429,14 +428,6 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
     }
   };
 
-  const shiftWeek = (direction: -1 | 1) => {
-    const next = new Date(weekAnchor);
-    next.setDate(next.getDate() + direction * 7);
-    const nextWeek = schoolHomeworkWeekDateKeys(next);
-    setWeekAnchor(next);
-    setHomeworkDate(nextWeek[0]);
-  };
-
   const items = homeworkDay?.school_homework_items || [];
   const setupItems = items.filter((item) => itemNeedsMaterial(item));
   const doneCount = items.filter((item) => item.status === "done").length;
@@ -486,28 +477,13 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
 
       {viewMode === "agenda" ? (
         <>
-      <View style={styles.daySelector}>
-        <TouchableOpacity style={styles.weekButton} onPress={() => shiftWeek(-1)}>
-          <MaterialCommunityIcons name="chevron-left" size={18} color="#455a64" />
-        </TouchableOpacity>
-        {weekDateKeys.map((dateKey) => {
-          const selected = dateKey === homeworkDate;
-          return (
-            <TouchableOpacity
-              key={dateKey}
-              style={[styles.dayPill, selected && styles.dayPillSelected]}
-              onPress={() => setHomeworkDate(dateKey)}
-            >
-              <Text style={[styles.dayPillText, selected && styles.dayPillTextSelected]}>
-                {schoolHomeworkShortDateLabel(dateKey)}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-        <TouchableOpacity style={styles.weekButton} onPress={() => shiftWeek(1)}>
-          <MaterialCommunityIcons name="chevron-right" size={18} color="#455a64" />
-        </TouchableOpacity>
-      </View>
+      <TouchableOpacity style={styles.dateButton} onPress={() => setDatePickerVisible(true)}>
+        <MaterialCommunityIcons name="calendar-month-outline" size={18} color="#1565c0" />
+        <View style={styles.dateButtonTextWrap}>
+          <Text style={styles.dateButtonLabel}>Date</Text>
+          <Text style={styles.dateButtonValue}>{schoolHomeworkDateLabel(homeworkDate)}</Text>
+        </View>
+      </TouchableOpacity>
 
       <TouchableOpacity
         style={styles.moreOptionsButton}
@@ -866,8 +842,24 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
             <MaterialCommunityIcons name="playlist-plus" size={18} color="#fff" />
             <Text style={styles.practicePanelButtonText}>Create practice assignment</Text>
           </TouchableOpacity>
+          <View style={styles.inputActionRow}>
+            <TouchableOpacity style={styles.photoHomeworkButton} onPress={() => setAgendaCameraVisible(true)}>
+              <MaterialCommunityIcons name="camera-outline" size={18} color="#1565c0" />
+              <Text style={styles.photoHomeworkButtonText}>Take photo</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.photoHomeworkButton} onPress={() => void handlePickAgendaPhoto()}>
+              <MaterialCommunityIcons name="image-outline" size={18} color="#1565c0" />
+              <Text style={styles.photoHomeworkButtonText}>Choose photo</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       )}
+      <DatePickerModal
+        visible={datePickerVisible}
+        selectedDate={homeworkDate}
+        onSelect={setHomeworkDate}
+        onClose={() => setDatePickerVisible(false)}
+      />
       <CameraCaptureModal
         visible={agendaCameraVisible}
         onCaptured={(uri) => {
@@ -1024,6 +1016,33 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "800",
     color: "#1565c0",
+  },
+  dateButton: {
+    minHeight: 48,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#bbdefb",
+    backgroundColor: "#e3f2fd",
+    marginBottom: 12,
+  },
+  dateButtonTextWrap: {
+    flex: 1,
+  },
+  dateButtonLabel: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#1565c0",
+  },
+  dateButtonValue: {
+    marginTop: 1,
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#1e293b",
   },
   daySelector: {
     flexDirection: "row",

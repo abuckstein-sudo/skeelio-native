@@ -20,6 +20,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as ImageManipulator from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
 import CameraCaptureModal from "@/components/CameraCaptureModal";
+import DatePickerModal from "@/components/DatePickerModal";
 import { Operation } from "@/lib/tutorConfig";
 import {
   listAssignmentsForChild,
@@ -28,7 +29,7 @@ import {
   deleteAssignment,
   Assignment,
 } from "@/lib/assignments";
-import { createSchoolHomeworkAssignmentItem, linkSchoolHomeworkAssignment } from "@/lib/schoolHomework";
+import { createSchoolHomeworkAssignmentItem, linkSchoolHomeworkAssignment, schoolHomeworkDateLabel, todayDateKey } from "@/lib/schoolHomework";
 import {
   listSpellingListsForChild,
   createSpellingList,
@@ -76,7 +77,8 @@ export default function AssignScreen() {
   const [selectedWordProblemOp, setSelectedWordProblemOp] = useState<Operation | "mixed">("mixed");
   const [selectedMultiplicationTables, setSelectedMultiplicationTables] = useState<number[]>([]);
   const [questionCount, setQuestionCount] = useState(8);
-  const [dueDate, setDueDate] = useState(linkedHomeworkDate);
+  const [dueDate, setDueDate] = useState(linkedHomeworkDate || todayDateKey());
+  const [datePickerVisible, setDatePickerVisible] = useState(false);
   const [assignmentMode, setAssignmentMode] = useState<"practice" | "quiz">("practice");
   const [isCreatingAssignment, setIsCreatingAssignment] = useState(false);
   const [showCompletedAssignments, setShowCompletedAssignments] = useState(true);
@@ -200,6 +202,10 @@ export default function AssignScreen() {
 
   const handleCreateAssignment = async () => {
     if (!id || !session?.user?.id) return;
+    if (!dueDate) {
+      Alert.alert("Homework day required", "Choose the homework day for this assignment.");
+      return;
+    }
 
     if (assignmentSubject === "math") {
       setIsCreatingAssignment(true);
@@ -227,7 +233,7 @@ export default function AssignScreen() {
         setSelectedTopic("addition");
         setSelectedMultiplicationTables([]);
         setQuestionCount(8);
-        setDueDate("");
+        setDueDate(todayDateKey());
         setAssignmentMode("practice");
       } catch (err) {
         console.error("[assignments] error creating math assignment:", err);
@@ -267,7 +273,7 @@ export default function AssignScreen() {
 
         setShowAssignmentForm(false);
         setSelectedSpellingList(null);
-        setDueDate("");
+        setDueDate(todayDateKey());
         setAssignmentSubject("math");
       } catch (err) {
         console.error("[assignments] error creating spelling assignment:", err);
@@ -308,7 +314,7 @@ export default function AssignScreen() {
         setConjugationVerbGroups([]);
         setConjugationTenses([]);
         setQuestionCount(8);
-        setDueDate("");
+        setDueDate(todayDateKey());
       } catch (err) {
         console.error("[assignments] error creating conjugation assignment:", err);
         Alert.alert("Error", "Failed to create conjugation assignment");
@@ -374,7 +380,7 @@ export default function AssignScreen() {
       setShowAssignmentForm(false);
       setAssignmentSubject("math");
       setSelectedSpellingList(null);
-      setDueDate("");
+      setDueDate(todayDateKey());
       setGenerateWordCount("10");
       setGenerateLanguage("English");
       setIsGeneratingNewList(false);
@@ -684,6 +690,7 @@ export default function AssignScreen() {
   };
 
   const openSelectTopic = () => {
+    if (!dueDate) setDueDate(todayDateKey());
     setShowAssignmentForm(true);
     loadConjugationLanguages();
   };
@@ -719,6 +726,22 @@ export default function AssignScreen() {
   };
 
   const displayName = child?.name || paramName || "this child";
+  const renderHomeworkDateButton = () => (
+    <>
+      <Text style={styles.formLabel}>Homework day</Text>
+      <TouchableOpacity
+        style={styles.dateInput}
+        onPress={() => setDatePickerVisible(true)}
+        disabled={isCreatingAssignment}
+      >
+        <MaterialCommunityIcons name="calendar-month-outline" size={18} color="#1565c0" />
+        <Text style={styles.dateInputText}>{schoolHomeworkDateLabel(dueDate || todayDateKey())}</Text>
+      </TouchableOpacity>
+      {linkedSchoolHomeworkItemId && dueDate ? (
+        <Text style={styles.linkedDateNote}>Prefilled from the selected school-homework day.</Text>
+      ) : null}
+    </>
+  );
 
   if (isLoading) {
     return (
@@ -1065,17 +1088,7 @@ export default function AssignScreen() {
                       </TouchableOpacity>
                     </View>
 
-                    <Text style={styles.formLabel}>Homework day (optional)</Text>
-                    <TextInput
-                      style={styles.dateInput}
-                      placeholder="YYYY-MM-DD"
-                      value={dueDate}
-                      onChangeText={setDueDate}
-                      editable={!isCreatingAssignment}
-                    />
-                    {linkedSchoolHomeworkItemId && dueDate ? (
-                      <Text style={styles.linkedDateNote}>Prefilled from the selected school-homework day.</Text>
-                    ) : null}
+                    {renderHomeworkDateButton()}
                   </>
                 )}
 
@@ -1150,17 +1163,7 @@ export default function AssignScreen() {
                       <Text style={styles.stepNumber}>3</Text>
                       <Text style={styles.stepTitle}>Homework day</Text>
                     </View>
-                    <Text style={styles.formLabel}>Homework day (optional)</Text>
-                    <TextInput
-                      style={styles.dateInput}
-                      placeholder="YYYY-MM-DD"
-                      value={dueDate}
-                      onChangeText={setDueDate}
-                      editable={!isCreatingAssignment}
-                    />
-                    {linkedSchoolHomeworkItemId && dueDate ? (
-                      <Text style={styles.linkedDateNote}>Prefilled from the selected school-homework day.</Text>
-                    ) : null}
+                    {renderHomeworkDateButton()}
                   </>
                 )}
 
@@ -1272,17 +1275,7 @@ export default function AssignScreen() {
                       </TouchableOpacity>
                     </View>
 
-                    <Text style={styles.formLabel}>Homework day (optional)</Text>
-                    <TextInput
-                      style={styles.dateInput}
-                      placeholder="YYYY-MM-DD"
-                      value={dueDate}
-                      onChangeText={setDueDate}
-                      editable={!isCreatingAssignment}
-                    />
-                    {linkedSchoolHomeworkItemId && dueDate ? (
-                      <Text style={styles.linkedDateNote}>Prefilled from the selected school-homework day.</Text>
-                    ) : null}
+                    {renderHomeworkDateButton()}
                   </>
                 )}
 
@@ -1297,7 +1290,7 @@ export default function AssignScreen() {
                         setSelectedTopic("addition");
                         setSelectedMultiplicationTables([]);
                         setQuestionCount(8);
-                        setDueDate("");
+                        setDueDate(todayDateKey());
                         setAssignmentMode("practice");
                         setSelectedSpellingList(null);
                         setIsGeneratingNewList(false);
@@ -1511,6 +1504,12 @@ export default function AssignScreen() {
         visible={cameraVisible}
         onCaptured={(uri) => processCapturedImage(uri)}
         onClose={() => setCameraVisible(false)}
+      />
+      <DatePickerModal
+        visible={datePickerVisible}
+        selectedDate={dueDate || todayDateKey()}
+        onSelect={setDueDate}
+        onClose={() => setDatePickerVisible(false)}
       />
     </SafeAreaView>
   );
@@ -1870,13 +1869,22 @@ const styles = StyleSheet.create({
     color: "#2196f3",
   },
   dateInput: {
+    minHeight: 44,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
     borderWidth: 1,
     borderColor: "#ddd",
     borderRadius: 6,
     paddingVertical: 10,
     paddingHorizontal: 12,
-    fontSize: 14,
     marginBottom: 20,
+    backgroundColor: "#fff",
+  },
+  dateInputText: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: "700",
     color: "#333",
   },
   linkedDateNote: {

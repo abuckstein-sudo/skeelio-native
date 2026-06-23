@@ -125,7 +125,7 @@ export default function ParentProofSection({ childId }: { childId: string }) {
   if (loading) {
     return (
       <View style={styles.container}>
-        <Text style={styles.title}>Recent worksheet practice</Text>
+        <Text style={styles.title}>Recently completed</Text>
         <ActivityIndicator size="large" color="#2196f3" />
       </View>
     );
@@ -134,7 +134,7 @@ export default function ParentProofSection({ childId }: { childId: string }) {
   if (episodes.length === 0) {
     return (
       <View style={styles.container}>
-        <Text style={styles.title}>Recent worksheet practice</Text>
+        <Text style={styles.title}>Recently completed</Text>
         <View style={styles.emptyState}>
           <MaterialCommunityIcons name="file-document-outline" size={48} color="#ccc" />
           <Text style={styles.emptyText}>
@@ -147,7 +147,7 @@ export default function ParentProofSection({ childId }: { childId: string }) {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Recent worksheet practice</Text>
+      <Text style={styles.title}>Recently completed</Text>
 
       <FlatList
         data={episodes}

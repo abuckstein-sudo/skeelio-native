@@ -18,6 +18,7 @@ import ChildSnapshot from "@/components/ChildSnapshot";
 import ParentProofSection from "@/components/ParentProofSection";
 import RewardsManager from "@/components/RewardsManager";
 import SchoolHomeworkManager from "@/components/SchoolHomeworkManager";
+import ChildDocumentsSection from "@/components/ChildDocumentsSection";
 
 interface Child {
   id: string;
@@ -26,9 +27,10 @@ interface Child {
   school_system?: string;
   selected_avatar?: string;
   intro_seen?: boolean;
+  created_at?: string;
 }
 
-type ParentTab = "today" | "assign" | "progress" | "rewards";
+type ParentTab = "today" | "progress" | "rewards" | "documents";
 type ParentAction = { id: ParentTab; label: string; icon: keyof typeof MaterialCommunityIcons.glyphMap; color: string; softColor: string };
 
 const AVATAR_EMOJI: Record<string, string> = {
@@ -81,7 +83,8 @@ export default function ParentScreen() {
 
     const { data, error: dbError } = await supabase
       .from("children")
-      .select("id, name, grade_level, school_system, selected_avatar, intro_seen");
+      .select("id, name, grade_level, school_system, selected_avatar, intro_seen, created_at")
+      .order("created_at", { ascending: true });
 
     if (dbError) {
       console.log("[parent] children fetch error:", dbError.message);
@@ -99,18 +102,6 @@ export default function ParentScreen() {
     }
 
     setIsLoading(false);
-  };
-
-  const handleAssign = () => {
-    if (!selectedChildId) {
-      Alert.alert("No child selected", "Please select a child first");
-      return;
-    }
-    const selected = children.find((c) => c.id === selectedChildId);
-    router.push({
-      pathname: "/(app)/assign",
-      params: { childId: selectedChildId, childName: selected?.name || "" },
-    });
   };
 
   const handleAccountSettings = () => {
@@ -174,9 +165,9 @@ export default function ParentScreen() {
   const selectedChild = children.find((c) => c.id === selectedChildId);
   const actions: ParentAction[] = [
     { id: "today", label: "Agenda", icon: "calendar-check", color: "#0ea5e9", softColor: "#e0f2fe" },
-    { id: "assign", label: "Practice", icon: "playlist-plus", color: "#f97316", softColor: "#ffedd5" },
     { id: "progress", label: "Progress", icon: "chart-line", color: "#22c55e", softColor: "#dcfce7" },
     { id: "rewards", label: "Rewards", icon: "star-outline", color: "#a855f7", softColor: "#f3e8ff" },
+    { id: "documents", label: "Photos/docs", icon: "folder-image", color: "#f97316", softColor: "#ffedd5" },
   ];
 
   if (isLoading) {
@@ -282,10 +273,6 @@ export default function ParentScreen() {
                     { backgroundColor: selected ? tab.color : tab.softColor, borderColor: tab.color },
                   ]}
                   onPress={() => {
-                    if (tab.id === "assign") {
-                      handleAssign();
-                      return;
-                    }
                     setActiveTab(tab.id);
                   }}
                 >
@@ -326,6 +313,10 @@ export default function ParentScreen() {
                 <View style={styles.rewardSection}>
                   <RewardsManager childId={selectedChild.id} onInputFocus={scrollRewardsFormIntoView} />
                 </View>
+              )}
+
+              {activeTab === "documents" && (
+                <ChildDocumentsSection childId={selectedChild.id} />
               )}
             </>
           )}
