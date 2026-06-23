@@ -42,6 +42,7 @@ export type SchoolHomeworkMaterial = {
   storage_bucket: string | null;
   storage_path: string | null;
   text_content: string | null;
+  category?: "agenda" | "worksheet" | "quiz";
   created_at: string;
 };
 
@@ -665,6 +666,7 @@ export async function addSchoolHomeworkTextMaterial(params: {
   item: SchoolHomeworkItem;
   title?: string;
   textContent: string;
+  category?: SchoolHomeworkMaterial["category"];
 }): Promise<void> {
   const content = params.textContent.trim();
   if (!content) throw new Error("Material text is empty");
@@ -680,6 +682,7 @@ export async function addSchoolHomeworkTextMaterial(params: {
       material_type: "text",
       title: params.title || schoolHomeworkMaterialTitle(params.item),
       text_content: content,
+      category: params.category || "worksheet",
     });
 
   if (insertError) throw insertError;
@@ -733,6 +736,7 @@ export async function addSchoolHomeworkImageMaterial(params: {
   imageBase64?: string;
   title?: string;
   bucket?: string;
+  category?: SchoolHomeworkMaterial["category"];
 }): Promise<{ createdSpellingPractice: boolean }> {
   if (!params.storagePath && !params.dataUrl) throw new Error("Image material is missing");
   await clearSchoolHomeworkMaterials(params.item.id);
@@ -749,6 +753,7 @@ export async function addSchoolHomeworkImageMaterial(params: {
       storage_bucket: params.storagePath ? params.bucket || "worksheets" : null,
       storage_path: params.storagePath || null,
       text_content: params.dataUrl || null,
+      category: params.category || "worksheet",
     });
 
   if (insertError) throw insertError;
@@ -768,6 +773,7 @@ export async function addSchoolHomeworkDocumentMaterial(params: {
   fileName?: string;
   mimeType?: string;
   bucket?: string;
+  category?: SchoolHomeworkMaterial["category"];
 }): Promise<void> {
   if (!params.storagePath) throw new Error("Document material is missing");
   await clearSchoolHomeworkMaterials(params.item.id);
@@ -784,6 +790,7 @@ export async function addSchoolHomeworkDocumentMaterial(params: {
       storage_bucket: params.bucket || "worksheets",
       storage_path: params.storagePath,
       text_content: params.mimeType || null,
+      category: params.category || "worksheet",
     });
 
   if (insertError) throw insertError;

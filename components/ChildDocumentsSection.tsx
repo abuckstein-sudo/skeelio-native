@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabase";
 type MaterialRow = {
   id: string;
   material_type: "image" | "text" | "document";
+  category?: "agenda" | "worksheet" | "quiz" | null;
   title: string | null;
   created_at: string;
   school_homework_items?: {
@@ -25,6 +26,9 @@ const CATEGORIES = [
 ] as const;
 
 function categoryFor(material: MaterialRow): typeof CATEGORIES[number]["id"] {
+  if (material.category === "agenda") return "agenda";
+  if (material.category === "quiz") return "quizzes";
+  if (material.category === "worksheet") return "worksheets";
   const kind = material.school_homework_items?.task_kind || "";
   const title = `${material.title || ""} ${material.school_homework_items?.task_text || ""}`.toLowerCase();
   if (kind === "signature" || /quiz|test|interro|controle|contrôle|evaluation|évaluation/.test(title)) return "quizzes";
@@ -42,7 +46,7 @@ export default function ChildDocumentsSection({ childId }: { childId: string }) 
     try {
       const { data, error } = await supabase
         .from("school_homework_materials")
-        .select("id, material_type, title, created_at, school_homework_items(task_text, task_kind), school_homework_days(homework_date, source_type)")
+        .select("id, material_type, title, category, created_at, school_homework_items(task_text, task_kind), school_homework_days(homework_date, source_type)")
         .eq("child_id", childId)
         .order("created_at", { ascending: false });
 

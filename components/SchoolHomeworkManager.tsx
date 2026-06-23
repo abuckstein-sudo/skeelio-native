@@ -31,6 +31,7 @@ import {
   schoolHomeworkDateLabel,
   SchoolHomeworkDay,
   SchoolHomeworkItem,
+  SchoolHomeworkMaterial,
   signedSchoolHomeworkDocumentUrl,
   signedSchoolHomeworkImageUrl,
   setSchoolHomeworkItemDone,
@@ -39,6 +40,18 @@ import {
 } from "@/lib/schoolHomework";
 import { getChildHomeworkLimit, setChildHomeworkLimit, unlockChildHomeworkForToday } from "@/lib/homeworkTime";
 import { supabase } from "@/lib/supabase";
+
+const MATERIAL_CATEGORIES: { id: NonNullable<SchoolHomeworkMaterial["category"]>; label: string }[] = [
+  { id: "agenda", label: "Agenda image" },
+  { id: "worksheet", label: "Worksheet/material" },
+  { id: "quiz", label: "Quiz/test" },
+];
+
+function inferredMaterialCategory(item: SchoolHomeworkItem): NonNullable<SchoolHomeworkMaterial["category"]> {
+  if (item.task_kind === "signature") return "quiz";
+  if (/quiz|test|interro|controle|contrôle|evaluation|évaluation/i.test(item.task_text)) return "quiz";
+  return "worksheet";
+}
 
 export default function SchoolHomeworkManager({ childId }: { childId: string }) {
   const router = useRouter();
@@ -62,6 +75,7 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
   const [savingChildEntry, setSavingChildEntry] = useState(false);
   const [showMoreOptions, setShowMoreOptions] = useState(false);
   const [datePickerVisible, setDatePickerVisible] = useState(false);
+  const [materialCategoryByItem, setMaterialCategoryByItem] = useState<Record<string, NonNullable<SchoolHomeworkMaterial["category"]>>>({});
 
   useEffect(() => {
     void fetchHomework();
@@ -223,6 +237,7 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
         storagePath: path,
         bucket: "worksheets",
         imageBase64: manipulated.base64,
+        category: materialCategoryByItem[item.id] || inferredMaterialCategory(item),
       });
       setEditingMaterialItemIds((current) => ({ ...current, [item.id]: false }));
       await fetchHomework();
@@ -279,6 +294,7 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
         storagePath: path,
         fileName: asset.name,
         mimeType,
+        category: materialCategoryByItem[item.id] || inferredMaterialCategory(item),
       });
       setEditingMaterialItemIds((current) => ({ ...current, [item.id]: false }));
       await fetchHomework();
@@ -300,7 +316,11 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
 
     try {
       setMaterialSavingItemId(item.id);
-      await addSchoolHomeworkTextMaterial({ item, textContent });
+      await addSchoolHomeworkTextMaterial({
+        item,
+        textContent,
+        category: materialCategoryByItem[item.id] || inferredMaterialCategory(item),
+      });
       setMaterialTextByItem((current) => ({ ...current, [item.id]: "" }));
       setEditingMaterialItemIds((current) => ({ ...current, [item.id]: false }));
       await fetchHomework();
@@ -317,6 +337,10 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
     setMaterialTextByItem((current) => ({
       ...current,
       [item.id]: material?.material_type === "text" ? material.text_content || "" : "",
+    }));
+    setMaterialCategoryByItem((current) => ({
+      ...current,
+      [item.id]: material?.category || inferredMaterialCategory(item),
     }));
     setEditingMaterialItemIds((current) => ({ ...current, [item.id]: true }));
   };
@@ -688,6 +712,22 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
                           resizeMode="cover"
                         />
                       )}
+                    <View style={styles.categoryPicker}>
+                      {MATERIAL_CATEGORIES.map((category) => {
+                        const selected = (materialCategoryByItem[item.id] || inferredMaterialCategory(item)) === category.id;
+                        return (
+                          <TouchableOpacity
+                            key={category.id}
+                            style={[styles.categoryPill, selected && styles.categoryPillSelected]}
+                            onPress={() => setMaterialCategoryByItem((current) => ({ ...current, [item.id]: category.id }))}
+                          >
+                            <Text style={[styles.categoryPillText, selected && styles.categoryPillTextSelected]}>
+                              {category.label}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
                     <View style={styles.materialActions}>
                       <TouchableOpacity
                         style={styles.materialButton}
@@ -1367,6 +1407,32 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
     marginBottom: 8,
+  },
+  categoryPicker: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+    marginBottom: 8,
+  },
+  categoryPill: {
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#d7e2ec",
+    backgroundColor: "#fff",
+  },
+  categoryPillSelected: {
+    borderColor: "#90caf9",
+    backgroundColor: "#e3f2fd",
+  },
+  categoryPillText: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#64748b",
+  },
+  categoryPillTextSelected: {
+    color: "#1565c0",
   },
   materialPreviewImage: {
     width: 120,
