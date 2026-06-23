@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, SafeAreaView, Modal, TextInput, Image, Alert, Linking } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, SafeAreaView, Modal, TextInput, Image, Alert, Linking, KeyboardAvoidingView, Platform } from "react-native";
 import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
+import * as ImageManipulator from "expo-image-manipulator";
+import * as ImagePicker from "expo-image-picker";
 import { supabase } from "@/lib/supabase";
 import { getOperationStatus, OperationStatus, getWordProblemsStatus, WordProblemsStatus } from "@/lib/tutor/status";
 import { Operation } from "@/lib/tutorConfig";
@@ -25,9 +27,11 @@ import {
   todayDateKey,
   schoolHomeworkWeekDateKeys,
   replaceSchoolHomeworkDay,
+  extractSchoolHomeworkFromImage,
 } from "@/lib/schoolHomework";
 import { addHomeworkActiveSeconds, ChildHomeworkLimit, getChildHomeworkLimit } from "@/lib/homeworkTime";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import CameraCaptureModal from "@/components/CameraCaptureModal";
 import GiraffeBackground from "@/components/GiraffeBackground";
 import { appLanguageForChild } from "@/lib/appLanguage";
 
@@ -275,6 +279,8 @@ export default function ChildHomeScreen() {
   const [childHomeworkModalDate, setChildHomeworkModalDate] = useState<string | null>(null);
   const [childHomeworkInput, setChildHomeworkInput] = useState("");
   const [savingChildHomework, setSavingChildHomework] = useState(false);
+  const [childHomeworkCameraVisible, setChildHomeworkCameraVisible] = useState(false);
+  const [extractingChildHomeworkPhoto, setExtractingChildHomeworkPhoto] = useState(false);
   const [helperItem, setHelperItem] = useState<SchoolHomeworkItem | null>(null);
   const [helperName, setHelperName] = useState("");
   const [newPin, setNewPin] = useState("");
@@ -644,10 +650,7 @@ export default function ChildHomeScreen() {
     }
 
     if (item.linked_assignment_id) {
-      router.push({
-        pathname: "/homework/[assignmentId]",
-        params: { assignmentId: item.linked_assignment_id, childId },
-      });
+      await handleHomeworkTap(item.linked_assignment_id);
       return;
     }
 
@@ -707,15 +710,74 @@ export default function ChildHomeScreen() {
     setChildHomeworkInput(existingText);
   };
 
+  const handleChildHomeworkPhotoCaptured = async (uri: string) => {
+    const language = getChildHomeLanguage(child);
+    try {
+      setExtractingChildHomeworkPhoto(true);
+      const manipulated = await ImageManipulator.manipulateAsync(
+        uri,
+        [{ resize: { width: 1300 } }],
+        { compress: 0.55, format: ImageManipulator.SaveFormat.JPEG, base64: true }
+      );
+
+      if (!manipulated.base64) throw new Error("Could not read homework image");
+
+      const extracted = await extractSchoolHomeworkFromImage(manipulated.base64, "image/jpeg");
+      if (extracted.items.length === 0) {
+        alert(language === "fr" ? "Je n'ai pas trouvé de devoir dans cette photo." : "I could not find homework in that photo.");
+        return;
+      }
+
+      setChildHomeworkInput((current) =>
+        [current.trim(), extracted.items.join("\n")].filter(Boolean).join("\n")
+      );
+    } catch (err) {
+      console.error("[child-home] child homework photo error:", err);
+      alert(language === "fr" ? "Impossible de lire cette photo." : "Could not read that photo.");
+    } finally {
+      setExtractingChildHomeworkPhoto(false);
+    }
+  };
+
+  const handlePickChildHomeworkPhoto = async () => {
+    const language = getChildHomeLanguage(child);
+    if (extractingChildHomeworkPhoto) return;
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        alert(language === "fr" ? "Autorise les photos pour choisir une image." : "Allow photo access to choose a picture.");
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images"],
+        allowsEditing: false,
+        quality: 1,
+      });
+
+      if (!result.canceled && result.assets[0]?.uri) {
+        await handleChildHomeworkPhotoCaptured(result.assets[0].uri);
+      }
+    } catch (err) {
+      console.error("[child-home] child homework library error:", err);
+      alert(language === "fr" ? "Impossible de choisir cette photo." : "Could not choose that photo.");
+    }
+  };
+
   const handleSaveChildHomework = async () => {
     if (!childId || !childHomeworkModalDate || !childHomeworkInput.trim()) return;
     try {
       setSavingChildHomework(true);
+      const existingDay = schoolHomeworkWeekDays.find((day) => day?.homework_date === childHomeworkModalDate) || null;
+      const existingRawInput = (existingDay?.raw_input || "").trim();
+      const nextRawInput = [existingRawInput, childHomeworkInput.trim()]
+        .filter(Boolean)
+        .join("\n");
       await replaceSchoolHomeworkDay({
         childId,
         homeworkDate: childHomeworkModalDate,
-        rawInput: childHomeworkInput,
-        sourceType: "child",
+        rawInput: nextRawInput,
+        sourceType: existingDay?.source_type || "child",
       });
       setChildHomeworkModalDate(null);
       setChildHomeworkInput("");
@@ -869,8 +931,17 @@ export default function ChildHomeScreen() {
   const schoolWeekDateKeys = schoolHomeworkWeekDateKeys();
   const schoolHomeworkByDate = new Map(schoolHomeworkWeekDays.map((day) => [day?.homework_date, day]));
   const childCanAddHomework = Boolean(child.allow_child_homework_entry);
-  const hasDatedAssignments = pendingAssignments.some((assignment) => Boolean(assignment.due_date));
-  const hasSchoolHomework = schoolHomeworkWeekDays.some((day) => (day?.school_homework_items || []).length > 0) || hasDatedAssignments;
+  const visibleSchoolDateKeys = schoolWeekDateKeys.filter((dateKey) => {
+    const day = schoolHomeworkByDate.get(dateKey) || null;
+    const items = day?.school_homework_items || [];
+    const datedAssignments = pendingAssignments.filter((assignment) => {
+      if (!assignment.due_date) return false;
+      return assignment.due_date.slice(0, 10) === dateKey;
+    });
+    return items.length > 0 || datedAssignments.length > 0;
+  });
+  const hasSchoolHomework = visibleSchoolDateKeys.length > 0;
+  const todayHasHomework = visibleSchoolDateKeys.includes(todayDateKey());
 
   // One unified "Homework" feed: worksheet practice sessions (episodes) +
   // assigned work, ordered by when they were created/assigned.
@@ -1023,9 +1094,24 @@ export default function ChildHomeScreen() {
         </Text>
       </View>
 
-      {(hasSchoolHomework || childCanAddHomework) && (
+      {childCanAddHomework && !todayHasHomework && (
+        <TouchableOpacity
+          style={styles.emptyAddHomeworkCard}
+          onPress={() => openChildHomeworkModal(todayDateKey())}
+        >
+          <MaterialCommunityIcons name="plus-circle" size={30} color="#1565c0" />
+          <View style={styles.emptyAddHomeworkTextWrap}>
+            <Text style={styles.emptyAddHomeworkTitle}>{setupCopy.addHomework}</Text>
+            <Text style={styles.emptyAddHomeworkBody}>
+              {childLanguage === "fr" ? "Ajoute un devoir si tu en as un aujourd'hui." : "Add homework if you have something to do today."}
+            </Text>
+          </View>
+        </TouchableOpacity>
+      )}
+
+      {hasSchoolHomework && (
         <View style={styles.schoolHomeworkSection}>
-          {schoolWeekDateKeys.map((dateKey) => {
+          {visibleSchoolDateKeys.map((dateKey) => {
             const day = schoolHomeworkByDate.get(dateKey) || null;
             const items = day?.school_homework_items || [];
             const datedAssignments = pendingAssignments.filter((assignment) => {
@@ -1035,8 +1121,7 @@ export default function ChildHomeScreen() {
             const doneCount = items.filter((item) => item.status === "done").length;
             const remainingCount = items.length + datedAssignments.length;
             const expanded = expandedHomeworkDate === dateKey;
-            const existingChildText = day?.source_type === "child" ? day.raw_input || "" : "";
-            const canChildEditDate = childCanAddHomework && (!day || day.source_type === "child" || items.length === 0);
+            const canChildEditDate = childCanAddHomework;
             return (
               <View key={dateKey} style={styles.schoolHomeworkDayGroup}>
                 <TouchableOpacity
@@ -1053,7 +1138,7 @@ export default function ChildHomeScreen() {
                     {canChildEditDate && (
                       <TouchableOpacity
                         style={styles.childHomeworkPlus}
-                        onPress={() => openChildHomeworkModal(dateKey, existingChildText)}
+                        onPress={() => openChildHomeworkModal(dateKey)}
                       >
                         <MaterialCommunityIcons name="plus" size={18} color="#fff" />
                       </TouchableOpacity>
@@ -1153,21 +1238,6 @@ export default function ChildHomeScreen() {
         </View>
       )}
 
-      {childCanAddHomework && !hasSchoolHomework && (
-        <TouchableOpacity
-          style={styles.emptyAddHomeworkCard}
-          onPress={() => openChildHomeworkModal(todayDateKey())}
-        >
-          <MaterialCommunityIcons name="plus-circle" size={30} color="#1565c0" />
-          <View style={styles.emptyAddHomeworkTextWrap}>
-            <Text style={styles.emptyAddHomeworkTitle}>{setupCopy.addHomework}</Text>
-            <Text style={styles.emptyAddHomeworkBody}>
-              {childLanguage === "fr" ? "Ajoute un devoir si tu en as un aujourd'hui." : "Add homework if you have something to do today."}
-            </Text>
-          </View>
-        </TouchableOpacity>
-      )}
-
       <Modal
         visible={materialModalVisible}
         transparent
@@ -1220,44 +1290,84 @@ export default function ChildHomeScreen() {
         onRequestClose={() => setChildHomeworkModalDate(null)}
       >
         <View style={styles.childHomeworkModalBackdrop}>
-          <View style={styles.childHomeworkModal}>
-            <Text style={styles.childHomeworkModalTitle}>{setupCopy.addHomework}</Text>
-            {childHomeworkModalDate && (
-              <Text style={styles.childHomeworkModalDate}>
-                {schoolHomeworkDateLabel(childHomeworkModalDate, childLanguage)}
-              </Text>
-            )}
-            <TextInput
-              style={styles.childHomeworkInput}
-              value={childHomeworkInput}
-              onChangeText={setChildHomeworkInput}
-              placeholder={setupCopy.addHomeworkPlaceholder}
-              placeholderTextColor="#78909c"
-              multiline
-              textAlignVertical="top"
-              autoFocus
-            />
-            <View style={styles.childHomeworkModalActions}>
-              <TouchableOpacity
-                style={styles.childHomeworkCancelButton}
-                onPress={() => setChildHomeworkModalDate(null)}
-                disabled={savingChildHomework}
-              >
-                <Text style={styles.childHomeworkCancelText}>{setupCopy.cancel}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.childHomeworkSaveButton, (!childHomeworkInput.trim() || savingChildHomework) && styles.childHomeworkSaveButtonDisabled]}
-                onPress={() => void handleSaveChildHomework()}
-                disabled={!childHomeworkInput.trim() || savingChildHomework}
-              >
-                <Text style={styles.childHomeworkSaveText}>
-                  {savingChildHomework ? "..." : setupCopy.saveHomework}
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            style={styles.childHomeworkKeyboardAvoider}
+          >
+            <View style={styles.childHomeworkModal}>
+              <Text style={styles.childHomeworkModalTitle}>{setupCopy.addHomework}</Text>
+              {childHomeworkModalDate && (
+                <Text style={styles.childHomeworkModalDate}>
+                  {schoolHomeworkDateLabel(childHomeworkModalDate, childLanguage)}
                 </Text>
-              </TouchableOpacity>
+              )}
+              <View style={styles.childHomeworkPhotoRow}>
+                <TouchableOpacity
+                  style={styles.childHomeworkPhotoButton}
+                  onPress={() => setChildHomeworkCameraVisible(true)}
+                  disabled={extractingChildHomeworkPhoto}
+                >
+                  <MaterialCommunityIcons name="camera-outline" size={17} color="#1565c0" />
+                  <Text style={styles.childHomeworkPhotoText}>
+                    {childLanguage === "fr" ? "Photo" : "Take photo"}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.childHomeworkPhotoButton}
+                  onPress={() => void handlePickChildHomeworkPhoto()}
+                  disabled={extractingChildHomeworkPhoto}
+                >
+                  {extractingChildHomeworkPhoto ? (
+                    <ActivityIndicator size="small" color="#1565c0" />
+                  ) : (
+                    <MaterialCommunityIcons name="image-outline" size={17} color="#1565c0" />
+                  )}
+                  <Text style={styles.childHomeworkPhotoText}>
+                    {childLanguage === "fr" ? "Choisir" : "Choose photo"}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+              <TextInput
+                style={styles.childHomeworkInput}
+                value={childHomeworkInput}
+                onChangeText={setChildHomeworkInput}
+                placeholder={setupCopy.addHomeworkPlaceholder}
+                placeholderTextColor="#78909c"
+                multiline
+                textAlignVertical="top"
+                autoFocus
+              />
+              <View style={styles.childHomeworkModalActions}>
+                <TouchableOpacity
+                  style={styles.childHomeworkCancelButton}
+                  onPress={() => setChildHomeworkModalDate(null)}
+                  disabled={savingChildHomework}
+                >
+                  <Text style={styles.childHomeworkCancelText}>{setupCopy.cancel}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.childHomeworkSaveButton, (!childHomeworkInput.trim() || savingChildHomework) && styles.childHomeworkSaveButtonDisabled]}
+                  onPress={() => void handleSaveChildHomework()}
+                  disabled={!childHomeworkInput.trim() || savingChildHomework}
+                >
+                  <Text style={styles.childHomeworkSaveText}>
+                    {savingChildHomework ? "..." : setupCopy.saveHomework}
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </View>
-          </View>
+          </KeyboardAvoidingView>
         </View>
       </Modal>
+
+      <CameraCaptureModal
+        visible={childHomeworkCameraVisible}
+        onCaptured={(uri) => {
+          setChildHomeworkCameraVisible(false);
+          void handleChildHomeworkPhotoCaptured(uri);
+        }}
+        onClose={() => setChildHomeworkCameraVisible(false)}
+      />
 
       <Modal
         visible={Boolean(helperItem)}
@@ -1339,33 +1449,31 @@ export default function ChildHomeScreen() {
         </View>
       )}
 
-      {/* Show practice tiles only if nothing is queued in the homework feed */}
-      {homeworkFeed.length === 0 && (
-        <View style={styles.subjectsContainer}>
-          {SUBJECTS.map((subject) => {
-            const isMathSubject = ["addition", "subtraction", "multiplication", "division"].includes(subject.topic);
-            const isWordProblems = subject.topic === "word_problems";
-            const operationStatus = isMathSubject ? operationStatuses[subject.topic as Operation] : null;
-            const statusText = isWordProblems ? wordProblemsStatus?.childHomeText : operationStatus?.childHomeText;
+      <View style={styles.subjectsContainer}>
+        <Text style={styles.homeworkSectionTitle}>{setupCopy.freePlay}</Text>
+        {SUBJECTS.map((subject) => {
+          const isMathSubject = ["addition", "subtraction", "multiplication", "division"].includes(subject.topic);
+          const isWordProblems = subject.topic === "word_problems";
+          const operationStatus = isMathSubject ? operationStatuses[subject.topic as Operation] : null;
+          const statusText = isWordProblems ? wordProblemsStatus?.childHomeText : operationStatus?.childHomeText;
 
-            return (
-              <TouchableOpacity
-                key={subject.topic}
-                style={[styles.subjectTile, !subject.isActive && styles.subjectTileInactive]}
-                onPress={() => subject.isActive && handleSubjectTap(subject.topic)}
-                disabled={!subject.isActive}
-              >
-                <Text style={styles.subjectLabel}>{SUBJECT_COPY[childLanguage][subject.topic].label}</Text>
-                <Text style={styles.subjectDescription}>{SUBJECT_COPY[childLanguage][subject.topic].description}</Text>
-                {statusText && (
-                  <Text style={styles.statusText}>{statusText}</Text>
-                )}
-                {!subject.isActive && <Text style={styles.comingSoonLabel}>Coming soon</Text>}
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      )}
+          return (
+            <TouchableOpacity
+              key={subject.topic}
+              style={[styles.subjectTile, !subject.isActive && styles.subjectTileInactive]}
+              onPress={() => subject.isActive && handleSubjectTap(subject.topic)}
+              disabled={!subject.isActive}
+            >
+              <Text style={styles.subjectLabel}>{SUBJECT_COPY[childLanguage][subject.topic].label}</Text>
+              <Text style={styles.subjectDescription}>{SUBJECT_COPY[childLanguage][subject.topic].description}</Text>
+              {statusText && (
+                <Text style={styles.statusText}>{statusText}</Text>
+              )}
+              {!subject.isActive && <Text style={styles.comingSoonLabel}>Coming soon</Text>}
+            </TouchableOpacity>
+          );
+        })}
+      </View>
       </ScrollView>
 
       {homeworkLimit?.daily_limit_minutes ? (
@@ -1781,6 +1889,10 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0,0,0,0.45)",
     justifyContent: "flex-end",
   },
+  childHomeworkKeyboardAvoider: {
+    justifyContent: "flex-end",
+    width: "100%",
+  },
   childHomeworkModal: {
     backgroundColor: "#fff",
     borderTopLeftRadius: 14,
@@ -1798,6 +1910,28 @@ const styles = StyleSheet.create({
     marginTop: 4,
     marginBottom: 12,
     textTransform: "capitalize",
+  },
+  childHomeworkPhotoRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 12,
+  },
+  childHomeworkPhotoButton: {
+    flex: 1,
+    minHeight: 42,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#bbdefb",
+    backgroundColor: "#eef7ff",
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    gap: 6,
+  },
+  childHomeworkPhotoText: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#1565c0",
   },
   childHomeworkInput: {
     minHeight: 132,

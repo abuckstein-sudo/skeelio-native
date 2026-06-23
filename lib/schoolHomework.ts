@@ -816,6 +816,74 @@ async function markItemMaterialReady(itemId: string): Promise<void> {
   if (updateError) throw updateError;
 }
 
+export async function createSchoolHomeworkAssignmentItem(params: {
+  childId: string;
+  homeworkDate: string;
+  assignmentId: string;
+  taskText: string;
+  taskKind?: SchoolHomeworkKind;
+  metadata?: Record<string, unknown>;
+}): Promise<void> {
+  const { data: authData, error: authError } = await supabase.auth.getUser();
+  if (authError || !authData?.user?.id) throw new Error("Not authenticated");
+
+  const parentId = authData.user.id;
+  const { data: existing } = await supabase
+    .from("school_homework_items")
+    .select("id")
+    .eq("linked_assignment_id", params.assignmentId)
+    .maybeSingle();
+
+  if (existing?.id) return;
+
+  const { data: existingDay } = await supabase
+    .from("school_homework_days")
+    .select("*")
+    .eq("child_id", params.childId)
+    .eq("homework_date", params.homeworkDate)
+    .neq("status", "archived")
+    .maybeSingle();
+
+  const rawInput = [((existingDay as any)?.raw_input || "").trim(), params.taskText]
+    .filter(Boolean)
+    .join("\n");
+  const { data: day, error: dayError } = await supabase
+    .from("school_homework_days")
+    .upsert({
+      parent_id: parentId,
+      child_id: params.childId,
+      homework_date: params.homeworkDate,
+      source_type: (existingDay as any)?.source_type || "manual",
+      raw_input: rawInput,
+      status: "active",
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "child_id,homework_date" })
+    .select()
+    .single();
+
+  if (dayError) throw dayError;
+
+  const { count } = await supabase
+    .from("school_homework_items")
+    .select("id", { count: "exact", head: true })
+    .eq("homework_day_id", day.id);
+
+  const { error: itemError } = await supabase.from("school_homework_items").insert({
+    homework_day_id: day.id,
+    parent_id: parentId,
+    child_id: params.childId,
+    task_text: params.taskText,
+    task_kind: params.taskKind || "generic",
+    status: "pending",
+    sort_order: count || 0,
+    metadata: params.metadata || {},
+    linked_assignment_id: params.assignmentId,
+    linked_spelling_list_id: null,
+  });
+
+  if (itemError) throw itemError;
+}
+
 export async function signedSchoolHomeworkImageUrl(material: SchoolHomeworkMaterial): Promise<string | null> {
   if (material.material_type === "image" && material.text_content?.startsWith("data:image/")) {
     return material.text_content;

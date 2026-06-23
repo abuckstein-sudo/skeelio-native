@@ -228,7 +228,7 @@ export default function RewardsManager({ childId, stars, onInputFocus }: Rewards
         />
         <TextInput
           style={styles.input}
-          placeholder="Optional description"
+          placeholder="Optional description, e.g. restaurant, trip to movies, new backpack"
           value={description}
           onChangeText={setDescription}
           editable={!saving}

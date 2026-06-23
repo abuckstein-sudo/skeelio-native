@@ -29,9 +29,7 @@ interface Child {
 }
 
 type ParentTab = "today" | "assign" | "progress" | "rewards";
-type ParentAction =
-  | { id: ParentTab; label: string; icon: keyof typeof MaterialCommunityIcons.glyphMap; color: string; softColor: string }
-  | { id: "child-mode"; label: string; icon: keyof typeof MaterialCommunityIcons.glyphMap; color: string; softColor: string };
+type ParentAction = { id: ParentTab; label: string; icon: keyof typeof MaterialCommunityIcons.glyphMap; color: string; softColor: string };
 
 const AVATAR_EMOJI: Record<string, string> = {
   cat: "🐱",
@@ -143,10 +141,6 @@ export default function ParentScreen() {
     router.push("/children");
   };
 
-  const handleOpenChildMode = () => {
-    router.push("/children");
-  };
-
   const scrollRewardsFormIntoView = useCallback(() => {
     setTimeout(() => {
       contentScrollRef.current?.scrollToEnd({ animated: true });
@@ -183,7 +177,6 @@ export default function ParentScreen() {
     { id: "assign", label: "Assign", icon: "playlist-plus", color: "#f97316", softColor: "#ffedd5" },
     { id: "progress", label: "Progress", icon: "chart-line", color: "#22c55e", softColor: "#dcfce7" },
     { id: "rewards", label: "Rewards", icon: "star-outline", color: "#a855f7", softColor: "#f3e8ff" },
-    { id: "child-mode", label: "Child mode", icon: "account-child-circle", color: "#14b8a6", softColor: "#ccfbf1" },
   ];
 
   if (isLoading) {
@@ -280,7 +273,7 @@ export default function ParentScreen() {
 
           <View style={styles.actionTileGrid}>
             {actions.map((tab) => {
-              const selected = tab.id !== "child-mode" && activeTab === tab.id;
+              const selected = activeTab === tab.id;
               return (
                 <TouchableOpacity
                   key={tab.id}
@@ -289,10 +282,6 @@ export default function ParentScreen() {
                     { backgroundColor: selected ? tab.color : tab.softColor, borderColor: tab.color },
                   ]}
                   onPress={() => {
-                    if (tab.id === "child-mode") {
-                      handleOpenChildMode();
-                      return;
-                    }
                     if (tab.id === "assign") {
                       handleAssign();
                       return;

@@ -28,7 +28,7 @@ import {
   deleteAssignment,
   Assignment,
 } from "@/lib/assignments";
-import { linkSchoolHomeworkAssignment } from "@/lib/schoolHomework";
+import { createSchoolHomeworkAssignmentItem, linkSchoolHomeworkAssignment } from "@/lib/schoolHomework";
 import {
   listSpellingListsForChild,
   createSpellingList,
@@ -215,6 +215,11 @@ export default function AssignScreen() {
             selectedTopic === "multiplication" ? selectedMultiplicationTables : undefined,
         });
         await linkCreatedSchoolHomeworkAssignment(assignment.id, selectedTopic);
+        await addAssignmentToHomeworkFeed(
+          assignment,
+          selectedTopic,
+          `${selectedTopic.replace("_", " ")} · ${questionCount} questions`
+        );
 
         await fetchAssignments();
 
@@ -252,6 +257,11 @@ export default function AssignScreen() {
           dueDate || undefined
         );
         await linkCreatedSchoolHomeworkAssignment(assignment.id, "spelling");
+        await addAssignmentToHomeworkFeed(
+          assignment,
+          "spelling",
+          `Spelling: ${selectedSpellingList.title}`
+        );
 
         await fetchAssignments();
 
@@ -284,6 +294,11 @@ export default function AssignScreen() {
           assignmentMode
         );
         await linkCreatedSchoolHomeworkAssignment(assignment.id, "conjugation");
+        await addAssignmentToHomeworkFeed(
+          assignment,
+          "conjugation",
+          `Conjugation: ${assignment.focus}`
+        );
 
         await fetchAssignments();
 
@@ -347,6 +362,11 @@ export default function AssignScreen() {
         dueDate || undefined
       );
       await linkCreatedSchoolHomeworkAssignment(assignment.id, "spelling");
+      await addAssignmentToHomeworkFeed(
+        assignment,
+        "spelling",
+        `Spelling: ${listTitle}`
+      );
 
       await fetchAssignments();
       await fetchSpellingLists();
@@ -402,6 +422,26 @@ export default function AssignScreen() {
       itemId: linkedSchoolHomeworkItemId,
       assignmentId,
       practiceType,
+    });
+  };
+
+  const addAssignmentToHomeworkFeed = async (
+    assignment: Assignment,
+    practiceType: string,
+    fallbackText: string
+  ) => {
+    if (linkedSchoolHomeworkItemId || !dueDate) return;
+    await createSchoolHomeworkAssignmentItem({
+      childId: id,
+      homeworkDate: dueDate,
+      assignmentId: assignment.id,
+      taskText: fallbackText,
+      taskKind: practiceType === "spelling" ? "spelling" : practiceType === "division" ? "division" : practiceType === "multiplication" ? "multiplication" : "generic",
+      metadata: {
+        linked_practice: practiceType,
+        assignment_subject: assignment.subject,
+        assignment_mode: assignment.mode,
+      },
     });
   };
 
@@ -1014,7 +1054,7 @@ export default function AssignScreen() {
                       </TouchableOpacity>
                     </View>
 
-                    <Text style={styles.formLabel}>Due Date (optional)</Text>
+                    <Text style={styles.formLabel}>Homework day (optional)</Text>
                     <TextInput
                       style={styles.dateInput}
                       placeholder="YYYY-MM-DD"
@@ -1088,7 +1128,7 @@ export default function AssignScreen() {
                       </>
                     )}
 
-                    <Text style={styles.formLabel}>Due Date (optional)</Text>
+                    <Text style={styles.formLabel}>Homework day (optional)</Text>
                     <TextInput
                       style={styles.dateInput}
                       placeholder="YYYY-MM-DD"
@@ -1179,7 +1219,7 @@ export default function AssignScreen() {
                       editable={!isCreatingAssignment}
                     />
 
-                    <Text style={styles.formLabel}>Due Date (optional)</Text>
+                    <Text style={styles.formLabel}>Homework day (optional)</Text>
                     <TextInput
                       style={styles.dateInput}
                       placeholder="YYYY-MM-DD"
