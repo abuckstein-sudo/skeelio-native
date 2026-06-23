@@ -158,6 +158,7 @@ export default function ConjugationPracticeScreen() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [answerMode, setAnswerMode] = useState<"choose" | "write">("choose");
   const [writtenAnswer, setWrittenAnswer] = useState("");
+  const [isWritingStroke, setIsWritingStroke] = useState(false);
 
   const currentQuestion = questions[currentIndex];
 
@@ -684,7 +685,11 @@ export default function ConjugationPracticeScreen() {
     return (
       <SafeAreaView style={styles.container}>
         <QuitButton />
-        <ScrollView contentContainerStyle={styles.quizScrollContent} keyboardShouldPersistTaps="handled">
+        <ScrollView
+          contentContainerStyle={styles.quizScrollContent}
+          keyboardShouldPersistTaps="handled"
+          scrollEnabled={!isWritingStroke}
+        >
           <View style={styles.header}>
             <Text style={styles.progress}>
               {copy.question} {currentIndex + 1} {copy.of} {questions.length}
@@ -759,6 +764,7 @@ export default function ConjugationPracticeScreen() {
                   language={appLanguage}
                   questionText={`${currentQuestion.pronoun} ${currentQuestion.verb} ${currentQuestion.tense}`}
                   onRecognized={setWrittenAnswer}
+                  onDrawingChange={setIsWritingStroke}
                 />
               )}
               {feedback.type === "idle" && (

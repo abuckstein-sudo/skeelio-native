@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, PanResponder, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import Svg, { Path } from "react-native-svg";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -10,19 +10,34 @@ type Props = {
   language?: "en" | "fr";
   questionText?: string;
   onRecognized: (text: string) => void;
+  onDrawingChange?: (isDrawing: boolean) => void;
 };
 
-export default function HandwritingAnswerPad({ language = "en", questionText, onRecognized }: Props) {
+export default function HandwritingAnswerPad({ language = "en", questionText, onRecognized, onDrawingChange }: Props) {
   const [strokes, setStrokes] = useState<HandwritingStroke[]>([]);
   const [activeStroke, setActiveStroke] = useState<HandwritingStroke | null>(null);
   const [recognizing, setRecognizing] = useState(false);
   const bounds = useRef({ width: 320, height: 180 });
 
+  const finishActiveStroke = useCallback(() => {
+    setActiveStroke((current) => {
+      if (current && current.points.length > 1) {
+        setStrokes((existing) => [...existing, current]);
+      }
+      return null;
+    });
+    onDrawingChange?.(false);
+  }, [onDrawingChange]);
+
   const panResponder = useMemo(() => PanResponder.create({
+    onStartShouldSetPanResponderCapture: () => true,
+    onMoveShouldSetPanResponderCapture: () => true,
     onStartShouldSetPanResponder: () => true,
     onMoveShouldSetPanResponder: () => true,
+    onPanResponderTerminationRequest: () => false,
     onPanResponderGrant: (evt) => {
       const { locationX, locationY } = evt.nativeEvent;
+      onDrawingChange?.(true);
       setActiveStroke({ points: [{ x: locationX, y: locationY }] });
     },
     onPanResponderMove: (evt) => {
@@ -35,15 +50,10 @@ export default function HandwritingAnswerPad({ language = "en", questionText, on
         return { points: [...points, { x: locationX, y: locationY }] };
       });
     },
-    onPanResponderRelease: () => {
-      setActiveStroke((current) => {
-        if (current && current.points.length > 1) {
-          setStrokes((existing) => [...existing, current]);
-        }
-        return null;
-      });
-    },
-  }), []);
+    onPanResponderRelease: finishActiveStroke,
+    onPanResponderTerminate: finishActiveStroke,
+    onShouldBlockNativeResponder: () => true,
+  }), [finishActiveStroke, onDrawingChange]);
 
   const allStrokes = activeStroke ? [...strokes, activeStroke] : strokes;
 
@@ -82,7 +92,7 @@ export default function HandwritingAnswerPad({ language = "en", questionText, on
         }}
         {...panResponder.panHandlers}
       >
-        <Svg width="100%" height="100%">
+        <Svg width="100%" height="100%" pointerEvents="none">
           {allStrokes.map((stroke, index) => (
             <Path
               key={index}
@@ -96,13 +106,21 @@ export default function HandwritingAnswerPad({ language = "en", questionText, on
           ))}
         </Svg>
         {allStrokes.length === 0 && (
-          <Text style={styles.placeholder}>
+          <Text style={styles.placeholder} pointerEvents="none">
             {language === "fr" ? "Écris ta réponse ici" : "Write your answer here"}
           </Text>
         )}
       </View>
       <View style={styles.actions}>
-        <TouchableOpacity style={styles.secondaryButton} onPress={() => setStrokes([])} disabled={recognizing}>
+        <TouchableOpacity
+          style={styles.secondaryButton}
+          onPress={() => {
+            setActiveStroke(null);
+            setStrokes([]);
+            onDrawingChange?.(false);
+          }}
+          disabled={recognizing}
+        >
           <MaterialCommunityIcons name="eraser" size={16} color="#334155" />
           <Text style={styles.secondaryButtonText}>{language === "fr" ? "Effacer" : "Clear"}</Text>
         </TouchableOpacity>
