@@ -138,9 +138,9 @@ for (const [op, tiers] of Object.entries(LADDERS)) {
 
 console.log("\n====== ABILITY & SELECTOR TESTS ======\n");
 
-// Test 1: 8/8 at A1 → solid at A1, so working tier is A2 (needs-teach)
-console.log("Test 1: 8/8 correct at A1 → solid at A1, working on A2");
-const attempts1: Attempt[] = Array(8)
+// Test 1: enough unaided A1 evidence → solid at A1, so working tier is A2 (needs-teach)
+console.log("Test 1: 12/12 correct at A1 → solid at A1, working on A2");
+const attempts1: Attempt[] = Array(12)
   .fill(null)
   .map(() => ({ tierId: "A1", correct: true }));
 const band1 = currentTierAndBand(attempts1, "addition", {});
@@ -178,7 +178,7 @@ console.log(`  ✅ ${band4.tierId} band=${band4.band}`);
 // Test 5: pickNextStep → pick lowest non-solid tier (with attempts)
 console.log("\nTest 5: pickNextStep → pick lowest non-solid tier (developing)");
 const childProgress = {
-  addition: [...Array(8).fill({ tierId: "A1", correct: true })], // solid
+  addition: [...Array(12).fill({ tierId: "A1", correct: true })], // solid
   subtraction: [...Array(3).fill({ tierId: "S1", correct: true }), ...Array(1).fill({ tierId: "S1", correct: false })], // developing, 4 attempts
   multiplication: [],
   division: [],
@@ -193,16 +193,30 @@ console.log(`  ✅ pickNextStep: ${step5.operation} ${step5.tierId} mode=${step5
 // Test 6: pickNextStep → brand-new tier (never attempted) should be teach
 console.log("\nTest 6: pickNextStep → brand-new tier should be teach mode");
 const childProgress6 = {
-  addition: [...Array(8).fill({ tierId: "A1", correct: true })], // solid
+  addition: [...Array(12).fill({ tierId: "A1", correct: true })], // solid
   subtraction: [],
   multiplication: [],
   division: [],
 };
 const step6 = pickNextStep({}, childProgress6 as any);
-assert(step6.operation === "subtraction", `Should pick subtraction, got ${step6.operation}`);
-assert(step6.tierId === "S1", `Should pick S1, got ${step6.tierId}`);
-assert(step6.mode === "teach", `S1 is brand-new (0 attempts), should be teach mode, got ${step6.mode}`);
+assert(step6.operation === "addition", `Should pick addition by canonical tie-break, got ${step6.operation}`);
+assert(step6.tierId === "A2", `Should pick A2, got ${step6.tierId}`);
+assert(step6.mode === "teach", `A2 is brand-new (0 attempts), should be teach mode, got ${step6.mode}`);
 console.log(`  ✅ pickNextStep: ${step6.operation} ${step6.tierId} mode=${step6.mode}`);
+
+// Test 7: pickNextStep → struggling beats developing and needs-teach
+console.log("\nTest 7: pickNextStep → struggling band has priority");
+const childProgress7 = {
+  addition: [...Array(5).fill({ tierId: "A3", correct: true }), ...Array(3).fill({ tierId: "A3", correct: false })],
+  subtraction: [...Array(1).fill({ tierId: "S4", correct: true }), ...Array(4).fill({ tierId: "S4", correct: false })],
+  multiplication: [],
+  division: [],
+};
+const step7 = pickNextStep({}, childProgress7 as any);
+assert(step7.operation === "subtraction", `Should pick struggling subtraction, got ${step7.operation}`);
+assert(step7.tierId === "S4", `Should pick S4, got ${step7.tierId}`);
+assert(step7.mode === "practice", `S4 has attempts, should be practice mode, got ${step7.mode}`);
+console.log(`  ✅ pickNextStep: ${step7.operation} ${step7.tierId} mode=${step7.mode}`);
 
 console.log("\n====== ALL TESTS COMPLETE ======\n");
 

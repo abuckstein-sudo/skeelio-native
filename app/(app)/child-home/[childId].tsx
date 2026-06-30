@@ -5,7 +5,9 @@ import * as ImageManipulator from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
 import { supabase } from "@/lib/supabase";
 import { getOperationStatus, OperationStatus, getWordProblemsStatus, WordProblemsStatus } from "@/lib/tutor/status";
-import { Operation } from "@/lib/tutorConfig";
+import { LADDERS, Operation } from "@/lib/tutorConfig";
+import { Attempt } from "@/lib/tutor/ability";
+import { NextStep, pickNextStep } from "@/lib/tutor/selector";
 import { listAssignmentsForChild, Assignment } from "@/lib/assignments";
 import {
   listSchoolHomeworkWeek,
@@ -41,6 +43,10 @@ interface Child {
   preferred_language?: string | null;
   languages?: string[] | null;
   allow_child_homework_entry?: boolean;
+  max_addition_number?: number | null;
+  max_times_table?: number | null;
+  math_subtraction_level?: string | null;
+  math_division_level?: string | null;
 }
 
 const AVATAR_EMOJI: Record<string, string> = {
@@ -84,6 +90,49 @@ const SUBJECT_COPY: Record<ChildHomeLanguage, Record<string, { label: string; de
   },
 };
 
+const MATH_OPERATIONS: Operation[] = ["addition", "subtraction", "multiplication", "division"];
+
+const TIER_LABEL_COPY: Record<ChildHomeLanguage, Partial<Record<string, string>>> = {
+  en: {},
+  fr: {
+    A1: "les additions jusqu'à 10",
+    A2: "les additions jusqu'à 20 avec passage par 10",
+    A3: "les additions à deux chiffres plus un chiffre",
+    A4: "les additions à deux chiffres sans retenue",
+    A5: "les additions à deux chiffres avec retenue",
+    A6: "les additions à trois chiffres avec retenue",
+    A7: "les grandes additions avec retenue",
+    S1: "les soustractions jusqu'à 10 sans emprunt",
+    S2: "les soustractions jusqu'à 20 avec passage par 10",
+    S3: "les soustractions à deux chiffres moins un chiffre",
+    S4: "les soustractions à deux chiffres sans emprunt",
+    S5: "les soustractions à deux chiffres avec emprunt",
+    S6: "les soustractions à trois chiffres avec emprunt",
+    S7: "les grandes soustractions avec emprunts",
+    M1: "les tables de 0, 1, 2 et 10",
+    M2: "la table de 5",
+    M3: "les tables de 3 et 4",
+    M4: "les tables de 6, 7, 8 et 9",
+    M5: "les tables de 11 et 12",
+    M6: "les multiplications à deux chiffres par un chiffre",
+    M7: "les multiplications à deux chiffres par deux chiffres",
+    D1: "les divisions par 1, 2, 5 et 10",
+    D2: "les divisions par 3 et 4",
+    D3: "les divisions par 6, 7, 8 et 9",
+    D4: "les divisions avec reste",
+    D5: "les divisions à deux chiffres exactes",
+    D6: "les divisions à deux chiffres avec reste",
+    D7: "les divisions posées",
+  },
+};
+
+const emptyMathAttempts = (): Record<Operation, Attempt[]> => ({
+  addition: [],
+  subtraction: [],
+  multiplication: [],
+  division: [],
+});
+
 const AVATAR_OPTIONS = ["cat", "owl", "fox", "bear", "rabbit", "panda"];
 const BACKGROUND_OPTIONS = [
   { id: "giraffe", label: "Giraffe", color: null },
@@ -117,6 +166,9 @@ const SETUP_COPY = {
     greetingTimeUp: "you have worked hard today. Ask your adult for more time if you need it.",
     freePlay: "Free play",
     freePlayBody: "Choose practice tiles",
+    nextMathKicker: "Next up",
+    nextMathActionTeach: "Learn",
+    nextMathActionPractice: "Practice",
     settings: "Settings",
     addHomework: "Add homework",
     addHomeworkPlaceholder: "Write one homework item per line",
@@ -183,6 +235,9 @@ const SETUP_COPY = {
     greetingTimeUp: "tu as bien travaillé aujourd'hui. Demande plus de temps à ton adulte si besoin.",
     freePlay: "Jeu libre",
     freePlayBody: "Choisis une activité",
+    nextMathKicker: "Et maintenant",
+    nextMathActionTeach: "Découvrir",
+    nextMathActionPractice: "S'entraîner",
     settings: "Réglages",
     addHomework: "Ajouter un devoir",
     addHomeworkPlaceholder: "Écris un devoir par ligne",
@@ -233,6 +288,14 @@ const getChildHomeLanguage = (child: Child | null): ChildHomeLanguage => {
   return appLanguageForChild(child);
 };
 
+const tierLabelForChild = (
+  operation: Operation,
+  tierId: string,
+  language: ChildHomeLanguage
+) => {
+  return TIER_LABEL_COPY[language][tierId] || LADDERS[operation].find((tier) => tier.id === tierId)?.label || tierId;
+};
+
 export default function ChildHomeScreen() {
   const router = useRouter();
   const { childId } = useLocalSearchParams<{ childId: string }>();
@@ -243,6 +306,7 @@ export default function ChildHomeScreen() {
   const [operationStatuses, setOperationStatuses] = useState<Record<Operation, OperationStatus>>(
     {} as Record<Operation, OperationStatus>
   );
+  const [attemptsByOperation, setAttemptsByOperation] = useState<Record<Operation, Attempt[]>>(emptyMathAttempts);
   const [wordProblemsStatus, setWordProblemsStatus] = useState<WordProblemsStatus | null>(null);
   const [pendingAssignments, setPendingAssignments] = useState<Assignment[]>([]);
   const [pendingEpisodes, setPendingEpisodes] = useState<any[]>([]);
@@ -450,10 +514,35 @@ export default function ChildHomeScreen() {
 
     setStars(rewardsData?.stars ?? 0);
 
+    const { data: attemptRows, error: attemptError } = await supabase
+      .from("learning_attempts")
+      .select("topic, tier, question_text, was_correct, ai_hint_used, evidence_source")
+      .eq("child_id", childId)
+      .in("topic", MATH_OPERATIONS)
+      .not("tier", "is", null);
+
+    if (attemptError) {
+      console.error("[child-home] failed to fetch math attempts:", attemptError);
+      setAttemptsByOperation(emptyMathAttempts());
+    } else {
+      const groupedAttempts = emptyMathAttempts();
+      (attemptRows || []).forEach((row: any) => {
+        const operation = row.topic as Operation;
+        if (!MATH_OPERATIONS.includes(operation)) return;
+        groupedAttempts[operation].push({
+          tierId: row.tier,
+          correct: row.was_correct,
+          hintUsed: row.ai_hint_used || false,
+          questionText: row.question_text,
+          evidenceSource: row.evidence_source,
+        });
+      });
+      setAttemptsByOperation(groupedAttempts);
+    }
+
     // Fetch tier-based operation statuses
-    const mathOperations: Operation[] = ["addition", "subtraction", "multiplication", "division"];
     const statuses: Record<Operation, OperationStatus> = {} as any;
-    for (const op of mathOperations) {
+    for (const op of MATH_OPERATIONS) {
       const status = await getOperationStatus(childId, op, data || {});
       statuses[op] = status;
     }
@@ -523,6 +612,33 @@ export default function ChildHomeScreen() {
         });
       }
     }
+  };
+
+  const handleNextMathTap = (step: NextStep, tierLabel: string) => {
+    if (!childId) return;
+
+    if (step.mode === "teach") {
+      router.push({
+        pathname: "/lesson/[childId]",
+        params: {
+          childId,
+          tierId: step.tierId,
+          tierLabel,
+          operation: step.operation,
+        },
+      });
+      return;
+    }
+
+    router.push({
+      pathname: "/practice",
+      params: {
+        topic: step.operation,
+        childId,
+        tierId: step.tierId,
+        tierLabel,
+      },
+    });
   };
 
   const handleHomeworkTap = async (assignmentId: string) => {
@@ -941,6 +1057,12 @@ export default function ChildHomeScreen() {
     homeworkTimerSeconds >= limitMinutes * 60
   );
   const hasRemainingHomework = homeworkFeed.length > 0 || remainingSchoolHomeworkCount > 0;
+  const allMathStatusesLoaded = MATH_OPERATIONS.every((operation) => operationStatuses[operation]);
+  const allMathSolid = allMathStatusesLoaded && MATH_OPERATIONS.every((operation) => operationStatuses[operation].band === "solid");
+  const nextMathStep = allMathSolid ? null : pickNextStep(child, attemptsByOperation);
+  const nextMathTierLabel = nextMathStep
+    ? tierLabelForChild(nextMathStep.operation, nextMathStep.tierId, childLanguage)
+    : "";
   const introSlides = setupCopy.introSlides;
   const currentIntroSlide = introSlides[introSlideIndex];
   const introVisible = !!child && !child.pin_setup_required && !child.intro_seen;
@@ -1369,6 +1491,26 @@ export default function ChildHomeScreen() {
         </View>
       )}
 
+      {nextMathStep && (
+        <TouchableOpacity
+          style={styles.nextMathCard}
+          activeOpacity={0.86}
+          onPress={() => handleNextMathTap(nextMathStep, nextMathTierLabel)}
+        >
+          <View style={styles.nextMathIconWrap}>
+            <MaterialCommunityIcons name="calculator-variant-outline" size={26} color="#fff" />
+          </View>
+          <View style={styles.nextMathTextWrap}>
+            <Text style={styles.nextMathKicker}>{setupCopy.nextMathKicker}</Text>
+            <Text style={styles.nextMathTitle}>{nextMathTierLabel}</Text>
+            <Text style={styles.nextMathMeta}>
+              {nextMathStep.mode === "teach" ? setupCopy.nextMathActionTeach : setupCopy.nextMathActionPractice}
+            </Text>
+          </View>
+          <MaterialCommunityIcons name="chevron-right" size={24} color="#1565c0" />
+        </TouchableOpacity>
+      )}
+
       <View style={styles.subjectsContainer}>
         <Text style={styles.homeworkSectionTitle}>{setupCopy.freePlay}</Text>
         {SUBJECTS.map((subject) => {
@@ -1671,6 +1813,48 @@ const styles = StyleSheet.create({
     marginTop: 8,
     textAlign: "center",
     lineHeight: 14,
+  },
+  nextMathCard: {
+    minHeight: 96,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+    backgroundColor: "#e3f2fd",
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 18,
+    borderWidth: 2,
+    borderColor: "#90caf9",
+  },
+  nextMathIconWrap: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#2196f3",
+  },
+  nextMathTextWrap: {
+    flex: 1,
+  },
+  nextMathKicker: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#1565c0",
+    marginBottom: 4,
+    textTransform: "uppercase",
+  },
+  nextMathTitle: {
+    fontSize: 18,
+    fontWeight: "900",
+    color: "#0d47a1",
+    lineHeight: 23,
+  },
+  nextMathMeta: {
+    marginTop: 6,
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#1565c0",
   },
   button: {
     backgroundColor: "#0000ff",
