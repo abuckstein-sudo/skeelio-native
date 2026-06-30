@@ -6,18 +6,25 @@ import {
   StyleSheet,
   SafeAreaView,
   ActivityIndicator,
+  Alert,
   Image,
   ScrollView,
   FlatList,
+  Modal,
 } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import * as ImageManipulator from "expo-image-manipulator";
+import * as FileSystem from "expo-file-system/legacy";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { supabase } from "@/lib/supabase";
 import { decode } from "base64-arraybuffer";
 import CameraCaptureModal from "@/components/CameraCaptureModal";
 import { createSpellingAssignment } from "@/lib/assignments";
+import {
+  ExistingWorksheetImage,
+  listExistingWorksheetImagesForChild,
+} from "@/lib/schoolHomework";
 import {
   createSpellingItems,
   createSpellingList,
@@ -121,6 +128,10 @@ export default function ScanScreen() {
   const [jpegBase64, setJpegBase64] = useState<string | null>(null);
   const [base64Raw, setBase64Raw] = useState<string | null>(null);
   const [cameraVisible, setCameraVisible] = useState(false);
+  const [existingPickerVisible, setExistingPickerVisible] = useState(false);
+  const [existingWorksheets, setExistingWorksheets] = useState<ExistingWorksheetImage[]>([]);
+  const [existingWorksheetsLoading, setExistingWorksheetsLoading] = useState(false);
+  const [downloadingExistingId, setDownloadingExistingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>("");
 
@@ -248,6 +259,49 @@ export default function ScanScreen() {
     } catch (err) {
       console.error("[scan] image picker error:", err);
       setError("Failed to access photo library");
+    }
+  };
+
+  const openExistingWorksheetPicker = async () => {
+    if (!childId) return;
+
+    setExistingPickerVisible(true);
+    setExistingWorksheetsLoading(true);
+    setError("");
+
+    try {
+      const images = await listExistingWorksheetImagesForChild(childId);
+      setExistingWorksheets(images.filter((image) => !!image.signedUrl));
+    } catch (err) {
+      console.error("[scan] existing worksheets load error:", err);
+      Alert.alert("Error", "Could not load saved worksheets");
+    } finally {
+      setExistingWorksheetsLoading(false);
+    }
+  };
+
+  const handleExistingWorksheetSelect = async (image: ExistingWorksheetImage) => {
+    if (!image.signedUrl) {
+      Alert.alert("Error", "Could not open this worksheet image");
+      return;
+    }
+
+    try {
+      setDownloadingExistingId(image.id);
+      const cacheDirectory = FileSystem.cacheDirectory;
+      if (!cacheDirectory) throw new Error("Cache directory is unavailable");
+      const extension = image.path.split(".").pop()?.split("?")[0] || "jpg";
+      const targetUri = `${cacheDirectory}worksheet-${Date.now()}-${Math.random()
+        .toString(36)
+        .slice(2)}.${extension}`;
+      const downloaded = await FileSystem.downloadAsync(image.signedUrl, targetUri);
+      setExistingPickerVisible(false);
+      await processImage(downloaded.uri);
+    } catch (err) {
+      console.error("[scan] existing worksheet download error:", err);
+      Alert.alert("Error", "Could not download this worksheet. Please try another image.");
+    } finally {
+      setDownloadingExistingId(null);
     }
   };
 
@@ -711,9 +765,72 @@ export default function ScanScreen() {
               <MaterialCommunityIcons name="image" size={32} color="#fff" />
               <Text style={styles.actionButtonText}>Choose from Library</Text>
             </TouchableOpacity>
+            <TouchableOpacity style={styles.actionButton} onPress={openExistingWorksheetPicker}>
+              <MaterialCommunityIcons name="folder-image" size={32} color="#fff" />
+              <Text style={styles.actionButtonText}>Choose an Existing Worksheet</Text>
+            </TouchableOpacity>
           </View>
         )}
       </ScrollView>
+      <Modal
+        visible={existingPickerVisible}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setExistingPickerVisible(false)}
+      >
+        <SafeAreaView style={styles.container}>
+          <View style={styles.header}>
+            <TouchableOpacity onPress={() => setExistingPickerVisible(false)}>
+              <MaterialCommunityIcons name="close" size={24} color="#333" />
+            </TouchableOpacity>
+            <Text style={styles.headerTitle}>Saved Worksheets</Text>
+            <View style={{ width: 24 }} />
+          </View>
+
+          {existingWorksheetsLoading ? (
+            <View style={styles.centerContainer}>
+              <ActivityIndicator size="large" color="#2196f3" />
+              <Text style={styles.loadingText}>Loading saved worksheets…</Text>
+            </View>
+          ) : existingWorksheets.length === 0 ? (
+            <View style={styles.centerContainer}>
+              <MaterialCommunityIcons name="image-off-outline" size={44} color="#999" />
+              <Text style={styles.emptyText}>No saved worksheets yet — take or upload a photo</Text>
+            </View>
+          ) : (
+            <FlatList
+              data={existingWorksheets}
+              keyExtractor={(item) => item.id}
+              numColumns={3}
+              contentContainerStyle={styles.existingGrid}
+              renderItem={({ item }) => {
+                const isDownloading = downloadingExistingId === item.id;
+                return (
+                  <TouchableOpacity
+                    style={styles.existingTile}
+                    onPress={() => handleExistingWorksheetSelect(item)}
+                    disabled={!!downloadingExistingId}
+                    activeOpacity={0.86}
+                  >
+                    {item.signedUrl ? (
+                      <Image source={{ uri: item.signedUrl }} style={styles.existingThumb} />
+                    ) : (
+                      <View style={[styles.existingThumb, styles.existingThumbPlaceholder]}>
+                        <MaterialCommunityIcons name="image-off-outline" size={24} color="#999" />
+                      </View>
+                    )}
+                    {isDownloading ? (
+                      <View style={styles.existingTileOverlay}>
+                        <ActivityIndicator size="small" color="#fff" />
+                      </View>
+                    ) : null}
+                  </TouchableOpacity>
+                );
+              }}
+            />
+          )}
+        </SafeAreaView>
+      </Modal>
       <CameraCaptureModal
         visible={cameraVisible}
         onCaptured={(uri) => {
@@ -871,6 +988,35 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
     color: "#fff",
+  },
+  existingGrid: {
+    padding: 12,
+  },
+  existingTile: {
+    flex: 1 / 3,
+    aspectRatio: 1,
+    padding: 5,
+  },
+  existingThumb: {
+    width: "100%",
+    height: "100%",
+    borderRadius: 8,
+    backgroundColor: "#f5f5f5",
+  },
+  existingThumbPlaceholder: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  existingTileOverlay: {
+    position: "absolute",
+    top: 5,
+    right: 5,
+    bottom: 5,
+    left: 5,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(0, 0, 0, 0.45)",
   },
   childRow: {
     flexDirection: "row",

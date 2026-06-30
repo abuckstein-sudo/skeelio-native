@@ -62,6 +62,15 @@ export type SchoolHomeworkDay = {
   school_homework_items?: SchoolHomeworkItem[];
 };
 
+export type ExistingWorksheetImage = {
+  id: string;
+  bucket: string;
+  path: string;
+  title?: string | null;
+  createdAt: string;
+  signedUrl: string | null;
+};
+
 export type ParsedSchoolHomeworkItem = {
   task_text: string;
   task_kind: SchoolHomeworkKind;
@@ -910,6 +919,89 @@ export async function signedSchoolHomeworkImageUrl(material: SchoolHomeworkMater
   }
 
   return data.signedUrl;
+}
+
+export async function listExistingWorksheetImagesForChild(
+  childId: string,
+  limit = 24
+): Promise<ExistingWorksheetImage[]> {
+  const [materialsResult, episodesResult] = await Promise.all([
+    supabase
+      .from("school_homework_materials")
+      .select("id, storage_bucket, storage_path, title, created_at, material_type, text_content")
+      .eq("child_id", childId)
+      .eq("material_type", "image")
+      .not("storage_path", "is", null)
+      .order("created_at", { ascending: false })
+      .limit(limit),
+    supabase
+      .from("tutor_episodes")
+      .select("id, image_path, concept, created_at")
+      .eq("child_id", childId)
+      .not("image_path", "is", null)
+      .order("created_at", { ascending: false })
+      .limit(limit),
+  ]);
+
+  if (materialsResult.error) {
+    console.error("[school-homework] existing worksheet materials error:", materialsResult.error);
+  }
+  if (episodesResult.error) {
+    console.error("[school-homework] existing worksheet episodes error:", episodesResult.error);
+  }
+
+  const candidates: ExistingWorksheetImage[] = [];
+
+  for (const row of materialsResult.data || []) {
+    const material = row as SchoolHomeworkMaterial;
+    if (!material.storage_bucket || !material.storage_path) continue;
+    candidates.push({
+      id: `material-${material.id}`,
+      bucket: material.storage_bucket,
+      path: material.storage_path,
+      title: material.title,
+      createdAt: material.created_at,
+      signedUrl: await signedSchoolHomeworkImageUrl(material),
+    });
+  }
+
+  for (const row of episodesResult.data || []) {
+    const episode = row as {
+      id: string;
+      image_path: string | null;
+      concept?: { label?: string } | null;
+      created_at: string;
+    };
+    if (!episode.image_path) continue;
+    const bucket = "worksheets";
+    const { data, error } = await supabase.storage
+      .from(bucket)
+      .createSignedUrl(episode.image_path, 60 * 10);
+    if (error) {
+      console.error("[school-homework] existing worksheet episode signed url error:", error);
+    }
+    candidates.push({
+      id: `episode-${episode.id}`,
+      bucket,
+      path: episode.image_path,
+      title: episode.concept?.label || "Worksheet",
+      createdAt: episode.created_at,
+      signedUrl: data?.signedUrl || null,
+    });
+  }
+
+  const deduped = new Map<string, ExistingWorksheetImage>();
+  for (const candidate of candidates) {
+    const key = `${candidate.bucket}:${candidate.path}`;
+    const existing = deduped.get(key);
+    if (!existing || candidate.createdAt > existing.createdAt) {
+      deduped.set(key, candidate);
+    }
+  }
+
+  return Array.from(deduped.values())
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .slice(0, limit);
 }
 
 export async function signedSchoolHomeworkDocumentUrl(material: SchoolHomeworkMaterial): Promise<string | null> {
