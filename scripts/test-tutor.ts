@@ -65,6 +65,24 @@ function assertHasBorrow(a: number, b: number, message: string) {
   assert(hasBorrow, `${message} (${a} - ${b} missing borrow)`);
 }
 
+function assertBorrowsAcrossZero(a: number, b: number, message: string) {
+  const aStr = String(a);
+  const bStr = String(b).padStart(aStr.length, "0");
+  let acrossZero = false;
+  for (let i = aStr.length - 1; i >= 0; i--) {
+    if (Number(aStr[i]) < Number(bStr[i])) {
+      for (let j = i - 1; j >= 0; j--) {
+        if (Number(aStr[j]) === 0) {
+          acrossZero = true;
+          break;
+        }
+      }
+    }
+    if (acrossZero) break;
+  }
+  assert(acrossZero, `${message} (${a} - ${b} missing across-zero borrow)`);
+}
+
 function assertNoBorrow(a: number, b: number, message: string) {
   let hasBorrow = false;
   const aStr = String(a).padStart(String(Math.max(a, b)).length, "0");
@@ -292,6 +310,22 @@ for (const tierId of ["A1", "S1"]) {
   assert(attempts.length <= maxQuestions, `${tierId}: should stay within bounded coverage window`);
   console.log(`  ✅ ${tierId}: covered ${finalCoverage?.covered.length}/${finalCoverage?.required.length} in ${attempts.length} questions`);
 }
+
+console.log("\nTest 11: restrictive subtraction fallback still satisfies constraints");
+const originalRandom = Math.random;
+let randomCalls = 0;
+Math.random = () => {
+  randomCalls += 1;
+  return randomCalls % 2 === 1 ? 0.999999 : 0;
+};
+try {
+  const fallbackQuestion = generateQuestion("subtraction", "S7");
+  assertHasBorrow(fallbackQuestion.a, fallbackQuestion.b, "S7 fallback: required borrow");
+  assertBorrowsAcrossZero(fallbackQuestion.a, fallbackQuestion.b, "S7 fallback: across-zero borrow");
+} finally {
+  Math.random = originalRandom;
+}
+console.log("  ✅ S7 fallback path returns a valid borrowing/across-zero question");
 
 console.log("\n====== ALL TESTS COMPLETE ======\n");
 

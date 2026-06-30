@@ -61,7 +61,9 @@ function generateAdd(params: Extract<GenParams, { kind: "add" }>): { a: number; 
 
     return { a, b, answer };
   }
-  return { a: aMin, b: bMin, answer: aMin + bMin };
+  const fallback = findAcceptedAddPair(params);
+  if (fallback) return fallback;
+  throw new Error("Unable to generate addition question for tier constraints");
 }
 
 function generateSub(params: Extract<GenParams, { kind: "sub" }>): { a: number; b: number; answer: number } {
@@ -83,7 +85,31 @@ function generateSub(params: Extract<GenParams, { kind: "sub" }>): { a: number; 
 
     return { a, b, answer };
   }
-  return { a: aMax, b: bMin, answer: aMax - bMin };
+  const fallback = findAcceptedSubPair(params);
+  if (fallback) return fallback;
+  throw new Error("Unable to generate subtraction question for tier constraints");
+}
+
+function findAcceptedAddPair(
+  params: Extract<GenParams, { kind: "add" }>
+): { a: number; b: number; answer: number } | null {
+  for (let a = params.aMin; a <= params.aMax; a++) {
+    for (let b = params.bMin; b <= params.bMax; b++) {
+      if (acceptsAdd(params, a, b)) return { a, b, answer: a + b };
+    }
+  }
+  return null;
+}
+
+function findAcceptedSubPair(
+  params: Extract<GenParams, { kind: "sub" }>
+): { a: number; b: number; answer: number } | null {
+  for (let a = params.aMin; a <= params.aMax; a++) {
+    for (let b = params.bMin; b <= Math.min(params.bMax, a); b++) {
+      if (acceptsSub(params, a, b)) return { a, b, answer: a - b };
+    }
+  }
+  return null;
 }
 
 function acceptsAdd(params: Extract<GenParams, { kind: "add" }>, a: number, b: number): boolean {
