@@ -14,8 +14,8 @@ export default function IndexScreen() {
   }
 
   if (session) {
-    console.log("[nav] index: session found, redirecting to /children");
-    return <Redirect href="/children" />;
+    console.log("[nav] index: session found, redirecting to /parent");
+    return <Redirect href="/parent" />;
   }
 
   console.log("[nav] index: no session, redirecting to /login");

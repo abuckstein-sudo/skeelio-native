@@ -46,9 +46,22 @@ const REGULAR_ER_VERB_BANK = [
   "visiter",
 ];
 
-const MATH_PROMPT = (subSkillsList: string, language: string) => `You are an expert elementary teacher. Generate 6 math practice items (${language}) for these sub-skills: ${subSkillsList}. Distribute evenly across sub-skills.
+const MATH_PROMPT = (subSkillsList: string, language: string, schoolContext: string) => `You are an expert elementary teacher. Generate 6 math practice items (${language}) for these sub-skills: ${subSkillsList}. Distribute evenly across sub-skills.
 
-Each item MUST be SELF-CONTAINED — every number the child needs IN THE QUESTION TEXT. Vary real-world contexts (school supplies, toys, snacks, sports, clothing, books).
+WORKSHEET / SCHOOL CONTEXT TO PRESERVE:
+${schoolContext}
+
+CRITICAL SCHOOL-ALIGNMENT RULES:
+- Use the same classroom method/representation when appropriate. If the worksheet uses labels such as c/d/u, number-line jumps, decomposition, columns, tables, grids, or specific grammar terms, reuse those words/labels in same-form and near-transfer items.
+- Same-form items MUST look like the worksheet's exercise forms. If the worksheet is c-d-u place value, do NOT turn it into generic word problems about packets, students, balloons, pens, or shopping.
+- If the concept title combines multiple areas, prioritize the worksheet method and question forms over the broad title.
+- Generate a mix of practice modes:
+  1. same_form: looks like the worksheet form, but with new values.
+  2. near_transfer: same method, slightly different layout or numbers.
+  3. far_transfer: same underlying skill in a modified context once the method is clear.
+- Do NOT treat the scanned worksheet as proficiency evidence. It is context for tutoring and practice generation.
+
+Each item MUST be SELF-CONTAINED — every number the child needs IN THE QUESTION TEXT. Vary real-world contexts only for far_transfer items where that does not erase the worksheet method.
 
 STRUCTURE:
 {
@@ -56,28 +69,38 @@ STRUCTURE:
   "answer_type":"number"|"yesno",
   "sub_skill":"<which sub_skill>",
   "unit":"€"|"" (€ if the answer is a money amount; "" if a plain count like number of items),
-  "question":"<COMPLETE word problem in ${language} with every numeric value. Use French comma decimals: 5,20 € not 5.20 €. E.g. 'Tu as 15 €. Une paire de chaussures coûte 12 €. As-tu assez d'argent?'>",
+  "practice_mode":"same_form"|"near_transfer"|"far_transfer",
+  "question":"<COMPLETE exercise in ${language} with every numeric value. For same_form, copy the worksheet-style task shape instead of writing a generic word problem. Use French comma decimals: 5,20 € not 5.20 €.>",
   "check_expression":"<expression using exact numbers from question in standard decimal form (5.20 not 5,20); arithmetic or boolean>",
   "claimed_answer":<number or boolean>
 }
 Return ONLY JSON array:
 [...]`;
 
-const MATH_TOPUP_PROMPT = (subSkill: string, language: string) => `Generate 4 more math practice items (${language}) focused ONLY on: "${subSkill}". Every number the child needs IN THE QUESTION TEXT. Vary contexts (school supplies, toys, snacks, sports, clothing, books). Structure:
+const MATH_TOPUP_PROMPT = (subSkill: string, language: string, schoolContext: string) => `Generate 4 more math practice items (${language}) focused ONLY on: "${subSkill}".
+
+WORKSHEET / SCHOOL CONTEXT TO PRESERVE:
+${schoolContext}
+
+Use the same classroom method/representation where appropriate, then vary slightly. If the worksheet is c-d-u place value, do NOT turn it into generic multiplication or shopping word problems. Every number the child needs IN THE QUESTION TEXT. Structure:
 {
   "kind":"math",
   "answer_type":"number"|"yesno",
   "sub_skill":"${subSkill}",
   "unit":"€"|"" (€ if the answer is money; "" if a count),
+  "practice_mode":"same_form"|"near_transfer"|"far_transfer",
   "question":"<exercise with all numbers stated>",
   "check_expression":"<expression>",
   "claimed_answer":<number or boolean>
 }
 Return ONLY JSON array: [...]`;
 
-const LANGUAGE_PROMPT = (subSkillsList: string, language: string, conceptLabel: string, subSkillStrings: string[], avoid: string[] = []) => {
+const LANGUAGE_PROMPT = (subSkillsList: string, language: string, conceptLabel: string, subSkillStrings: string[], schoolContext: string, avoid: string[] = []) => {
   const avoidStr = avoid.length > 0 ? `Do NOT reuse any word from this avoid list (already shown this episode): ${avoid.join(", ")}.` : "";
   return `You are an expert French/English teacher. Generate 8 grammar/language items for: ${subSkillsList}. Distribute evenly. Constrain to taught RULE/SCOPE (NO irregulars/exceptions beyond scope).
+
+WORKSHEET / SCHOOL CONTEXT TO PRESERVE:
+${schoolContext}
 
 ON-CONCEPT CONSTRAINT (CRITICAL):
 - Every question must practice ONLY this concept: "${conceptLabel}".
@@ -85,6 +108,7 @@ ON-CONCEPT CONSTRAINT (CRITICAL):
 - Do NOT generate any other grammatical transformation — NO gender/féminin, NO conjugation/tense, NO synonyms/antonyms, NO definitions.
 - If the sub_skills are about plural formation, every question must ask to form a plural.
 - Write every question fully in ${language}. NO code-switching or English mixed in.
+- Preserve worksheet form/method where appropriate. If the worksheet uses a conjugation grid, sentence frame, table, labels, or specific school grammar wording, generate some same-form items before modified transfer items.
 
 VOCABULARY CONSTRAINT:
 - Use a WIDE variety of distinct, common CE1 nouns drawn from many categories — animals, objects, food, school, nature, family, clothes, the home, etc.
@@ -101,21 +125,26 @@ STRUCTURE:
 {
   "kind":"reference",
   "sub_skill":"<EXACTLY one of: ${subSkillStrings.join(", ")} — copy the string verbatim>",
+  "practice_mode":"same_form"|"near_transfer"|"far_transfer",
   "question":"<exercise in ${language}: state instruction, then target word in « ». MUST practice ONLY the concept "${conceptLabel}". E.g. 'Mets ce mot au pluriel : « chien »'>",
   "expected_answer":"<ONE WORD, no article, lowercase, no punctuation>"
 }
 Return ONLY JSON array: [...]`};
 
 
-const LANGUAGE_TOPUP_PROMPT = (subSkill: string, language: string, conceptLabel: string, avoid: string[] = []) => {
+const LANGUAGE_TOPUP_PROMPT = (subSkill: string, language: string, conceptLabel: string, schoolContext: string, avoid: string[] = []) => {
   const avoidStr = avoid.length > 0 ? `Do NOT reuse any word from this avoid list (already shown this episode): ${avoid.join(", ")}.` : "";
   return `Generate 4 more grammar/language items (${language}) focused ONLY on: "${subSkill}". Constrain to taught RULE (NO irregulars/exceptions beyond scope).
+
+WORKSHEET / SCHOOL CONTEXT TO PRESERVE:
+${schoolContext}
 
 ON-CONCEPT CONSTRAINT (CRITICAL):
 - Every question must practice ONLY this concept: "${conceptLabel}".
 - Use sub_skill: "${subSkill}" for every item.
 - Do NOT generate any other grammatical transformation — NO gender/féminin, NO conjugation/tense, NO synonyms/antonyms, NO definitions.
 - Write every question fully in ${language}. NO code-switching or English mixed in.
+- Preserve worksheet form/method where appropriate, then vary slightly.
 
 VOCABULARY CONSTRAINT:
 - Use a WIDE variety of distinct, common CE1 nouns drawn from many categories — animals, objects, food, school, nature, family, clothes, the home, etc.
@@ -132,6 +161,7 @@ STRUCTURE:
 {
   "kind":"reference",
   "sub_skill":"${subSkill}",
+  "practice_mode":"same_form"|"near_transfer"|"far_transfer",
   "question":"<exercise in ${language}: state instruction, then target word in « ». MUST practice ONLY the concept "${conceptLabel}". E.g. 'Mets ce mot au pluriel : « chien »'>",
   "expected_answer":"<ONE WORD, no article, lowercase, no punctuation>"
 }
@@ -260,6 +290,230 @@ function conceptScopeText(concept: Record<string, unknown>, allSubSkills: string
     .map((s) => s.description || "")
     .join(" ");
   return normalizePlainText(`${String(concept.label ?? "")} ${String(concept.description ?? "")} ${subSkillText} ${descriptions}`);
+}
+
+function schoolContextText(concept: Record<string, unknown>): string {
+  const schoolMethod = (concept.school_method ?? {}) as {
+    name?: string;
+    labels?: string[];
+    meaning?: Record<string, string>;
+    when_to_use?: string;
+  };
+  const questionForms = Array.isArray(concept.question_forms)
+    ? concept.question_forms as Array<{ name?: string; description?: string; same_form_prompt?: string }>
+    : [];
+  const practiceModes = Array.isArray(concept.practice_modes)
+    ? concept.practice_modes
+    : ["same_form", "near_transfer", "far_transfer"];
+
+  const meaning = schoolMethod.meaning && Object.keys(schoolMethod.meaning).length > 0
+    ? Object.entries(schoolMethod.meaning).map(([label, value]) => `${label}=${value}`).join(", ")
+    : "";
+  const forms = questionForms
+    .map((form) => [
+      form.name ? `Form: ${form.name}` : "",
+      form.description ? `Description: ${form.description}` : "",
+      form.same_form_prompt ? `Same-form generation: ${form.same_form_prompt}` : "",
+    ].filter(Boolean).join(" | "))
+    .filter(Boolean)
+    .join("\n");
+
+  const lines = [
+    `Concept: ${String(concept.label ?? "")}`,
+    concept.description ? `Description: ${String(concept.description)}` : "",
+    schoolMethod.name ? `School method: ${schoolMethod.name}` : "School method: not specified",
+    schoolMethod.labels?.length ? `Visible labels/notation: ${schoolMethod.labels.join(", ")}` : "",
+    meaning ? `Label meanings: ${meaning}` : "",
+    schoolMethod.when_to_use ? `When to use method: ${schoolMethod.when_to_use}` : "",
+    forms ? `Worksheet question forms:\n${forms}` : "Worksheet question forms: not specified",
+    `Practice modes requested: ${practiceModes.join(", ")}`,
+    "Evidence policy: context_only. Use this scan as school context, not mastery/proficiency evidence.",
+  ].filter(Boolean);
+
+  return lines.join("\n");
+}
+
+function isCduPlaceValuePractice(concept: Record<string, unknown>, allSubSkills: string[]): boolean {
+  const schoolMethod = (concept.school_method ?? {}) as {
+    name?: string;
+    labels?: string[];
+    meaning?: Record<string, string>;
+  };
+  const forms = Array.isArray(concept.question_forms)
+    ? concept.question_forms as Array<{ name?: string; description?: string; same_form_prompt?: string }>
+    : [];
+  const methodText = [
+    schoolMethod.name,
+    ...(schoolMethod.labels ?? []),
+    ...Object.keys(schoolMethod.meaning ?? {}),
+    ...Object.values(schoolMethod.meaning ?? {}),
+    ...forms.flatMap((form) => [form.name, form.description, form.same_form_prompt]),
+    concept.label,
+    concept.description,
+    ...allSubSkills,
+  ].join(" ");
+  const scope = normalizePlainText(methodText);
+  const hasCduLabels =
+    /\bc\b/.test(scope) &&
+    /\bd\b/.test(scope) &&
+    /\bu\b/.test(scope) &&
+    (scope.includes("centaine") || scope.includes("dizaine") || scope.includes("unite"));
+  return hasCduLabels || scope.includes("c-d-u") || scope.includes("cdu");
+}
+
+function cduValue(c: number, d: number, u: number): number {
+  return c * 100 + d * 10 + u;
+}
+
+function cduText(c: number, d: number, u: number): string {
+  return `${c}c + ${d}d + ${u}u`;
+}
+
+function cduHint(
+  rows: Array<{ label: string; c: number | string; d: number | string; u: number | string }>,
+  steps: string[]
+): Record<string, unknown> {
+  return {
+    title: "Aide avec c, d, u",
+    visual_rows: rows.map((row) => ({
+      label: row.label,
+      c: row.c,
+      d: row.d,
+      u: row.u,
+    })),
+    steps,
+  };
+}
+
+function buildCduPlaceValuePractice(
+  concept: Record<string, unknown>,
+  allSubSkills: string[],
+  maxItems: number,
+  sessionSeed: string
+): Record<string, unknown>[] {
+  const seed = hashString(`${JSON.stringify(concept)}:${sessionSeed || "cdu-place-value"}`);
+  const subSkills = allSubSkills.length > 0 ? allSubSkills : ["Numération c-d-u"];
+  const skillFor = (hint: string, fallbackIndex: number) => {
+    const normalizedHint = normalizePlainText(hint);
+    return subSkills.find((skill) => normalizePlainText(skill).includes(normalizedHint)) ||
+      subSkills[fallbackIndex % subSkills.length];
+  };
+  const rotate = (index: number, min: number, span: number) => min + ((seed + index * 7) % span);
+  const items: Record<string, unknown>[] = [];
+  const valueItems = [
+    { c: rotate(1, 1, 5), d: rotate(2, 1, 8), u: rotate(3, 0, 9) },
+    { c: rotate(4, 2, 5), d: rotate(5, 0, 9), u: rotate(6, 1, 8) },
+    { c: rotate(7, 1, 6), d: rotate(8, 2, 7), u: rotate(9, 2, 7) },
+  ];
+
+  for (const [index, row] of valueItems.entries()) {
+    items.push({
+      kind: "math",
+      answer_type: "number",
+      sub_skill: skillFor("unite", 0),
+      unit: "",
+      practice_mode: "same_form",
+      question: `Combien d'unités au total représente ${cduText(row.c, row.d, row.u)} ?`,
+      answer: cduValue(row.c, row.d, row.u),
+      verified: true,
+      hint: cduHint([{ label: "Nombre", ...row }], [
+        `${row.c}c = ${row.c * 100} unités`,
+        `${row.d}d = ${row.d * 10} unités`,
+        `${row.u}u = ${row.u} unité${row.u > 1 ? "s" : ""}`,
+      ]),
+    });
+
+    const digit = index === 0 ? "centaines" : index === 1 ? "dizaines" : "unités";
+    const answer = index === 0 ? row.c : index === 1 ? row.d : row.u;
+    items.push({
+      kind: "math",
+      answer_type: "number",
+      sub_skill: skillFor(digit, 0),
+      unit: "",
+      practice_mode: "same_form",
+      question: `Dans ${cduText(row.c, row.d, row.u)}, combien y a-t-il de ${digit} ?`,
+      answer,
+      verified: true,
+      hint: cduHint([{ label: "Nombre", ...row }], [
+        "Regarde la colonne demandée.",
+        "c = centaines, d = dizaines, u = unités.",
+      ]),
+    });
+  }
+
+  const comparisons = [
+    {
+      a: { c: rotate(10, 2, 5), d: rotate(11, 1, 8), u: rotate(12, 0, 9) },
+      b: { c: rotate(13, 1, 6), d: rotate(14, 0, 9), u: rotate(15, 1, 8) },
+    },
+    {
+      a: { c: rotate(16, 1, 5), d: rotate(17, 2, 7), u: rotate(18, 1, 8) },
+      b: { c: rotate(19, 1, 5), d: rotate(20, 3, 6), u: rotate(21, 0, 9) },
+    },
+    {
+      a: { c: rotate(22, 3, 4), d: rotate(23, 0, 9), u: rotate(24, 2, 7) },
+      b: { c: rotate(25, 2, 5), d: rotate(26, 1, 8), u: rotate(27, 0, 9) },
+    },
+  ];
+
+  for (const pair of comparisons) {
+    const aValue = cduValue(pair.a.c, pair.a.d, pair.a.u);
+    const bValue = cduValue(pair.b.c, pair.b.d, pair.b.u);
+    items.push({
+      kind: "math",
+      answer_type: "yesno",
+      sub_skill: skillFor("comparer", 0),
+      unit: "",
+      practice_mode: "same_form",
+      question: `${cduText(pair.a.c, pair.a.d, pair.a.u)} représente ${aValue} unités. ${cduText(pair.b.c, pair.b.d, pair.b.u)} représente ${bValue} unités. Est-ce que ${cduText(pair.a.c, pair.a.d, pair.a.u)} est plus grand que ${cduText(pair.b.c, pair.b.d, pair.b.u)} ?`,
+      answer: aValue > bValue ? "Oui" : "Non",
+      verified: true,
+      hint: cduHint([
+        { label: "1", ...pair.a },
+        { label: "2", ...pair.b },
+      ], [
+        "Compare d'abord les centaines.",
+        "Si les centaines sont pareilles, compare les dizaines.",
+        "Si les dizaines sont pareilles, compare les unités.",
+      ]),
+    });
+  }
+
+  const missingParts = [
+    { c: rotate(28, 1, 5), d: rotate(29, 1, 8), u: rotate(30, 0, 9), missing: "c" },
+    { c: rotate(31, 2, 5), d: rotate(32, 0, 9), u: rotate(33, 1, 8), missing: "d" },
+    { c: rotate(34, 1, 6), d: rotate(35, 1, 8), u: rotate(36, 2, 7), missing: "u" },
+  ];
+
+  for (const row of missingParts) {
+    const answer = row.missing === "c" ? row.c : row.missing === "d" ? row.d : row.u;
+    const shown = row.missing === "c"
+      ? `___c + ${row.d}d + ${row.u}u`
+      : row.missing === "d"
+        ? `${row.c}c + ___d + ${row.u}u`
+        : `${row.c}c + ${row.d}d + ___u`;
+    items.push({
+      kind: "math",
+      answer_type: "number",
+      sub_skill: skillFor("completer", 1),
+      unit: "",
+      practice_mode: "near_transfer",
+      question: `Complète : ${shown} = ${cduValue(row.c, row.d, row.u)} unités. Quel nombre manque ?`,
+      answer,
+      verified: true,
+      hint: cduHint([{
+        label: "À compléter",
+        c: row.missing === "c" ? "?" : row.c,
+        d: row.missing === "d" ? "?" : row.d,
+        u: row.missing === "u" ? "?" : row.u,
+      }], [
+        "Utilise les colonnes c, d, u.",
+        "Cherche seulement le chiffre caché, pas tout le nombre.",
+      ]),
+    });
+  }
+
+  return items.slice(0, Math.max(1, maxItems));
 }
 
 function isLikelyConjugationPractice(concept: Record<string, unknown>, allSubSkills: string[]): boolean {
@@ -573,7 +827,7 @@ Deno.serve(async (req) => {
     );
 
     if (domain === "math") {
-      return await generateMathPractice(concept, language, allSubSkills, count);
+      return await generateMathPractice(concept, language, allSubSkills, count, sessionSeed);
     } else if (domain === "language" && (isFrench(language) || isEnglish(language))) {
       if (isLikelyConjugationPractice(concept, allSubSkills)) {
         return await generateConjugationPractice(supabase, concept, language, allSubSkills, count, avoid, sessionSeed);
@@ -592,14 +846,36 @@ async function generateMathPractice(
   concept: Record<string, unknown>,
   language: string,
   allSubSkills: string[],
-  maxItems: number
+  maxItems: number,
+  sessionSeed: string
 ): Promise<Response> {
   const subSkillsList = allSubSkills.join(", ");
+  const schoolContext = schoolContextText(concept);
   const mathjs = await import("https://esm.sh/mathjs@12");
   const evaluate = mathjs.evaluate;
 
   let verifiedMathItems: Record<string, unknown>[] = [];
   let totalGenerated = 0;
+
+  if (isCduPlaceValuePractice(concept, allSubSkills)) {
+    const cduItems = buildCduPlaceValuePractice(concept, allSubSkills, maxItems, sessionSeed);
+    console.log(
+      "[generate-practice math] deterministic c-d-u items:",
+      cduItems.map((item: any) => ({
+        question: item.question,
+        answer: item.answer,
+        sub_skill: item.sub_skill,
+      }))
+    );
+    return json({
+      practice: cduItems,
+      debug: {
+        generated: cduItems.length,
+        kept: cduItems.length,
+        deterministic: "cdu_place_value",
+      },
+    }, 200);
+  }
 
   // Initial generation
   const genRes = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -608,7 +884,7 @@ async function generateMathPractice(
     body: JSON.stringify({
       model: "gpt-4o",
       messages: [
-        { role: "user", content: MATH_PROMPT(subSkillsList, language) },
+        { role: "user", content: MATH_PROMPT(subSkillsList, language, schoolContext) },
       ],
     }),
   });
@@ -689,7 +965,7 @@ async function generateMathPractice(
       body: JSON.stringify({
         model: "gpt-4o",
         messages: [
-          { role: "user", content: MATH_TOPUP_PROMPT(missingSkill, language) },
+          { role: "user", content: MATH_TOPUP_PROMPT(missingSkill, language, schoolContext) },
         ],
       }),
     });
@@ -796,6 +1072,7 @@ async function generateLanguagePractice(
 ): Promise<Response> {
   const conceptLabel = String(concept.label ?? "");
   const subSkillsList = allSubSkills.join(", ");
+  const schoolContext = schoolContextText(concept);
   const avoidSet = new Set(avoid.map((w) => normalizeAnswerText(w)));
 
   let verifiedItems: Record<string, unknown>[] = [];
@@ -809,7 +1086,7 @@ async function generateLanguagePractice(
     body: JSON.stringify({
       model: "gpt-4o",
       messages: [
-        { role: "user", content: LANGUAGE_PROMPT(subSkillsList, language, conceptLabel, allSubSkills, avoid) },
+        { role: "user", content: LANGUAGE_PROMPT(subSkillsList, language, conceptLabel, allSubSkills, schoolContext, avoid) },
       ],
     }),
   });
@@ -902,7 +1179,7 @@ async function generateLanguagePractice(
       body: JSON.stringify({
         model: "gpt-4o",
         messages: [
-          { role: "user", content: LANGUAGE_TOPUP_PROMPT(missingSkill, language, conceptLabel, avoid) },
+          { role: "user", content: LANGUAGE_TOPUP_PROMPT(missingSkill, language, conceptLabel, schoolContext, avoid) },
         ],
       }),
     });

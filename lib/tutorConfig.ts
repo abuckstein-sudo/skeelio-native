@@ -8,8 +8,8 @@ export type Operation = "addition" | "subtraction" | "multiplication" | "divisio
 export type Constraint = "none" | "required" | "either"; // carry / borrow / remainder
 
 export type GenParams =
-  | { kind: "add"; aMin: number; aMax: number; bMin: number; bMax: number; carry: Constraint; resultMax?: number }
-  | { kind: "sub"; aMin: number; aMax: number; bMin: number; bMax: number; borrow: Constraint; acrossZero?: boolean }
+  | { kind: "add"; aMin: number; aMax: number; bMin: number; bMax: number; carry: Constraint; resultMax?: number; allowResultMaxWithCarry?: boolean }
+  | { kind: "sub"; aMin: number; aMax: number; bMin: number; bMax: number; borrow: Constraint; acrossZero?: boolean; allowMinuendMaxWithBorrow?: boolean }
   | { kind: "mulFacts"; factors: number[]; otherMin: number; otherMax: number }
   | { kind: "mulMulti"; aMin: number; aMax: number; bMin: number; bMax: number }
   | { kind: "divFacts"; divisors: number[]; quotientMin: number; quotientMax: number; remainder: Constraint }
@@ -19,7 +19,8 @@ export interface Tier { id: string; label: string; gen: GenParams }
 
 export const LADDERS: Record<Operation, Tier[]> = {
   addition: [
-    { id: "A1", label: "Sums within 10", gen: { kind: "add", aMin: 1, aMax: 9, bMin: 1, bMax: 9, carry: "none", resultMax: 10 } },
+    // A1 is bonds to 10: permit the exact resultMax even though single-digit sums to 10 look like a carry.
+    { id: "A1", label: "Sums within 10", gen: { kind: "add", aMin: 1, aMax: 9, bMin: 1, bMax: 9, carry: "none", resultMax: 10, allowResultMaxWithCarry: true } },
     { id: "A2", label: "Within 20, crossing ten", gen: { kind: "add", aMin: 2, aMax: 9, bMin: 2, bMax: 9, carry: "required", resultMax: 18 } },
     { id: "A3", label: "2-digit + 1-digit, no carry", gen: { kind: "add", aMin: 10, aMax: 99, bMin: 1, bMax: 9, carry: "none" } },
     { id: "A4", label: "2-digit + 2-digit, no carry", gen: { kind: "add", aMin: 10, aMax: 99, bMin: 10, bMax: 99, carry: "none" } },
@@ -28,7 +29,8 @@ export const LADDERS: Record<Operation, Tier[]> = {
     { id: "A7", label: "4-digit, carrying", gen: { kind: "add", aMin: 1000, aMax: 9999, bMin: 1000, bMax: 9999, carry: "either" } },
   ],
   subtraction: [
-    { id: "S1", label: "Within 10, no borrow", gen: { kind: "sub", aMin: 2, aMax: 10, bMin: 1, bMax: 9, borrow: "none" } },
+    // S1 is takeaways from 10: permit minuend 10 even though 10 - n uses the tens column.
+    { id: "S1", label: "Within 10, no borrow", gen: { kind: "sub", aMin: 2, aMax: 10, bMin: 1, bMax: 9, borrow: "none", allowMinuendMaxWithBorrow: true } },
     { id: "S2", label: "Within 20, crossing ten", gen: { kind: "sub", aMin: 11, aMax: 18, bMin: 2, bMax: 9, borrow: "required" } },
     { id: "S3", label: "2-digit − 1-digit, no borrow", gen: { kind: "sub", aMin: 10, aMax: 99, bMin: 1, bMax: 9, borrow: "none" } },
     { id: "S4", label: "2-digit − 2-digit, no borrow", gen: { kind: "sub", aMin: 10, aMax: 99, bMin: 10, bMax: 99, borrow: "none" } },
@@ -59,7 +61,7 @@ export const LADDERS: Record<Operation, Tier[]> = {
 // The mastery gate — THIS IS THE PEDAGOGY. Tune these to make it easier/harder.
 // CRITICAL: Mastery is based on UNAIDED correctness only.
 // - An attempt that is correct but used hints (ai_hint_used = true) earns NO mastery credit.
-// - It counts against the rate like a miss: masteryRate = unaided_correct / total_attempts.
+// - Parent-assigned homework reinforces mastery, but counts at lower weight than adaptive practice.
 // - This ensures children advance only when they can solve problems independently.
 export const GATE = {
   minAttemptsToAdvance: TIER_GATE.minUnaidedAttempts,   // need at least this many attempts at a tier
@@ -104,6 +106,44 @@ export const TEACH_NOTES: Record<string, string> = {
   D6: "Divide as usual; whatever can't be shared evenly is the remainder.",
   D7: "Divide the front digits, multiply, subtract, bring down the next digit, repeat.",
 };
+
+export const TEACH_NOTES_FR: Record<string, string> = {
+  A1: "Pars du plus grand nombre et compte en ajoutant le plus petit.",
+  A2: "Fabrique 10 d'abord : coupe le deuxieme nombre pour atteindre 10, puis ajoute ce qui reste.",
+  A3: "Ajoute les unites avec les unites ; les dizaines ne changent pas.",
+  A4: "Ajoute les unites, puis les dizaines. Pas besoin de retenue ici.",
+  A5: "Ajoute d'abord les unites ; si elles depassent 9, retiens 1 dans les dizaines, puis ajoute les dizaines.",
+  A6: "Travaille de droite a gauche : unites, dizaines, centaines, avec une retenue quand une colonne depasse 9.",
+  A7: "Meme methode avec plus de colonnes : de droite a gauche, avec une retenue quand il faut.",
+  S1: "Compte a rebours depuis le plus grand nombre.",
+  S2: "Si les unites du haut sont trop petites, prends une dizaine pour t'aider.",
+  S3: "Soustrais les unites aux unites ; les dizaines ne changent pas.",
+  S4: "Soustrais les unites, puis les dizaines. Pas besoin d'emprunt ici.",
+  S5: "Si les unites du haut sont plus petites, emprunte 1 dizaine, qui devient 10 unites, puis soustrais.",
+  S6: "Va de droite a gauche ; emprunte dans la colonne suivante quand le chiffre du haut est trop petit.",
+  S7: "Pour emprunter a travers un zero, emprunte d'abord plus a gauche, puis reviens.",
+  M1: "x1 garde le nombre, x2 double, x10 ajoute un zero, x0 donne toujours 0.",
+  M2: "x5, c'est la moitie de x10, ou bien tu comptes de 5 en 5.",
+  M3: "x3, c'est doubler puis ajouter encore un groupe ; x4, c'est doubler deux fois.",
+  M4: "Appuie-toi sur les tables que tu connais, par exemple 6x7 = 5x7 + 7.",
+  M5: "x11 avec un chiffre ecrit ce chiffre deux fois (11x7 = 77) ; x12 = x10 puis ajoute deux fois le nombre.",
+  M6: "Multiplie les unites, puis les dizaines, et additionne les morceaux.",
+  M7: "Multiplie par les unites, puis par les dizaines, puis additionne les deux resultats.",
+  D1: "La division defait la multiplication : demande-toi combien de fois le diviseur rentre dedans.",
+  D2: "Utilise la table : combien de 3, ou de 4, font ce nombre ?",
+  D3: "Utilise la multiplication correspondante que tu connais pour trouver combien rentrent.",
+  D4: "Trouve le plus grand multiple qui rentre ; ce qui reste est le reste.",
+  D5: "Partage d'abord les dizaines, puis les unites : combien de groupes rentrent ?",
+  D6: "Divise comme d'habitude ; ce qui ne se partage pas exactement devient le reste.",
+  D7: "Divise les premiers chiffres, multiplie, soustrais, abaisse le chiffre suivant, et recommence.",
+};
+
+export function teachNoteForTier(tierId: string, language: "en" | "fr" = "en"): string {
+  if (language === "fr") {
+    return TEACH_NOTES_FR[tierId] || TEACH_NOTES[tierId] || "";
+  }
+  return TEACH_NOTES[tierId] || "";
+}
 
 // Where a child STARTS on each ladder before we've measured them (from parent-set ceilings).
 // After real attempts exist, measured ability overrides this.

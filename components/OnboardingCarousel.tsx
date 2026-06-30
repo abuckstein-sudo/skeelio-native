@@ -25,6 +25,7 @@ interface OnboardingCarouselProps {
   slides: OnboardingSlide[];
   onDone: () => void;
   onSkip: () => void;
+  skipLabel?: string;
 }
 
 const ICONS: Array<keyof typeof MaterialCommunityIcons.glyphMap> = [
@@ -35,7 +36,7 @@ const ICONS: Array<keyof typeof MaterialCommunityIcons.glyphMap> = [
   "rocket-launch-outline",
 ];
 
-export default function OnboardingCarousel({ slides, onDone, onSkip }: OnboardingCarouselProps) {
+export default function OnboardingCarousel({ slides, onDone, onSkip, skipLabel = "Skip" }: OnboardingCarouselProps) {
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -79,7 +80,7 @@ export default function OnboardingCarousel({ slides, onDone, onSkip }: Onboardin
           onPress={onSkip}
           hitSlop={8}
         >
-          <Text style={styles.skipText}>Skip</Text>
+          <Text style={styles.skipText}>{skipLabel}</Text>
         </TouchableOpacity>
 
         <Animated.View style={[styles.card, animatedStyle]}>

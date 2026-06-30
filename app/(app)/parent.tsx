@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useRef, useState, useCallback } from "react";
 import {
   View,
   Text,
@@ -15,7 +15,10 @@ import { useAuth } from "@/app/_layout";
 import { supabase } from "@/lib/supabase";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import ChildSnapshot from "@/components/ChildSnapshot";
+import ParentProofSection from "@/components/ParentProofSection";
 import RewardsManager from "@/components/RewardsManager";
+import SchoolHomeworkManager from "@/components/SchoolHomeworkManager";
+import ChildDocumentsSection from "@/components/ChildDocumentsSection";
 
 interface Child {
   id: string;
@@ -23,7 +26,12 @@ interface Child {
   grade_level: string;
   school_system?: string;
   selected_avatar?: string;
+  intro_seen?: boolean;
+  created_at?: string;
 }
+
+type ParentTab = "today" | "progress" | "rewards" | "documents";
+type ParentAction = { id: ParentTab; label: string; icon: keyof typeof MaterialCommunityIcons.glyphMap; color: string; softColor: string };
 
 const AVATAR_EMOJI: Record<string, string> = {
   cat: "🐱",
@@ -37,12 +45,14 @@ const AVATAR_EMOJI: Record<string, string> = {
 export default function ParentScreen() {
   const router = useRouter();
   const { session } = useAuth();
+  const contentScrollRef = useRef<ScrollView>(null);
   const [children, setChildren] = useState<Child[]>([]);
   const [selectedChildId, setSelectedChildId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [showMenu, setShowMenu] = useState(false);
   const [parentName, setParentName] = useState("");
+  const [activeTab, setActiveTab] = useState<ParentTab>("today");
 
   useFocusEffect(
     useCallback(() => {
@@ -55,7 +65,7 @@ export default function ParentScreen() {
     if (!session?.user?.id) return;
     try {
       const { data } = await supabase
-        .from("profiles")
+        .from("users")
         .select("full_name")
         .eq("id", session.user.id)
         .maybeSingle();
@@ -73,7 +83,8 @@ export default function ParentScreen() {
 
     const { data, error: dbError } = await supabase
       .from("children")
-      .select("id, name, grade_level, school_system, selected_avatar");
+      .select("id, name, grade_level, school_system, selected_avatar, intro_seen, created_at")
+      .order("created_at", { ascending: true });
 
     if (dbError) {
       console.log("[parent] children fetch error:", dbError.message);
@@ -91,18 +102,6 @@ export default function ParentScreen() {
     }
 
     setIsLoading(false);
-  };
-
-  const handleAssign = () => {
-    if (!selectedChildId) {
-      Alert.alert("No child selected", "Please select a child first");
-      return;
-    }
-    const selected = children.find((c) => c.id === selectedChildId);
-    router.push({
-      pathname: "/(app)/assign",
-      params: { childId: selectedChildId, childName: selected?.name || "" },
-    });
   };
 
   const handleAccountSettings = () => {
@@ -130,8 +129,14 @@ export default function ParentScreen() {
   };
 
   const handleBack = () => {
-    router.back();
+    router.push("/children");
   };
+
+  const scrollRewardsFormIntoView = useCallback(() => {
+    setTimeout(() => {
+      contentScrollRef.current?.scrollToEnd({ animated: true });
+    }, 120);
+  }, []);
 
   const handleLogout = () => {
     setShowMenu(false);
@@ -158,6 +163,12 @@ export default function ParentScreen() {
   };
 
   const selectedChild = children.find((c) => c.id === selectedChildId);
+  const actions: ParentAction[] = [
+    { id: "today", label: "Agenda", icon: "calendar-check", color: "#0ea5e9", softColor: "#e0f2fe" },
+    { id: "progress", label: "Progress", icon: "chart-line", color: "#22c55e", softColor: "#dcfce7" },
+    { id: "rewards", label: "Rewards", icon: "star-outline", color: "#a855f7", softColor: "#f3e8ff" },
+    { id: "documents", label: "Photos/docs", icon: "folder-image", color: "#f97316", softColor: "#ffedd5" },
+  ];
 
   if (isLoading) {
     return (
@@ -183,11 +194,8 @@ export default function ParentScreen() {
           )}
         </View>
         <View style={styles.headerButtons}>
-          <TouchableOpacity style={styles.menuButton} onPress={handleAssign}>
-            <Text style={{ fontSize: 13, fontWeight: "700", color: "#fff" }}>Assign</Text>
-          </TouchableOpacity>
           <TouchableOpacity style={styles.menuButton} onPress={() => setShowMenu(true)}>
-            <Text style={{ fontSize: 13, fontWeight: "700", color: "#fff" }}>Account</Text>
+            <MaterialCommunityIcons name="account-circle-outline" size={20} color="#fff" />
           </TouchableOpacity>
         </View>
       </View>
@@ -205,7 +213,15 @@ export default function ParentScreen() {
           </TouchableOpacity>
         </View>
       ) : (
-        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          ref={contentScrollRef}
+          style={styles.content}
+          contentContainerStyle={styles.contentContainer}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          automaticallyAdjustKeyboardInsets
+        >
           {/* Child Switcher */}
           <View style={styles.childSwitcher}>
             <ScrollView
@@ -223,9 +239,11 @@ export default function ParentScreen() {
                   ]}
                   onPress={() => setSelectedChildId(child.id)}
                 >
-                  <Text style={styles.childButtonAvatar}>
-                    {AVATAR_EMOJI[child.selected_avatar!] || AVATAR_EMOJI.fox}
-                  </Text>
+                  {child.intro_seen && child.selected_avatar && (
+                    <Text style={styles.childButtonAvatar}>
+                      {AVATAR_EMOJI[child.selected_avatar] || AVATAR_EMOJI.fox}
+                    </Text>
+                  )}
                   <Text
                     style={[
                       styles.childButtonName,
@@ -240,22 +258,66 @@ export default function ParentScreen() {
               ))}
             </ScrollView>
             <TouchableOpacity style={styles.editChildButton} onPress={handleEditChild}>
-              <MaterialCommunityIcons name="cog" size={22} color="#2196f3" />
+              <MaterialCommunityIcons name="pencil-outline" size={22} color="#2196f3" />
             </TouchableOpacity>
           </View>
 
-          {/* Child Snapshot */}
+          <View style={styles.actionTileGrid}>
+            {actions.map((tab) => {
+              const selected = activeTab === tab.id;
+              return (
+                <TouchableOpacity
+                  key={tab.id}
+                  style={[
+                    styles.actionTile,
+                    { backgroundColor: selected ? tab.color : tab.softColor, borderColor: tab.color },
+                  ]}
+                  onPress={() => {
+                    setActiveTab(tab.id);
+                  }}
+                >
+                  <View style={[styles.actionTileIcon, { backgroundColor: selected ? "rgba(255,255,255,0.22)" : "#fff" }]}>
+                    <MaterialCommunityIcons
+                      name={tab.icon}
+                      size={24}
+                      color={selected ? "#fff" : tab.color}
+                    />
+                  </View>
+                  <Text style={[styles.actionTileText, selected && styles.actionTileTextActive]}>
+                    {tab.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
           {selectedChild && (
             <>
-              <ChildSnapshot
-                childId={selectedChild.id}
-                childName={selectedChild.name}
-                grade={selectedChild.grade_level || ""}
-                avatar={selectedChild.selected_avatar || "fox"}
-              />
-              <View style={styles.rewardSection}>
-                <RewardsManager childId={selectedChild.id} />
-              </View>
+              {activeTab === "today" && (
+                <SchoolHomeworkManager childId={selectedChild.id} />
+              )}
+
+              {activeTab === "progress" && (
+                <>
+                  <ChildSnapshot
+                    childId={selectedChild.id}
+                    childName={selectedChild.name}
+                    grade={selectedChild.grade_level || ""}
+                    avatar={selectedChild.selected_avatar || "fox"}
+                  />
+                  <ParentProofSection childId={selectedChild.id} />
+                </>
+              )}
+
+              {activeTab === "rewards" && (
+                <View style={styles.rewardSection}>
+                  <RewardsManager childId={selectedChild.id} onInputFocus={scrollRewardsFormIntoView} />
+                </View>
+              )}
+
+              {activeTab === "documents" && (
+                <ChildDocumentsSection childId={selectedChild.id} />
+              )}
             </>
           )}
         </ScrollView>
@@ -349,7 +411,7 @@ const styles = StyleSheet.create({
   },
   menuButton: {
     paddingVertical: 8,
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     borderRadius: 8,
     backgroundColor: "#2196f3",
     alignItems: "center",
@@ -372,6 +434,9 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
+  },
+  contentContainer: {
+    paddingBottom: 96,
   },
   childSwitcher: {
     flexDirection: "row",
@@ -415,6 +480,42 @@ const styles = StyleSheet.create({
   childButtonNameActive: {
     color: "#2196f3",
   },
+  actionTileGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 14,
+    backgroundColor: "#f8fafc",
+    borderBottomWidth: 1,
+    borderBottomColor: "#e2e8f0",
+  },
+  actionTile: {
+    width: "48%",
+    minHeight: 82,
+    borderRadius: 8,
+    borderWidth: 1,
+    padding: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+  actionTileIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  actionTileText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#0f172a",
+  },
+  actionTileTextActive: {
+    color: "#fff",
+  },
   emptyContainer: {
     flex: 1,
     justifyContent: "center",
@@ -424,6 +525,46 @@ const styles = StyleSheet.create({
   rewardSection: {
     paddingHorizontal: 16,
     paddingTop: 16,
+  },
+  previewSection: {
+    marginTop: 6,
+  },
+  assignPanel: {
+    marginHorizontal: 16,
+    marginTop: 16,
+    padding: 16,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#e2e8e5",
+    backgroundColor: "#fff",
+  },
+  assignPanelHeader: {
+    marginBottom: 14,
+  },
+  assignPanelTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#263238",
+    marginBottom: 5,
+  },
+  assignPanelBody: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: "#607d8b",
+  },
+  primaryActionButton: {
+    minHeight: 46,
+    borderRadius: 8,
+    backgroundColor: "#2196f3",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+  primaryActionButtonText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#fff",
   },
   emptyText: {
     fontSize: 16,

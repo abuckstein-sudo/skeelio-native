@@ -4,21 +4,22 @@ export function computeExampleSteps(
   operation: Operation,
   a: number,
   b: number,
-  remainder?: number
+  remainder?: number,
+  language: "en" | "fr" = "en"
 ): string[] {
   if (operation === "addition") {
-    return computeAdditionSteps(a, b);
+    return computeAdditionSteps(a, b, language);
   } else if (operation === "subtraction") {
-    return computeSubtractionSteps(a, b);
+    return computeSubtractionSteps(a, b, language);
   } else if (operation === "multiplication") {
-    return computeMultiplicationSteps(a, b);
+    return computeMultiplicationSteps(a, b, language);
   } else if (operation === "division") {
-    return computeDivisionSteps(a, b, remainder);
+    return computeDivisionSteps(a, b, remainder, language);
   }
   return [];
 }
 
-function computeAdditionSteps(a: number, b: number): string[] {
+function computeAdditionSteps(a: number, b: number, language: "en" | "fr"): string[] {
   const aStr = String(a);
   const bStr = String(b).padStart(aStr.length, "0");
   const steps: string[] = [];
@@ -50,19 +51,21 @@ function computeAdditionSteps(a: number, b: number): string[] {
 
     if (sum >= 10) {
       steps.push(
-        `Column ${aStr.length - i}: ${aDigit} + ${bDigit} = ${sum}, write ${result} and carry ${carry}.`
+        language === "fr"
+          ? `Colonne ${aStr.length - i} : ${aDigit} + ${bDigit} = ${sum}, écris ${result} et retiens ${carry}.`
+          : `Column ${aStr.length - i}: ${aDigit} + ${bDigit} = ${sum}, write ${result} and carry ${carry}.`
       );
     }
   }
 
   if (carry > 0) {
-    steps.push(`Final carry: write ${carry} at the front.`);
+    steps.push(language === "fr" ? `Dernière retenue : écris ${carry} devant.` : `Final carry: write ${carry} at the front.`);
   }
 
   return steps;
 }
 
-function computeSubtractionSteps(a: number, b: number): string[] {
+function computeSubtractionSteps(a: number, b: number, language: "en" | "fr"): string[] {
   const aStr = String(a);
   const bStr = String(b).padStart(aStr.length, "0");
   const steps: string[] = [];
@@ -93,13 +96,17 @@ function computeSubtractionSteps(a: number, b: number): string[] {
 
     if (effective_a < bDig) {
       steps.push(
-        `Column ${aStr.length - i}: Can't take ${bDig} from ${aDig}, borrow 10. ${effective_a + 10} − ${bDig} = ${effective_a + 10 - bDig}.`
+        language === "fr"
+          ? `Colonne ${aStr.length - i} : on ne peut pas retirer ${bDig} de ${aDig}, on emprunte 10. ${effective_a + 10} − ${bDig} = ${effective_a + 10 - bDig}.`
+          : `Column ${aStr.length - i}: Can't take ${bDig} from ${aDig}, borrow 10. ${effective_a + 10} − ${bDig} = ${effective_a + 10 - bDig}.`
       );
       borrow = 1;
     } else {
       if (borrow > 0) {
         steps.push(
-          `Column ${aStr.length - i}: ${aDig} − ${bDig} − (borrow) = ${effective_a - bDig}.`
+          language === "fr"
+            ? `Colonne ${aStr.length - i} : ${aDig} − ${bDig} − (emprunt) = ${effective_a - bDig}.`
+            : `Column ${aStr.length - i}: ${aDig} − ${bDig} − (borrow) = ${effective_a - bDig}.`
         );
       }
       borrow = 0;
@@ -109,7 +116,7 @@ function computeSubtractionSteps(a: number, b: number): string[] {
   return steps;
 }
 
-function computeMultiplicationSteps(a: number, b: number): string[] {
+function computeMultiplicationSteps(a: number, b: number, language: "en" | "fr"): string[] {
   // Single-digit multiplication: one line
   if (a < 10 && b < 10) {
     return [];
@@ -130,11 +137,15 @@ function computeMultiplicationSteps(a: number, b: number): string[] {
 
     if (digit === 0) {
       steps.push(
-        `${larger} × ${digit} = 0 (shift by ${shiftedPower} position${shiftedPower !== 1 ? "s" : ""}).`
+        language === "fr"
+          ? `${larger} × ${digit} = 0 (décale de ${shiftedPower} position${shiftedPower !== 1 ? "s" : ""}).`
+          : `${larger} × ${digit} = 0 (shift by ${shiftedPower} position${shiftedPower !== 1 ? "s" : ""}).`
       );
     } else {
       steps.push(
-        `${larger} × ${digit} = ${partial} (shift by ${shiftedPower} position${shiftedPower !== 1 ? "s" : ""}).`
+        language === "fr"
+          ? `${larger} × ${digit} = ${partial} (décale de ${shiftedPower} position${shiftedPower !== 1 ? "s" : ""}).`
+          : `${larger} × ${digit} = ${partial} (shift by ${shiftedPower} position${shiftedPower !== 1 ? "s" : ""}).`
       );
     }
     offset++;
@@ -146,7 +157,8 @@ function computeMultiplicationSteps(a: number, b: number): string[] {
 function computeDivisionSteps(
   dividend: number,
   divisor: number,
-  remainder?: number
+  remainder?: number,
+  language: "en" | "fr" = "en"
 ): string[] {
   // Single-digit division: one line
   if (dividend < 10 && divisor < 10) {
@@ -170,23 +182,33 @@ function computeDivisionSteps(
     if (quotient.length > 0 || q > 0) {
       // We're writing a non-zero quotient digit or we've already started
       steps.push(
-        `Step ${stepNum}: Look at ${current}. ${divisor} goes in ${q} time(s). ${q} × ${divisor} = ${product}. ${current} − ${product} = ${rem}.`
+        language === "fr"
+          ? `Étape ${stepNum} : regarde ${current}. ${divisor} rentre ${q} fois. ${q} × ${divisor} = ${product}. ${current} − ${product} = ${rem}.`
+          : `Step ${stepNum}: Look at ${current}. ${divisor} goes in ${q} time(s). ${q} × ${divisor} = ${product}. ${current} − ${product} = ${rem}.`
       );
       quotient += String(q);
       stepNum++;
     } else if (i < dividendStr.length - 1) {
       // Leading zero, just continue
-      steps.push(`Step ${stepNum}: Look at ${current}. ${divisor} doesn't go in, continue.`);
+      steps.push(
+        language === "fr"
+          ? `Étape ${stepNum} : regarde ${current}. ${divisor} ne rentre pas, continue.`
+          : `Step ${stepNum}: Look at ${current}. ${divisor} doesn't go in, continue.`
+      );
       stepNum++;
     }
 
     if (i < dividendStr.length - 1) {
       const nextDigit = dividendStr[i + 1];
-      steps.push(`Bring down ${nextDigit} to make ${rem * 10 + Number(nextDigit)}.`);
+      steps.push(
+        language === "fr"
+          ? `Abaisse ${nextDigit} pour faire ${rem * 10 + Number(nextDigit)}.`
+          : `Bring down ${nextDigit} to make ${rem * 10 + Number(nextDigit)}.`
+      );
     } else {
       // Last digit
       if (rem > 0) {
-        steps.push(`Final remainder: ${rem}.`);
+        steps.push(language === "fr" ? `Reste final : ${rem}.` : `Final remainder: ${rem}.`);
       }
     }
 

@@ -1,7 +1,13 @@
 import { LADDERS, Operation, GenParams, GATE } from "../tutorConfig";
+import { coverageKeysForAttempt, requiredCoverageKeys } from "./ability";
 
 function rand(min: number, max: number): number {
   return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function pickOne<T>(items: T[]): T | null {
+  if (items.length === 0) return null;
+  return items[Math.floor(Math.random() * items.length)];
 }
 
 function hasCarry(a: number, b: number): boolean {
@@ -39,7 +45,7 @@ function borrowsAcrossZero(a: number, b: number): boolean {
 }
 
 function generateAdd(params: Extract<GenParams, { kind: "add" }>): { a: number; b: number; answer: number } {
-  const { aMin, aMax, bMin, bMax, carry, resultMax } = params;
+  const { aMin, aMax, bMin, bMax, carry, resultMax, allowResultMaxWithCarry } = params;
   let a, b, answer;
 
   for (let attempt = 0; attempt < 100; attempt++) {
@@ -50,16 +56,18 @@ function generateAdd(params: Extract<GenParams, { kind: "add" }>): { a: number; 
     if (resultMax && answer > resultMax) continue;
 
     const doesCarry = hasCarry(a, b);
-    if (carry === "none" && doesCarry) continue;
+    if (carry === "none" && doesCarry && !(allowResultMaxWithCarry && resultMax !== undefined && answer === resultMax)) continue;
     if (carry === "required" && !doesCarry) continue;
 
     return { a, b, answer };
   }
-  return { a: aMin, b: bMin, answer: aMin + bMin };
+  const fallback = findAcceptedAddPair(params);
+  if (fallback) return fallback;
+  throw new Error("Unable to generate addition question for tier constraints");
 }
 
 function generateSub(params: Extract<GenParams, { kind: "sub" }>): { a: number; b: number; answer: number } {
-  const { aMin, aMax, bMin, bMax, borrow, acrossZero } = params;
+  const { aMin, aMax, bMin, bMax, borrow, acrossZero, allowMinuendMaxWithBorrow } = params;
   let a, b, answer;
 
   for (let attempt = 0; attempt < 100; attempt++) {
@@ -70,14 +78,64 @@ function generateSub(params: Extract<GenParams, { kind: "sub" }>): { a: number; 
     answer = a - b;
 
     const doesBorrow = hasBorrow(a, b);
-    if (borrow === "none" && doesBorrow) continue;
+    if (borrow === "none" && doesBorrow && !(allowMinuendMaxWithBorrow && a === aMax)) continue;
     if (borrow === "required" && !doesBorrow) continue;
 
     if (acrossZero && !borrowsAcrossZero(a, b)) continue;
 
     return { a, b, answer };
   }
-  return { a: aMax, b: bMin, answer: aMax - bMin };
+  const fallback = findAcceptedSubPair(params);
+  if (fallback) return fallback;
+  throw new Error("Unable to generate subtraction question for tier constraints");
+}
+
+function findAcceptedAddPair(
+  params: Extract<GenParams, { kind: "add" }>
+): { a: number; b: number; answer: number } | null {
+  for (let a = params.aMin; a <= params.aMax; a++) {
+    for (let b = params.bMin; b <= params.bMax; b++) {
+      if (acceptsAdd(params, a, b)) return { a, b, answer: a + b };
+    }
+  }
+  return null;
+}
+
+function findAcceptedSubPair(
+  params: Extract<GenParams, { kind: "sub" }>
+): { a: number; b: number; answer: number } | null {
+  for (let a = params.aMin; a <= params.aMax; a++) {
+    for (let b = params.bMin; b <= Math.min(params.bMax, a); b++) {
+      if (acceptsSub(params, a, b)) return { a, b, answer: a - b };
+    }
+  }
+  return null;
+}
+
+function acceptsAdd(params: Extract<GenParams, { kind: "add" }>, a: number, b: number): boolean {
+  const answer = a + b;
+  if (params.resultMax && answer > params.resultMax) return false;
+  const doesCarry = hasCarry(a, b);
+  if (
+    params.carry === "none" &&
+    doesCarry &&
+    !(params.allowResultMaxWithCarry && params.resultMax !== undefined && answer === params.resultMax)
+  ) {
+    return false;
+  }
+  if (params.carry === "required" && !doesCarry) return false;
+  return true;
+}
+
+function acceptsSub(params: Extract<GenParams, { kind: "sub" }>, a: number, b: number): boolean {
+  if (a < b) return false;
+  const doesBorrow = hasBorrow(a, b);
+  if (params.borrow === "none" && doesBorrow && !(params.allowMinuendMaxWithBorrow && a === params.aMax)) {
+    return false;
+  }
+  if (params.borrow === "required" && !doesBorrow) return false;
+  if (params.acrossZero && !borrowsAcrossZero(a, b)) return false;
+  return true;
 }
 
 function generateMulFacts(params: Extract<GenParams, { kind: "mulFacts" }>): { a: number; b: number; answer: number } {
@@ -136,9 +194,132 @@ export interface Question {
   remainder?: number;
 }
 
-export function generateQuestion(operation: Operation, tierId: string, _maxTimesTable?: number): Question {
+export interface GenerationOptions {
+  coveredFactKeys?: Iterable<string>;
+}
+
+export function questionTextForCoverage(question: Pick<Question, "operation" | "a" | "b">): string {
+  const symbol =
+    question.operation === "addition"
+      ? "+"
+      : question.operation === "subtraction"
+      ? "−"
+      : question.operation === "multiplication"
+      ? "×"
+      : "÷";
+  return `${question.a} ${symbol} ${question.b}`;
+}
+
+export function coverageKeysForQuestion(question: Question): string[] {
+  return coverageKeysForAttempt(question.tierId, {
+    tierId: question.tierId,
+    correct: true,
+    questionText: questionTextForCoverage(question),
+  });
+}
+
+function requiredKeysForTier(tierId: string): string[] {
+  const required = requiredCoverageKeys(tierId);
+  return required ? Array.from(required).sort((a, b) => Number(a) - Number(b)) : [];
+}
+
+export function producibleCoverageKeysForTier(operation: Operation, tierId: string): string[] | null {
+  const tier = LADDERS[operation].find((t) => t.id === tierId);
+  if (!tier || requiredKeysForTier(tierId).length === 0) return null;
+
+  const keys = new Set<string>();
+  const gen = tier.gen;
+
+  if (gen.kind === "add") {
+    for (let a = gen.aMin; a <= gen.aMax; a++) {
+      for (let b = gen.bMin; b <= gen.bMax; b++) {
+        if (!acceptsAdd(gen, a, b)) continue;
+        coverageKeysForQuestion({ operation, tierId, a, b, answer: a + b }).forEach((key) => keys.add(key));
+      }
+    }
+  } else if (gen.kind === "sub") {
+    for (let a = gen.aMin; a <= gen.aMax; a++) {
+      for (let b = gen.bMin; b <= gen.bMax; b++) {
+        if (!acceptsSub(gen, a, b)) continue;
+        coverageKeysForQuestion({ operation, tierId, a, b, answer: a - b }).forEach((key) => keys.add(key));
+      }
+    }
+  } else if (gen.kind === "mulFacts") {
+    gen.factors.forEach((factor) => keys.add(String(factor)));
+  } else if (gen.kind === "divFacts") {
+    gen.divisors.forEach((divisor) => keys.add(String(divisor)));
+  } else {
+    return null;
+  }
+
+  return Array.from(keys).sort((a, b) => Number(a) - Number(b));
+}
+
+export function pickUncoveredFactKey(tierId: string, coveredFactKeys: Iterable<string>): string | null {
+  const covered = new Set(coveredFactKeys);
+  return requiredKeysForTier(tierId).find((key) => !covered.has(key)) || null;
+}
+
+function generateQuestionForFactKey(operation: Operation, tierId: string, targetKey: string): Question | null {
+  const tier = LADDERS[operation].find((t) => t.id === tierId);
+  if (!tier) return null;
+
+  const gen = tier.gen;
+  const candidates: Question[] = [];
+
+  if (gen.kind === "add") {
+    for (let a = gen.aMin; a <= gen.aMax; a++) {
+      for (let b = gen.bMin; b <= gen.bMax; b++) {
+        if (!acceptsAdd(gen, a, b)) continue;
+        const question = { operation, tierId, a, b, answer: a + b };
+        if (coverageKeysForQuestion(question).includes(targetKey)) candidates.push(question);
+      }
+    }
+  } else if (gen.kind === "sub") {
+    for (let a = gen.aMin; a <= gen.aMax; a++) {
+      for (let b = gen.bMin; b <= gen.bMax; b++) {
+        if (!acceptsSub(gen, a, b)) continue;
+        const question = { operation, tierId, a, b, answer: a - b };
+        if (coverageKeysForQuestion(question).includes(targetKey)) candidates.push(question);
+      }
+    }
+  } else if (gen.kind === "mulFacts") {
+    const factor = Number(targetKey);
+    if (!gen.factors.includes(factor)) return null;
+    const other = rand(gen.otherMin, gen.otherMax);
+    const [a, b] = Math.random() < 0.5 ? [factor, other] : [other, factor];
+    return { operation, tierId, a, b, answer: a * b };
+  } else if (gen.kind === "divFacts") {
+    const divisor = Number(targetKey);
+    if (!gen.divisors.includes(divisor)) return null;
+    const quotient = rand(gen.quotientMin, gen.quotientMax);
+    let remainder = 0;
+    if (gen.remainder === "required") {
+      remainder = rand(1, divisor - 1);
+    } else if (gen.remainder === "either") {
+      remainder = Math.random() < 0.5 ? rand(1, divisor - 1) : 0;
+    }
+    const dividend = divisor * quotient + remainder;
+    return { operation, tierId, a: dividend, b: divisor, answer: quotient, remainder };
+  }
+
+  return pickOne(candidates);
+}
+
+export function generateQuestion(
+  operation: Operation,
+  tierId: string,
+  _maxTimesTable?: number,
+  options?: GenerationOptions
+): Question {
   const tier = LADDERS[operation].find((t) => t.id === tierId);
   if (!tier) throw new Error(`Unknown tier: ${tierId}`);
+
+  const targetKey = options?.coveredFactKeys ? pickUncoveredFactKey(tierId, options.coveredFactKeys) : null;
+  if (targetKey) {
+    const targetedQuestion = generateQuestionForFactKey(operation, tierId, targetKey);
+    if (targetedQuestion) return targetedQuestion;
+  }
 
   const { kind } = tier.gen;
   let result;

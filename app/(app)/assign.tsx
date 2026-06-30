@@ -18,7 +18,9 @@ import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/app/_layout";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as ImageManipulator from "expo-image-manipulator";
+import * as ImagePicker from "expo-image-picker";
 import CameraCaptureModal from "@/components/CameraCaptureModal";
+import DatePickerModal from "@/components/DatePickerModal";
 import { Operation } from "@/lib/tutorConfig";
 import {
   listAssignmentsForChild,
@@ -27,6 +29,7 @@ import {
   deleteAssignment,
   Assignment,
 } from "@/lib/assignments";
+import { createSchoolHomeworkAssignmentItem, linkSchoolHomeworkAssignment, schoolHomeworkDateLabel, todayDateKey } from "@/lib/schoolHomework";
 import {
   listSpellingListsForChild,
   createSpellingList,
@@ -49,9 +52,18 @@ interface Child {
 export default function AssignScreen() {
   const router = useRouter();
   const { session } = useAuth();
-  const params = useLocalSearchParams<{ childId: string; childName?: string }>();
+  const params = useLocalSearchParams<{
+    childId: string;
+    childName?: string;
+    schoolHomeworkItemId?: string;
+    schoolHomeworkItemText?: string;
+    homeworkDate?: string;
+  }>();
   const id = String(params.childId || "");
   const paramName = params.childName ? String(params.childName) : "";
+  const linkedSchoolHomeworkItemId = params.schoolHomeworkItemId ? String(params.schoolHomeworkItemId) : "";
+  const linkedSchoolHomeworkItemText = params.schoolHomeworkItemText ? String(params.schoolHomeworkItemText) : "";
+  const linkedHomeworkDate = params.homeworkDate ? String(params.homeworkDate) : "";
 
   const [child, setChild] = useState<Child | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -63,8 +75,10 @@ export default function AssignScreen() {
   const [assignmentSubject, setAssignmentSubject] = useState<"math" | "spelling" | "conjugation">("math");
   const [selectedTopic, setSelectedTopic] = useState<Operation | "word_problems">("addition");
   const [selectedWordProblemOp, setSelectedWordProblemOp] = useState<Operation | "mixed">("mixed");
+  const [selectedMultiplicationTables, setSelectedMultiplicationTables] = useState<number[]>([]);
   const [questionCount, setQuestionCount] = useState(8);
-  const [dueDate, setDueDate] = useState("");
+  const [dueDate, setDueDate] = useState(linkedHomeworkDate || todayDateKey());
+  const [datePickerVisible, setDatePickerVisible] = useState(false);
   const [assignmentMode, setAssignmentMode] = useState<"practice" | "quiz">("practice");
   const [isCreatingAssignment, setIsCreatingAssignment] = useState(false);
   const [showCompletedAssignments, setShowCompletedAssignments] = useState(true);
@@ -188,25 +202,38 @@ export default function AssignScreen() {
 
   const handleCreateAssignment = async () => {
     if (!id || !session?.user?.id) return;
+    if (!dueDate) {
+      Alert.alert("Homework day required", "Choose the homework day for this assignment.");
+      return;
+    }
 
     if (assignmentSubject === "math") {
       setIsCreatingAssignment(true);
       try {
-        await createMathAssignment({
+        const assignment = await createMathAssignment({
           childId: id,
           topic: selectedTopic,
           count: questionCount,
           dueDate: dueDate || undefined,
           mode: assignmentMode,
           wordProblemOp: selectedTopic === "word_problems" ? selectedWordProblemOp : undefined,
+          multiplicationTables:
+            selectedTopic === "multiplication" ? selectedMultiplicationTables : undefined,
         });
+        await linkCreatedSchoolHomeworkAssignment(assignment.id, selectedTopic);
+        await addAssignmentToHomeworkFeed(
+          assignment,
+          selectedTopic,
+          `${selectedTopic.replace("_", " ")} · ${questionCount} questions`
+        );
 
         await fetchAssignments();
 
         setShowAssignmentForm(false);
         setSelectedTopic("addition");
+        setSelectedMultiplicationTables([]);
         setQuestionCount(8);
-        setDueDate("");
+        setDueDate(todayDateKey());
         setAssignmentMode("practice");
       } catch (err) {
         console.error("[assignments] error creating math assignment:", err);
@@ -227,7 +254,7 @@ export default function AssignScreen() {
 
       setIsCreatingAssignment(true);
       try {
-        await createSpellingAssignment(
+        const assignment = await createSpellingAssignment(
           id,
           selectedSpellingList.id,
           selectedSpellingList.title,
@@ -235,12 +262,18 @@ export default function AssignScreen() {
           "practice",
           dueDate || undefined
         );
+        await linkCreatedSchoolHomeworkAssignment(assignment.id, "spelling");
+        await addAssignmentToHomeworkFeed(
+          assignment,
+          "spelling",
+          `Spelling: ${selectedSpellingList.title}`
+        );
 
         await fetchAssignments();
 
         setShowAssignmentForm(false);
         setSelectedSpellingList(null);
-        setDueDate("");
+        setDueDate(todayDateKey());
         setAssignmentSubject("math");
       } catch (err) {
         console.error("[assignments] error creating spelling assignment:", err);
@@ -257,13 +290,20 @@ export default function AssignScreen() {
       setIsCreatingAssignment(true);
       try {
         const { createConjugationAssignment } = await import("@/lib/assignments");
-        await createConjugationAssignment(
+        const assignment = await createConjugationAssignment(
           id,
           conjugationLanguage,
           conjugationVerbGroups,
           conjugationTenses,
           questionCount,
-          dueDate || undefined
+          dueDate || undefined,
+          assignmentMode
+        );
+        await linkCreatedSchoolHomeworkAssignment(assignment.id, "conjugation");
+        await addAssignmentToHomeworkFeed(
+          assignment,
+          "conjugation",
+          `Conjugation: ${assignment.focus}`
         );
 
         await fetchAssignments();
@@ -274,7 +314,7 @@ export default function AssignScreen() {
         setConjugationVerbGroups([]);
         setConjugationTenses([]);
         setQuestionCount(8);
-        setDueDate("");
+        setDueDate(todayDateKey());
       } catch (err) {
         console.error("[assignments] error creating conjugation assignment:", err);
         Alert.alert("Error", "Failed to create conjugation assignment");
@@ -319,13 +359,19 @@ export default function AssignScreen() {
 
       await createSpellingItems(newList.id, id, words, generateLanguage);
 
-      await createSpellingAssignment(
+      const assignment = await createSpellingAssignment(
         id,
         newList.id,
         listTitle,
         words.length,
         "practice",
         dueDate || undefined
+      );
+      await linkCreatedSchoolHomeworkAssignment(assignment.id, "spelling");
+      await addAssignmentToHomeworkFeed(
+        assignment,
+        "spelling",
+        `Spelling: ${listTitle}`
       );
 
       await fetchAssignments();
@@ -334,7 +380,7 @@ export default function AssignScreen() {
       setShowAssignmentForm(false);
       setAssignmentSubject("math");
       setSelectedSpellingList(null);
-      setDueDate("");
+      setDueDate(todayDateKey());
       setGenerateWordCount("10");
       setGenerateLanguage("English");
       setIsGeneratingNewList(false);
@@ -374,6 +420,35 @@ export default function AssignScreen() {
       console.error("[proceedWithGenerateSpelling] error:", err);
       Alert.alert("Error", "Failed to generate words");
     }
+  };
+
+  const linkCreatedSchoolHomeworkAssignment = async (assignmentId: string, practiceType: string) => {
+    if (!linkedSchoolHomeworkItemId) return;
+    await linkSchoolHomeworkAssignment({
+      itemId: linkedSchoolHomeworkItemId,
+      assignmentId,
+      practiceType,
+    });
+  };
+
+  const addAssignmentToHomeworkFeed = async (
+    assignment: Assignment,
+    practiceType: string,
+    fallbackText: string
+  ) => {
+    if (linkedSchoolHomeworkItemId || !dueDate) return;
+    await createSchoolHomeworkAssignmentItem({
+      childId: id,
+      homeworkDate: dueDate,
+      assignmentId: assignment.id,
+      taskText: fallbackText,
+      taskKind: practiceType === "spelling" ? "spelling" : practiceType === "division" ? "division" : practiceType === "multiplication" ? "multiplication" : "generic",
+      metadata: {
+        linked_practice: practiceType,
+        assignment_subject: assignment.subject,
+        assignment_mode: assignment.mode,
+      },
+    });
   };
 
   const handleGenerateSpellingList = () => {
@@ -615,6 +690,7 @@ export default function AssignScreen() {
   };
 
   const openSelectTopic = () => {
+    if (!dueDate) setDueDate(todayDateKey());
     setShowAssignmentForm(true);
     loadConjugationLanguages();
   };
@@ -624,7 +700,8 @@ export default function AssignScreen() {
       "Add a spelling list",
       "Choose how to add a list:",
       [
-        { text: "Take or upload a photo", onPress: () => setCameraVisible(true) },
+        { text: "Take photo", onPress: () => setCameraVisible(true) },
+        { text: "Upload photo", onPress: () => pickPhotoFromLibrary() },
         { text: "Manual entry", onPress: () => setShowSpellingForm(true) },
         { text: "Skeelio generates", onPress: () => handleGenerateSpellingList() },
         { text: "Cancel", style: "cancel" },
@@ -632,7 +709,39 @@ export default function AssignScreen() {
     );
   };
 
+  const pickPhotoFromLibrary = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images"],
+        quality: 1,
+      });
+
+      if (!result.canceled && result.assets[0]?.uri) {
+        await processCapturedImage(result.assets[0].uri);
+      }
+    } catch (err) {
+      console.error("[assign] image library error:", err);
+      Alert.alert("Error", "Could not open the photo library");
+    }
+  };
+
   const displayName = child?.name || paramName || "this child";
+  const renderHomeworkDateButton = () => (
+    <>
+      <Text style={styles.formLabel}>Homework day</Text>
+      <TouchableOpacity
+        style={styles.dateInput}
+        onPress={() => setDatePickerVisible(true)}
+        disabled={isCreatingAssignment}
+      >
+        <MaterialCommunityIcons name="calendar-month-outline" size={18} color="#1565c0" />
+        <Text style={styles.dateInputText}>{schoolHomeworkDateLabel(dueDate || todayDateKey())}</Text>
+      </TouchableOpacity>
+      {linkedSchoolHomeworkItemId && dueDate ? (
+        <Text style={styles.linkedDateNote}>Prefilled from the selected school-homework day.</Text>
+      ) : null}
+    </>
+  );
 
   if (isLoading) {
     return (
@@ -723,6 +832,17 @@ export default function AssignScreen() {
       </View>
 
       {error ? <Text style={styles.errorText}>{error}</Text> : null}
+      {linkedSchoolHomeworkItemId ? (
+        <View style={styles.linkedHomeworkBanner}>
+          <MaterialCommunityIcons name="clipboard-text-outline" size={18} color="#1565c0" />
+          <View style={styles.linkedHomeworkTextWrap}>
+            <Text style={styles.linkedHomeworkTitle}>Creating practice from school homework</Text>
+            <Text style={styles.linkedHomeworkText} numberOfLines={2}>
+              {linkedSchoolHomeworkItemText || "This assignment will be linked to the selected homework item."}
+            </Text>
+          </View>
+        </View>
+      ) : null}
 
       <ScrollView
         style={{ flex: 1 }}
@@ -811,10 +931,13 @@ export default function AssignScreen() {
               keyboardShouldPersistTaps="handled"
             >
               <View style={styles.modalContent}>
-                <Text style={styles.modalTitle}>Assign Homework</Text>
+                <Text style={styles.modalTitle}>Create practice assignment</Text>
 
                 {/* Subject Selector */}
-                <Text style={styles.formLabel}>Subject</Text>
+                <View style={styles.stepHeader}>
+                  <Text style={styles.stepNumber}>1</Text>
+                  <Text style={styles.stepTitle}>Subject</Text>
+                </View>
                 <View style={styles.topicPickerRow}>
                   <TouchableOpacity
                     style={[styles.topicButton, assignmentSubject === "math" && styles.topicButtonActive]}
@@ -845,13 +968,22 @@ export default function AssignScreen() {
                 {/* Math Form */}
                 {assignmentSubject === "math" && (
                   <>
+                    <View style={styles.stepHeader}>
+                      <Text style={styles.stepNumber}>2</Text>
+                      <Text style={styles.stepTitle}>Details</Text>
+                    </View>
                     <Text style={styles.formLabel}>Topic</Text>
                     <View style={styles.topicPickerRow}>
                       {["addition", "subtraction", "multiplication", "division", "word_problems"].map((topic) => (
                         <TouchableOpacity
                           key={topic}
                           style={[styles.topicButton, selectedTopic === topic && styles.topicButtonActive]}
-                          onPress={() => setSelectedTopic(topic as Operation | "word_problems")}
+                          onPress={() => {
+                            setSelectedTopic(topic as Operation | "word_problems");
+                            if (topic !== "multiplication") {
+                              setSelectedMultiplicationTables([]);
+                            }
+                          }}
                         >
                           <Text style={[styles.topicButtonText, selectedTopic === topic && styles.topicButtonTextActive]}>
                             {topic === "word_problems" ? "Word Problems" : topic.charAt(0).toUpperCase() + topic.slice(1)}
@@ -879,6 +1011,42 @@ export default function AssignScreen() {
                       </>
                     )}
 
+                    {selectedTopic === "multiplication" && (
+                      <>
+                        <Text style={styles.formLabel}>Tables (optional)</Text>
+                        <Text style={styles.smallText}>
+                          Select specific tables for this assignment, or leave blank for the current level.
+                        </Text>
+                        <View style={styles.topicPickerRow}>
+                          {Array.from({ length: 13 }, (_, table) => (
+                            <TouchableOpacity
+                              key={table}
+                              style={[
+                                styles.topicButton,
+                                selectedMultiplicationTables.includes(table) && styles.topicButtonActive,
+                              ]}
+                              onPress={() => {
+                                setSelectedMultiplicationTables((current) =>
+                                  current.includes(table)
+                                    ? current.filter((value) => value !== table)
+                                    : [...current, table].sort((a, b) => a - b)
+                                );
+                              }}
+                            >
+                              <Text
+                                style={[
+                                  styles.topicButtonText,
+                                  selectedMultiplicationTables.includes(table) && styles.topicButtonTextActive,
+                                ]}
+                              >
+                                ×{table}
+                              </Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      </>
+                    )}
+
                     <Text style={styles.formLabel}>Number of Questions</Text>
                     <View style={styles.counterRow}>
                       <TouchableOpacity
@@ -896,6 +1064,10 @@ export default function AssignScreen() {
                       </TouchableOpacity>
                     </View>
 
+                    <View style={styles.stepHeader}>
+                      <Text style={styles.stepNumber}>3</Text>
+                      <Text style={styles.stepTitle}>Mode and day</Text>
+                    </View>
                     <Text style={styles.formLabel}>Mode</Text>
                     <View style={styles.modeToggleRow}>
                       <TouchableOpacity
@@ -916,20 +1088,17 @@ export default function AssignScreen() {
                       </TouchableOpacity>
                     </View>
 
-                    <Text style={styles.formLabel}>Due Date (optional)</Text>
-                    <TextInput
-                      style={styles.dateInput}
-                      placeholder="YYYY-MM-DD"
-                      value={dueDate}
-                      onChangeText={setDueDate}
-                      editable={!isCreatingAssignment}
-                    />
+                    {renderHomeworkDateButton()}
                   </>
                 )}
 
                 {/* Spelling Form */}
                 {assignmentSubject === "spelling" && (
                   <>
+                    <View style={styles.stepHeader}>
+                      <Text style={styles.stepNumber}>2</Text>
+                      <Text style={styles.stepTitle}>Details</Text>
+                    </View>
                     <Text style={styles.formLabel}>Choose List</Text>
                     <View style={styles.subjectPickerRow}>
                       {spellingLists.length === 0 ? (
@@ -990,20 +1159,21 @@ export default function AssignScreen() {
                       </>
                     )}
 
-                    <Text style={styles.formLabel}>Due Date (optional)</Text>
-                    <TextInput
-                      style={styles.dateInput}
-                      placeholder="YYYY-MM-DD"
-                      value={dueDate}
-                      onChangeText={setDueDate}
-                      editable={!isCreatingAssignment}
-                    />
+                    <View style={styles.stepHeader}>
+                      <Text style={styles.stepNumber}>3</Text>
+                      <Text style={styles.stepTitle}>Homework day</Text>
+                    </View>
+                    {renderHomeworkDateButton()}
                   </>
                 )}
 
                 {/* Conjugation Form */}
                 {assignmentSubject === "conjugation" && (
                   <>
+                    <View style={styles.stepHeader}>
+                      <Text style={styles.stepNumber}>2</Text>
+                      <Text style={styles.stepTitle}>Details</Text>
+                    </View>
                     {conjugationLanguages.length > 1 && (
                       <>
                         <Text style={styles.formLabel}>Language</Text>
@@ -1081,14 +1251,31 @@ export default function AssignScreen() {
                       editable={!isCreatingAssignment}
                     />
 
-                    <Text style={styles.formLabel}>Due Date (optional)</Text>
-                    <TextInput
-                      style={styles.dateInput}
-                      placeholder="YYYY-MM-DD"
-                      value={dueDate}
-                      onChangeText={setDueDate}
-                      editable={!isCreatingAssignment}
-                    />
+                    <View style={styles.stepHeader}>
+                      <Text style={styles.stepNumber}>3</Text>
+                      <Text style={styles.stepTitle}>Mode and day</Text>
+                    </View>
+                    <Text style={styles.formLabel}>Mode</Text>
+                    <View style={styles.modeToggleRow}>
+                      <TouchableOpacity
+                        style={[styles.modeButton, assignmentMode === "practice" && styles.modeButtonActive]}
+                        onPress={() => setAssignmentMode("practice")}
+                      >
+                        <Text style={[styles.modeButtonText, assignmentMode === "practice" && styles.modeButtonTextActive]}>
+                          Practice
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.modeButton, assignmentMode === "quiz" && styles.modeButtonActive]}
+                        onPress={() => setAssignmentMode("quiz")}
+                      >
+                        <Text style={[styles.modeButtonText, assignmentMode === "quiz" && styles.modeButtonTextActive]}>
+                          Quiz
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+
+                    {renderHomeworkDateButton()}
                   </>
                 )}
 
@@ -1101,8 +1288,9 @@ export default function AssignScreen() {
                         setShowAssignmentForm(false);
                         setAssignmentSubject("math");
                         setSelectedTopic("addition");
+                        setSelectedMultiplicationTables([]);
                         setQuestionCount(8);
-                        setDueDate("");
+                        setDueDate(todayDateKey());
                         setAssignmentMode("practice");
                         setSelectedSpellingList(null);
                         setIsGeneratingNewList(false);
@@ -1317,6 +1505,12 @@ export default function AssignScreen() {
         onCaptured={(uri) => processCapturedImage(uri)}
         onClose={() => setCameraVisible(false)}
       />
+      <DatePickerModal
+        visible={datePickerVisible}
+        selectedDate={dueDate || todayDateKey()}
+        onSelect={setDueDate}
+        onClose={() => setDatePickerVisible(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -1358,6 +1552,33 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     marginVertical: 8,
     textAlign: "center",
+  },
+  linkedHomeworkBanner: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+    marginHorizontal: 16,
+    marginTop: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 8,
+    backgroundColor: "#eef7ff",
+    borderWidth: 1,
+    borderColor: "#cfe8fb",
+  },
+  linkedHomeworkTextWrap: {
+    flex: 1,
+  },
+  linkedHomeworkTitle: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#1565c0",
+  },
+  linkedHomeworkText: {
+    marginTop: 2,
+    fontSize: 12,
+    color: "#455a64",
+    lineHeight: 16,
   },
   contentContainer: {
     paddingHorizontal: 16,
@@ -1532,6 +1753,29 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     textAlign: "center",
   },
+  stepHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 6,
+    marginBottom: 10,
+  },
+  stepNumber: {
+    width: 24,
+    height: 24,
+    borderRadius: 8,
+    backgroundColor: "#e3f2fd",
+    color: "#1565c0",
+    fontSize: 13,
+    fontWeight: "800",
+    textAlign: "center",
+    lineHeight: 24,
+  },
+  stepTitle: {
+    fontSize: 15,
+    fontWeight: "800",
+    color: "#263238",
+  },
   formLabel: {
     fontSize: 13,
     fontWeight: "600",
@@ -1625,14 +1869,30 @@ const styles = StyleSheet.create({
     color: "#2196f3",
   },
   dateInput: {
+    minHeight: 44,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
     borderWidth: 1,
     borderColor: "#ddd",
     borderRadius: 6,
     paddingVertical: 10,
     paddingHorizontal: 12,
-    fontSize: 14,
     marginBottom: 20,
+    backgroundColor: "#fff",
+  },
+  dateInputText: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: "700",
     color: "#333",
+  },
+  linkedDateNote: {
+    marginTop: -12,
+    marginBottom: 18,
+    fontSize: 12,
+    lineHeight: 16,
+    color: "#607d8b",
   },
   numberInput: {
     borderWidth: 1,

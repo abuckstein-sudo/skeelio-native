@@ -7,6 +7,7 @@ import {
   SafeAreaView,
   ActivityIndicator,
   ScrollView,
+  TextInput,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { supabase } from "@/lib/supabase";
@@ -26,6 +27,8 @@ import {
   type TeachingPattern,
 } from "@/lib/conjugation";
 import QuitButton from "@/components/QuitButton";
+import HandwritingAnswerPad from "@/components/HandwritingAnswerPad";
+import { appLanguageForChild, AppLanguage } from "@/lib/appLanguage";
 
 interface Answer {
   questionId: string;
@@ -42,6 +45,67 @@ type Screen = "loading" | "language" | "selection" | "teaching" | "quiz" | "comp
 type VerbGroupOption = { value: string; label: string };
 type TenseOption = { value: string; label: string };
 
+const COPY = {
+  en: {
+    chooseLanguage: "Choose Language",
+    choosePractice: "Choose Your Practice",
+    tense: "Tense",
+    verbGroup: "Verb Group",
+    continue: "Continue",
+    learnPattern: "Learn the Pattern",
+    endings: "Endings:",
+    example: "Example:",
+    start: "Start",
+    noQuestions: "No questions available",
+    question: "Question",
+    of: "of",
+    conjugate: "Conjugate:",
+    correct: "✓ Correct!",
+    wrong: (answer?: string) => `✗ The answer is: ${answer}`,
+    finish: "Finish",
+    next: "Next",
+    greatJob: "Great job! 🎉",
+    got: (correct: number, total: number) => `You got ${correct} out of ${total} correct`,
+    backHome: "Back Home",
+    selectBoth: "Please select both a tense and a verb group",
+    failedLoad: "Failed to load questions",
+    loading: "Loading...",
+    choose: "Choose",
+    write: "Write",
+    check: "Check",
+    recognizedAnswer: "Recognized answer",
+  },
+  fr: {
+    chooseLanguage: "Choisis la langue",
+    choosePractice: "Choisis ton entraînement",
+    tense: "Temps",
+    verbGroup: "Groupe de verbes",
+    continue: "Continuer",
+    learnPattern: "Apprends le modèle",
+    endings: "Terminaisons :",
+    example: "Exemple :",
+    start: "Commencer",
+    noQuestions: "Aucune question disponible",
+    question: "Question",
+    of: "sur",
+    conjugate: "Conjugue :",
+    correct: "✓ Correct !",
+    wrong: (answer?: string) => `✗ La réponse est : ${answer}`,
+    finish: "Terminer",
+    next: "Suivant",
+    greatJob: "Bravo ! 🎉",
+    got: (correct: number, total: number) => `Tu as ${correct} bonnes réponses sur ${total}`,
+    backHome: "Retour à l'accueil",
+    selectBoth: "Choisis un temps et un groupe de verbes",
+    failedLoad: "Impossible de charger les questions",
+    loading: "Chargement...",
+    choose: "Choisir",
+    write: "Écrire",
+    check: "Valider",
+    recognizedAnswer: "Réponse reconnue",
+  },
+} as const;
+
 export default function ConjugationPracticeScreen() {
   const router = useRouter();
   const { sessionId, childId, assignmentId } = useLocalSearchParams<{
@@ -56,6 +120,7 @@ export default function ConjugationPracticeScreen() {
   // Language state
   const [availableLanguages, setAvailableLanguages] = useState<Array<{ locale: string; name: string }>>([]);
   const [selectedLanguage, setSelectedLanguage] = useState<string>("");
+  const [appLanguage, setAppLanguage] = useState<AppLanguage>("en");
 
   // Selection state
   const [selectedTense, setSelectedTense] = useState<string>("");
@@ -91,6 +156,9 @@ export default function ConjugationPracticeScreen() {
   const [correctCount, setCorrectCount] = useState(0);
   const [answers, setAnswers] = useState<Answer[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [answerMode, setAnswerMode] = useState<"choose" | "write">("choose");
+  const [writtenAnswer, setWrittenAnswer] = useState("");
+  const [isWritingStroke, setIsWritingStroke] = useState(false);
 
   const currentQuestion = questions[currentIndex];
 
@@ -108,6 +176,8 @@ export default function ConjugationPracticeScreen() {
 
           if (assignErr) throw assignErr;
           const cq = (assignmentData?.custom_questions as any) || {};
+          setAnswerMode("write");
+          setAppLanguage((cq.language || "fr-FR") === "fr-FR" ? "fr" : "en");
           setAssignmentFilters({
             language: cq.language || "fr-FR",
             verb_groups: cq.verb_groups || [],
@@ -126,6 +196,7 @@ export default function ConjugationPracticeScreen() {
             .single();
 
           if (childErr) throw childErr;
+          setAppLanguage(appLanguageForChild(childData));
 
           const langs = (childData?.languages as any) || [];
           const langs_array = Array.isArray(langs) ? langs : (typeof langs === "string" ? JSON.parse(langs) : []);
@@ -275,7 +346,7 @@ export default function ConjugationPracticeScreen() {
 
   const handleSelectOptions = async () => {
     if (!selectedTense || !selectedGroup) {
-      setSelectionError("Please select both a tense and a verb group");
+      setSelectionError(COPY[appLanguage].selectBoth);
       return;
     }
 
@@ -307,7 +378,7 @@ export default function ConjugationPracticeScreen() {
       setScreen("teaching");
     } catch (err) {
       console.error("[ConjugationPractice] selection failed:", err);
-      setSelectionError("Failed to load questions");
+        setSelectionError(COPY[appLanguage].failedLoad);
     } finally {
       setIsLoadingTeaching(false);
     }
@@ -418,11 +489,18 @@ export default function ConjugationPracticeScreen() {
     }
   };
 
+  const handleSubmitWrittenAnswer = () => {
+    const answer = writtenAnswer.trim();
+    if (!answer || feedback.type !== "idle" || isSubmitting) return;
+    handleSelectOption(answer);
+  };
+
   const handleNext = async () => {
     if (currentIndex < questions.length - 1) {
       const nextIndex = currentIndex + 1;
       setCurrentIndex(nextIndex);
       setFeedback({ type: "idle" });
+      setWrittenAnswer("");
       const shuffled = shuffleOptions(questions[nextIndex].options, questions[nextIndex].correct_answer);
       setShuffledOptions(shuffled);
     } else {
@@ -451,10 +529,12 @@ export default function ConjugationPracticeScreen() {
 
   // LANGUAGE SELECTION SCREEN
   if (screen === "language") {
+    const copy = COPY[appLanguage];
     return (
       <SafeAreaView style={styles.container}>
+        <QuitButton />
         <ScrollView contentContainerStyle={styles.scrollContent}>
-          <Text style={styles.title}>Choose Language</Text>
+          <Text style={styles.title}>{copy.chooseLanguage}</Text>
 
           <View style={styles.buttonGrid}>
             {availableLanguages.map((lang) => (
@@ -476,12 +556,14 @@ export default function ConjugationPracticeScreen() {
 
   // SELECTION SCREEN
   if (screen === "selection") {
+    const copy = COPY[appLanguage];
     return (
       <SafeAreaView style={styles.container}>
+        <QuitButton />
         <ScrollView contentContainerStyle={styles.scrollContent}>
-          <Text style={styles.title}>Choose Your Practice</Text>
+          <Text style={styles.title}>{copy.choosePractice}</Text>
 
-          <Text style={styles.label}>Tense</Text>
+          <Text style={styles.label}>{copy.tense}</Text>
           <View style={styles.buttonGrid}>
             {availableTenses.map((tense) => (
               <TouchableOpacity
@@ -496,7 +578,7 @@ export default function ConjugationPracticeScreen() {
             ))}
           </View>
 
-          <Text style={styles.label}>Verb Group</Text>
+          <Text style={styles.label}>{copy.verbGroup}</Text>
           <View style={styles.buttonGrid}>
             {availableGroups.map((group) => (
               <TouchableOpacity
@@ -521,7 +603,7 @@ export default function ConjugationPracticeScreen() {
             {isLoadingTeaching ? (
               <ActivityIndicator size="small" color="#fff" />
             ) : (
-              <Text style={styles.buttonText}>Continue</Text>
+              <Text style={styles.buttonText}>{copy.continue}</Text>
             )}
           </TouchableOpacity>
         </ScrollView>
@@ -531,10 +613,12 @@ export default function ConjugationPracticeScreen() {
 
   // TEACHING SCREEN
   if (screen === "teaching") {
+    const copy = COPY[appLanguage];
     return (
       <SafeAreaView style={styles.container}>
+        <QuitButton />
         <ScrollView contentContainerStyle={styles.scrollContent}>
-          <Text style={styles.title}>Learn the Pattern</Text>
+          <Text style={styles.title}>{copy.learnPattern}</Text>
 
           {teachingPattern && (
             <View style={styles.patternCard}>
@@ -542,7 +626,7 @@ export default function ConjugationPracticeScreen() {
                 {teachingPattern.tense} • {teachingPattern.group}
               </Text>
 
-              <Text style={styles.patternSubtitle}>Endings:</Text>
+              <Text style={styles.patternSubtitle}>{copy.endings}</Text>
               <View style={styles.endingsRow}>
                 {teachingPattern.endings.map((ending, idx) => (
                   <View key={idx} style={styles.endingBox}>
@@ -551,7 +635,7 @@ export default function ConjugationPracticeScreen() {
                 ))}
               </View>
 
-              <Text style={styles.patternSubtitle}>Example: {teachingPattern.example.verb}</Text>
+              <Text style={styles.patternSubtitle}>{copy.example} {teachingPattern.example.verb}</Text>
               {teachingPattern.example.conjugations.map((conj, idx) => (
                 <View key={idx} style={styles.conjugationRow}>
                   <Text style={styles.pronounText}>{conj.pronoun}</Text>
@@ -569,7 +653,7 @@ export default function ConjugationPracticeScreen() {
             {isLoadingQuiz ? (
               <ActivityIndicator size="small" color="#fff" />
             ) : (
-              <Text style={styles.buttonText}>Start</Text>
+              <Text style={styles.buttonText}>{copy.start}</Text>
             )}
           </TouchableOpacity>
         </ScrollView>
@@ -579,6 +663,9 @@ export default function ConjugationPracticeScreen() {
 
   // QUIZ SCREEN
   if (screen === "quiz") {
+    const copy = COPY[appLanguage];
+    const forceWriteMode = Boolean(assignmentId);
+    const effectiveAnswerMode = forceWriteMode ? "write" : answerMode;
     if (error) {
       return (
         <SafeAreaView style={styles.container}>
@@ -590,7 +677,7 @@ export default function ConjugationPracticeScreen() {
     if (!currentQuestion) {
       return (
         <SafeAreaView style={styles.container}>
-          <Text style={styles.error}>No questions available</Text>
+          <Text style={styles.error}>{copy.noQuestions}</Text>
         </SafeAreaView>
       );
     }
@@ -598,77 +685,135 @@ export default function ConjugationPracticeScreen() {
     return (
       <SafeAreaView style={styles.container}>
         <QuitButton />
-        <View style={styles.header}>
-          <Text style={styles.progress}>
-            Question {currentIndex + 1} of {questions.length}
-          </Text>
-          <View style={styles.stars}>
-            <Text style={styles.starsText}>⭐ {correctCount}</Text>
-          </View>
-        </View>
-
-        <View style={styles.questionCard}>
-          <Text style={styles.heading}>Conjugue : {currentQuestion.verb}</Text>
-          <View style={styles.tenseBadge}>
-            <Text style={styles.tenseBadgeText}>{currentQuestion.tense}</Text>
-          </View>
-          <Text style={styles.pronounText}>
-            {currentQuestion.pronoun} <Text style={styles.blank}>_____</Text>
-          </Text>
-        </View>
-
-        <View style={styles.optionsContainer}>
-          {shuffledOptions.map((option, idx) => {
-            const isCorrect = option === currentQuestion.correct_answer;
-            const isSelected = feedback.type !== "idle" && option === feedback.correctAnswer;
-
-            return (
-              <TouchableOpacity
-                key={idx}
-                style={[
-                  styles.optionButton,
-                  feedback.type === "wrong" && isCorrect && styles.optionCorrect,
-                  feedback.type === "wrong" && !isCorrect && isSelected && styles.optionWrong,
-                ]}
-                onPress={() => handleSelectOption(option)}
-                disabled={feedback.type !== "idle" || isSubmitting}
-              >
-                <Text style={styles.optionText}>{option}</Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-
-        {feedback.type !== "idle" && (
-          <View style={styles.feedbackContainer}>
-            <Text style={[styles.feedbackText, feedback.type === "correct" ? styles.correct : styles.incorrect]}>
-              {feedback.type === "correct" ? "✓ Correct!" : `✗ The answer is: ${feedback.correctAnswer}`}
+        <ScrollView
+          contentContainerStyle={styles.quizScrollContent}
+          keyboardShouldPersistTaps="handled"
+          scrollEnabled={!isWritingStroke}
+        >
+          <View style={styles.header}>
+            <Text style={styles.progress}>
+              {copy.question} {currentIndex + 1} {copy.of} {questions.length}
             </Text>
-            <TouchableOpacity style={styles.nextButton} onPress={handleNext}>
-              <Text style={styles.nextButtonText}>
-                {currentIndex === questions.length - 1 ? "Finish" : "Next"}
-              </Text>
-            </TouchableOpacity>
+            <View style={styles.stars}>
+              <Text style={styles.starsText}>⭐ {correctCount}</Text>
+            </View>
           </View>
-        )}
+
+          <View style={styles.questionCard}>
+            <Text style={styles.heading}>{copy.conjugate} {currentQuestion.verb}</Text>
+            <View style={styles.tenseBadge}>
+              <Text style={styles.tenseBadgeText}>{currentQuestion.tense}</Text>
+            </View>
+            <Text style={styles.pronounText}>
+              {currentQuestion.pronoun} <Text style={styles.blank}>_____</Text>
+            </Text>
+          </View>
+
+          {!forceWriteMode && (
+            <View style={styles.answerModeRow}>
+              <TouchableOpacity
+                style={[styles.answerModeButton, answerMode === "choose" && styles.answerModeButtonActive]}
+                onPress={() => setAnswerMode("choose")}
+              >
+                <Text style={[styles.answerModeButtonText, answerMode === "choose" && styles.answerModeButtonTextActive]}>{copy.choose}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.answerModeButton, answerMode === "write" && styles.answerModeButtonActive]}
+                onPress={() => setAnswerMode("write")}
+              >
+                <Text style={[styles.answerModeButtonText, answerMode === "write" && styles.answerModeButtonTextActive]}>{copy.write}</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {effectiveAnswerMode === "choose" ? (
+          <View style={styles.optionsContainer}>
+            {shuffledOptions.map((option, idx) => {
+              const isCorrect = option === currentQuestion.correct_answer;
+              const isSelected = feedback.type !== "idle" && option === feedback.correctAnswer;
+
+              return (
+                <TouchableOpacity
+                  key={idx}
+                  style={[
+                    styles.optionButton,
+                    feedback.type === "wrong" && isCorrect && styles.optionCorrect,
+                    feedback.type === "wrong" && !isCorrect && isSelected && styles.optionWrong,
+                  ]}
+                  onPress={() => handleSelectOption(option)}
+                  disabled={feedback.type !== "idle" || isSubmitting}
+                >
+                  <Text style={styles.optionText}>{option}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          ) : (
+            <View style={styles.writingContainer}>
+              <TextInput
+                style={styles.writtenInput}
+                value={writtenAnswer}
+                onChangeText={setWrittenAnswer}
+                placeholder={copy.recognizedAnswer}
+                placeholderTextColor="#94a3b8"
+                editable={feedback.type === "idle" && !isSubmitting}
+                autoCapitalize="none"
+              />
+              {feedback.type === "idle" && (
+                <HandwritingAnswerPad
+                  language={appLanguage}
+                  questionText={`${currentQuestion.pronoun} ${currentQuestion.verb} ${currentQuestion.tense}`}
+                  onRecognized={setWrittenAnswer}
+                  onDrawingChange={setIsWritingStroke}
+                />
+              )}
+              {feedback.type === "idle" && (
+                <TouchableOpacity
+                  style={[styles.submitWrittenButton, (!writtenAnswer.trim() || isSubmitting) && styles.submitWrittenButtonDisabled]}
+                  onPress={handleSubmitWrittenAnswer}
+                  disabled={!writtenAnswer.trim() || isSubmitting}
+                >
+                  <Text style={styles.submitWrittenButtonText}>{copy.check}</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+
+          {feedback.type !== "idle" && (
+            <View style={styles.feedbackContainer}>
+              <Text style={[styles.feedbackText, feedback.type === "correct" ? styles.correct : styles.incorrect]}>
+                {feedback.type === "correct" ? copy.correct : copy.wrong(feedback.correctAnswer)}
+              </Text>
+              <TouchableOpacity
+                style={styles.nextButton}
+                onPress={handleNext}
+              >
+                <Text style={styles.nextButtonText}>
+                  {currentIndex === questions.length - 1 ? copy.finish : copy.next}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </ScrollView>
       </SafeAreaView>
     );
   }
 
   // COMPLETE SCREEN
   if (screen === "complete") {
+    const copy = COPY[appLanguage];
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.endScreen}>
-          <Text style={styles.endTitle}>Great job! 🎉</Text>
+          <Text style={styles.endTitle}>{copy.greatJob}</Text>
           <Text style={styles.endStat}>
-            You got {correctCount} out of {questions.length} correct
+            {copy.got(correctCount, questions.length)}
           </Text>
           <TouchableOpacity
             style={styles.button}
             onPress={() => router.push(`/child-home/${childId}`)}
           >
-            <Text style={styles.buttonText}>Back Home</Text>
+            <Text style={styles.buttonText}>{copy.backHome}</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -680,7 +825,7 @@ export default function ConjugationPracticeScreen() {
     <SafeAreaView style={styles.container}>
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#007AFF" />
-        <Text style={styles.loadingText}>Loading...</Text>
+        <Text style={styles.loadingText}>{COPY[appLanguage].loading}</Text>
       </View>
     </SafeAreaView>
   );
@@ -704,6 +849,9 @@ const styles = StyleSheet.create({
   scrollContent: {
     padding: 16,
     paddingBottom: 40,
+  },
+  quizScrollContent: {
+    paddingBottom: 32,
   },
   title: {
     fontSize: 24,
@@ -807,7 +955,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: 16,
+    paddingRight: 16,
+    paddingLeft: 56,
     paddingTop: 16,
     marginBottom: 16,
   },
@@ -857,10 +1006,67 @@ const styles = StyleSheet.create({
     borderBottomColor: "#333",
     paddingHorizontal: 4,
   },
+  answerModeRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginHorizontal: 16,
+    marginBottom: 12,
+  },
+  answerModeButton: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#cbd5e1",
+    backgroundColor: "#f8fafc",
+    alignItems: "center",
+  },
+  answerModeButtonActive: {
+    backgroundColor: "#dbeafe",
+    borderColor: "#2563eb",
+  },
+  answerModeButtonText: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#475569",
+  },
+  answerModeButtonTextActive: {
+    color: "#1d4ed8",
+  },
   optionsContainer: {
     gap: 12,
     marginHorizontal: 16,
     marginBottom: 24,
+  },
+  writingContainer: {
+    marginHorizontal: 16,
+    gap: 10,
+    marginBottom: 24,
+  },
+  writtenInput: {
+    borderWidth: 2,
+    borderColor: "#cbd5e1",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    fontSize: 18,
+    color: "#111827",
+    backgroundColor: "#fff",
+  },
+  submitWrittenButton: {
+    minHeight: 44,
+    borderRadius: 8,
+    backgroundColor: "#2563eb",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  submitWrittenButtonDisabled: {
+    opacity: 0.55,
+  },
+  submitWrittenButtonText: {
+    color: "#fff",
+    fontWeight: "800",
+    fontSize: 14,
   },
   optionButton: {
     padding: 16,

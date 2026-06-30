@@ -6,8 +6,8 @@ export default function AuthLayout() {
 
   // If logged in, redirect out of auth group
   if (!isLoading && session) {
-    console.log("[nav] auth layout: session found, redirecting to /children");
-    return <Redirect href="/children" />;
+    console.log("[nav] auth layout: session found, redirecting to /parent");
+    return <Redirect href="/parent" />;
   }
 
   return (

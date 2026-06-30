@@ -1,6 +1,6 @@
 import { supabase } from "@/lib/supabase";
-import { Operation, LADDERS, GATE, startingTier } from "@/lib/tutorConfig";
-import { currentTierAndBand, tierStats, Attempt } from "./ability";
+import { Operation, LADDERS, startingTier } from "@/lib/tutorConfig";
+import { currentTierAndBand, tierStats, Attempt, isSolidTierStat } from "./ability";
 
 export interface OperationStatus {
   operation: Operation;
@@ -31,7 +31,7 @@ export async function getOperationStatus(
     // Fetch attempt log for this operation, filtering out null tiers
     const { data: attemptData } = await supabase
       .from("learning_attempts")
-      .select("tier, was_correct, ai_hint_used")
+      .select("tier, question_text, was_correct, ai_hint_used, evidence_source")
       .eq("child_id", childId)
       .eq("topic", operation)
       .not("tier", "is", null);
@@ -40,6 +40,8 @@ export async function getOperationStatus(
       tierId: row.tier,
       correct: row.was_correct,
       hintUsed: row.ai_hint_used || false,
+      questionText: row.question_text,
+      evidenceSource: row.evidence_source,
     }));
 
     const hasAttempts = attempts.length > 0;
@@ -62,16 +64,11 @@ export async function getOperationStatus(
 
     if (hasAttempts) {
       const stats = tierStats(attempts);
-      // Find the highest tier index that is solid (8+ attempts, ≥85% UNAIDED mastery)
+      // Find the highest tier index that is solid under the weighted evidence gate.
       for (let i = ladder.length - 1; i >= 0; i--) {
         const tier = ladder[i];
         const tierStat = stats[tier.id];
-        if (
-          tierStat &&
-          tierStat.attempts >= GATE.minAttemptsToAdvance &&
-          tierStat.masteryRate >= GATE.accuracyToAdvance &&
-          tierStat.coverageMet
-        ) {
+        if (isSolidTierStat(tierStat)) {
           highestSolidTierId = tier.id;
           highestSolidTierLabel = tier.label;
           break;
@@ -134,7 +131,7 @@ export async function getWordProblemsStatus(
     // Fetch word_problems attempts (grouped by skill, which is the underlying operation)
     const { data: attemptData } = await supabase
       .from("learning_attempts")
-      .select("skill, tier, was_correct, ai_hint_used")
+      .select("skill, tier, question_text, was_correct, ai_hint_used, evidence_source")
       .eq("child_id", childId)
       .eq("topic", "word_problems")
       .not("tier", "is", null);
@@ -161,15 +158,12 @@ export async function getWordProblemsStatus(
         tierId: a.tier,
         correct: a.was_correct,
         hintUsed: a.ai_hint_used || false,
+        questionText: a.question_text,
+        evidenceSource: a.evidence_source,
       }));
 
       const stats = tierStats(attempts);
-      const hasSolid = Object.values(stats).some(
-        (s) =>
-          s.attempts >= GATE.minAttemptsToAdvance &&
-          s.masteryRate >= GATE.accuracyToAdvance &&
-          s.coverageMet
-      );
+      const hasSolid = Object.values(stats).some(isSolidTierStat);
 
       return count + (hasSolid ? 1 : 0);
     }, 0);

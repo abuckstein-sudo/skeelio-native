@@ -17,6 +17,7 @@ export type CustomQuestion = {
   operandA?: number;
   operandB?: number;
   operator?: string;
+  assignmentTables?: number[];
 };
 
 export type Assignment = {
@@ -115,8 +116,10 @@ export async function createMathAssignment(params: {
   dueDate?: string | null;
   mode?: "practice" | "quiz";
   wordProblemOp?: Operation | "mixed";
+  multiplicationTables?: number[];
+  operationTables?: number[];
 }): Promise<Assignment> {
-  const { childId, topic, count, dueDate, mode = "practice", wordProblemOp } = params;
+  const { childId, topic, count, dueDate, mode = "practice", wordProblemOp, multiplicationTables, operationTables } = params;
 
   // Get the current authenticated user to ensure parent_id is set correctly
   const { data: authData, error: authError } = await supabase.auth.getUser();
@@ -136,7 +139,7 @@ export async function createMathAssignment(params: {
   // Fetch attempt data for tier and band calculation
   const { data: attemptData } = await supabase
     .from("learning_attempts")
-    .select("tier, was_correct, ai_hint_used, topic, skill")
+    .select("tier, question_text, was_correct, ai_hint_used, evidence_source, topic, skill")
     .eq("child_id", childId)
     .not("tier", "is", null);
 
@@ -155,6 +158,8 @@ export async function createMathAssignment(params: {
           tierId: row.tier,
           correct: row.was_correct,
           hintUsed: row.ai_hint_used || false,
+          questionText: row.question_text,
+          evidenceSource: row.evidence_source,
         }));
     }
 
@@ -182,12 +187,23 @@ export async function createMathAssignment(params: {
         tierId: row.tier,
         correct: row.was_correct,
         hintUsed: row.ai_hint_used || false,
+        questionText: row.question_text,
+        evidenceSource: row.evidence_source,
       }));
 
+    const tables = Array.isArray(operationTables || multiplicationTables)
+      ? (operationTables || multiplicationTables || []).filter((table) => Number.isInteger(table) && table >= 0 && table <= 12)
+      : [];
     const { tierId } = currentTierAndBand(attempts, topic as Operation, childData || {});
+    const tableQuestionPool = (topic === "multiplication" || topic === "division") && tables.length > 0
+      ? buildTableQuestionPool(topic as "multiplication" | "division", tables, tierId)
+      : [];
 
     for (let i = 0; i < count; i++) {
-      const genQ = generateQuestion(topic as Operation, tierId, childData?.max_times_table);
+      const genQ =
+        tableQuestionPool.length > 0
+          ? tableQuestionPool[i % tableQuestionPool.length]
+          : generateQuestion(topic as Operation, tierId, childData?.max_times_table);
       customQuestions.push(questionToCustom(genQ, topic as Operation));
     }
   }
@@ -225,6 +241,43 @@ export async function createMathAssignment(params: {
   return newAssignment as Assignment;
 }
 
+function buildTableQuestionPool(topic: "multiplication" | "division", tables: number[], tierId: string): Question[] {
+  const pool = tables.flatMap((table) =>
+    Array.from({ length: 13 }, (_, other) => {
+      if (topic === "division") {
+        const divisor = Math.max(1, table);
+        return {
+          operation: "division" as const,
+          tierId,
+          a: divisor * other,
+          b: divisor,
+          answer: other,
+        };
+      }
+
+      const [a, b] = other % 2 === 0 ? [table, other] : [other, table];
+      return {
+        operation: "multiplication" as const,
+        tierId,
+        a,
+        b,
+        answer: a * b,
+      };
+    })
+  );
+
+  return shuffle(pool);
+}
+
+function shuffle<T>(items: T[]): T[] {
+  const copy = [...items];
+  for (let i = copy.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+}
+
 export async function markAssignmentComplete(
   assignmentId: string,
   stats?: { correctCount?: number; totalCount?: number }
@@ -260,6 +313,16 @@ export async function markAssignmentComplete(
     );
     throw error;
   }
+
+  await supabase
+    .from("school_homework_items")
+    .update({
+      status: "done",
+      completed_at: now,
+      completed_by: "child",
+      updated_at: now,
+    })
+    .eq("linked_assignment_id", assignmentId);
 }
 
 export async function createSpellingAssignment(
@@ -334,7 +397,8 @@ export async function createConjugationAssignment(
   verbGroups: string[],
   tenses: string[],
   questionCount: number,
-  dueDate?: string | null
+  dueDate?: string | null,
+  mode: "practice" | "quiz" = "practice"
 ): Promise<Assignment> {
   // Get the current authenticated user
   const { data: authData, error: authError } = await supabase.auth.getUser();
@@ -366,7 +430,7 @@ export async function createConjugationAssignment(
       child_id: childId,
       subject: "conjugation",
       focus,
-      mode: "practice",
+      mode,
       question_count: questionCount,
       due_date: dueDate || null,
       status: "pending",

@@ -1,8 +1,11 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { Stack } from "expo-router";
 import { ActivityIndicator, View } from "react-native";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { useFonts, Lora_700Bold } from "@expo-google-fonts/lora";
 import { supabase } from "@/lib/supabase";
+import { ensureParentProfile } from "@/lib/parentProfile";
+import type { Session } from "@supabase/supabase-js";
 
 type AuthContextType = {
   session: any;
@@ -27,7 +30,7 @@ function RootLayoutContent() {
 }
 
 export default function RootLayout() {
-  const [session, setSession] = useState(null);
+  const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [fontsLoaded] = useFonts({ Lora_700Bold });
 
@@ -44,6 +47,9 @@ export default function RootLayout() {
         }
 
         console.log("[auth] getSession resolved, session =", session ? "present" : "null");
+        if (session?.user) {
+          await ensureParentProfile(session.user);
+        }
         setSession(session);
       } catch (err) {
         console.log("[auth] exception during getSession:", err);
@@ -60,6 +66,9 @@ export default function RootLayout() {
     const { data: listener } = supabase.auth.onAuthStateChange(
       (event, session) => {
         console.log("[auth] state changed:", event, session ? "authenticated" : "unauthenticated");
+        if (session?.user) {
+          ensureParentProfile(session.user);
+        }
         setSession(session);
       }
     );
@@ -79,7 +88,9 @@ export default function RootLayout() {
 
   return (
     <AuthContext.Provider value={{ session, isLoading }}>
-      <RootLayoutContent />
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <RootLayoutContent />
+      </GestureHandlerRootView>
     </AuthContext.Provider>
   );
 }

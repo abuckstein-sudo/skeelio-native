@@ -10,6 +10,8 @@ import {
   Alert,
 } from "react-native";
 import { supabase } from "@/lib/supabase";
+import { AppLanguage, childLanguageForApp, getStoredAppLanguage } from "@/lib/appLanguage";
+import { ensureParentProfile } from "@/lib/parentProfile";
 
 const SCHOOL_SYSTEMS: Record<string, string> = {
   france: "France",
@@ -51,55 +53,100 @@ const GRADES_BY_SYSTEM: Record<string, string[]> = {
   clark: ["Kindergarten", "1st Grade", "2nd Grade", "3rd Grade", "4th Grade", "5th Grade", "6th Grade", "7th Grade"],
 };
 
-const ADDITION_OPTIONS = [
-  { key: "not_started", label: "Not yet started" },
-  { key: "10", label: "10" },
-  { key: "100", label: "100" },
-  { key: "1000_plus", label: "1000 and up" },
-];
-
-const SUBTRACTION_OPTIONS = [
-  { key: "not_started", label: "Not yet started" },
-  { key: "10", label: "10" },
-  { key: "100", label: "100" },
-  { key: "1000_plus", label: "1000 and up" },
-];
-
-const MULTIPLICATION_OPTIONS = [
-  { key: "not_started", label: "Not yet started" },
-  ...Array.from({ length: 12 }, (_, i) => ({ key: String(i + 1), label: `${i + 1}x table` })),
-];
-
-const DIVISION_OPTIONS = [
-  { key: "not_started", label: "Not yet started" },
-  { key: "simple", label: "Simple division" },
-  { key: "long", label: "Long division" },
-];
-
-const MAIN_GOALS = [
-  { key: "improve_current", label: "Improve current academic level" },
-  { key: "meet_benchmark", label: "Achieve benchmarks for their age & school system" },
-  { key: "surpass_benchmark", label: "Surpass benchmarks for their age & school system" },
-];
-
 const SUBJECTS = [
-  { key: "multiplication", label: "Multiplication" },
-  { key: "division", label: "Division" },
-  { key: "addition", label: "Addition" },
-  { key: "subtraction", label: "Subtraction" },
-  { key: "spelling", label: "Spelling" },
-  { key: "reading", label: "Reading" },
-  { key: "conjugation", label: "Conjugation" },
+  { key: "multiplication", labels: { en: "Multiplication", fr: "Multiplication" } },
+  { key: "division", labels: { en: "Division", fr: "Division" } },
+  { key: "addition", labels: { en: "Addition", fr: "Addition" } },
+  { key: "subtraction", labels: { en: "Subtraction", fr: "Soustraction" } },
+  { key: "spelling", labels: { en: "Spelling", fr: "Orthographe" } },
+  { key: "reading", labels: { en: "Reading", fr: "Lecture" } },
+  { key: "conjugation", labels: { en: "Conjugation", fr: "Conjugaison" } },
 ];
 
-const AVATARS = ["fox", "owl", "bear", "cat", "rabbit", "panda"];
-const AVATAR_EMOJI: Record<string, string> = {
-  cat: "🐱",
-  owl: "🦉",
-  fox: "🦊",
-  bear: "🐻",
-  rabbit: "🐰",
-  panda: "🐼",
+const LANGUAGE_OPTIONS = [
+  { value: "English", labels: { en: "English", fr: "Anglais" } },
+  { value: "French", labels: { en: "French", fr: "Français" } },
+];
+
+const COPY: Record<AppLanguage, Record<string, string>> = {
+  en: {
+    addTitle: "Add child",
+    editTitle: "Edit {name}'s settings",
+    basicInfo: "Basic Information",
+    skeelioTag: "Skeelio Tag",
+    tagPlaceholder: "Real first name, nickname, or family tag",
+    managePin: "Manage child's PIN",
+    pinHelp: "PIN can be modified here later if forgotten. The child setup flow will let the child choose their own PIN.",
+    pinPlaceholder: "4-6 digit PIN",
+    languages: "Languages",
+    schoolInfo: "School Information",
+    schoolSystem: "School System",
+    selectSchool: "Select school system",
+    gradeLevel: "Grade Level",
+    selectGrade: "Select grade level",
+    selectSchoolFirst: "Select school system first",
+    skillsTitle: "Skills to track",
+    skillsHelp: "These are the skills that will be added to the parent dashboard for ongoing tracking. You can still assign specific practice later.",
+    addButton: "Add Child",
+    saveButton: "Save Settings",
+    cancel: "Cancel",
+    dangerZone: "Danger Zone",
+    deleteChild: "Delete {name}",
+    deleteTitle: "Delete Child",
+    deleteConfirm: "Are you sure you want to delete {name}? This cannot be undone.",
+    delete: "Delete",
+    error: "Error",
+    success: "Success",
+    tagRequired: "Skeelio Tag is required",
+    pinInvalid: "PIN must be 4-6 digits",
+    userIdRequired: "User ID is required",
+    signInAgain: "Please sign in again before adding a child.",
+    profileFailed: "Couldn't prepare your parent account. Please try signing out and back in.",
+    loadFailed: "Couldn't load child settings",
+    saveFailed: "Couldn't save: {message}",
+    childAdded: "Child added!",
+    settingsSaved: "Settings saved!",
+    childNotFound: "Child was not found or already deleted",
+  },
+  fr: {
+    addTitle: "Ajouter un enfant",
+    editTitle: "Modifier les réglages de {name}",
+    basicInfo: "Informations de base",
+    skeelioTag: "Skeelio Tag",
+    tagPlaceholder: "Prénom, surnom ou repère familial",
+    managePin: "Gérer le PIN de l'enfant",
+    pinHelp: "Le PIN pourra être modifié ici plus tard s'il est oublié. Le parcours enfant permettra à l'enfant de choisir son propre PIN.",
+    pinPlaceholder: "PIN de 4 à 6 chiffres",
+    languages: "Langues",
+    schoolInfo: "Informations scolaires",
+    schoolSystem: "Système scolaire",
+    selectSchool: "Sélectionner un système scolaire",
+    gradeLevel: "Niveau",
+    selectGrade: "Sélectionner un niveau",
+    selectSchoolFirst: "Sélectionner d'abord un système scolaire",
+    skillsTitle: "Compétences à suivre",
+    skillsHelp: "Ces compétences seront ajoutées au tableau de bord parent pour un suivi continu. Vous pourrez toujours assigner des exercices précis plus tard.",
+    addButton: "Ajouter l'enfant",
+    saveButton: "Enregistrer",
+    cancel: "Annuler",
+    dangerZone: "Zone sensible",
+    deleteChild: "Supprimer {name}",
+    deleteTitle: "Supprimer l'enfant",
+    deleteConfirm: "Voulez-vous vraiment supprimer {name} ? Cette action est définitive.",
+    delete: "Supprimer",
+    error: "Erreur",
+    success: "Succès",
+    tagRequired: "Le Skeelio Tag est obligatoire",
+    pinInvalid: "Le PIN doit contenir 4 à 6 chiffres",
+    userIdRequired: "Identifiant utilisateur requis",
+    signInAgain: "Veuillez vous reconnecter avant d'ajouter un enfant.",
+    profileFailed: "Impossible de préparer votre compte parent. Essayez de vous déconnecter puis de vous reconnecter.",
+    loadFailed: "Impossible de charger les réglages de l'enfant",
+    saveFailed: "Impossible d'enregistrer : {message}",
+    childAdded: "Enfant ajouté !",
+    settingsSaved: "Réglages enregistrés !",
+    childNotFound: "L'enfant est introuvable ou a déjà été supprimé",
+  },
 };
 
 interface ChildSettingsFormProps {
@@ -127,22 +174,42 @@ export default function ChildSettingsForm({
   const [birthDay, setBirthDay] = useState("");
   const [pin, setPin] = useState("");
   const [languages, setLanguages] = useState<string[]>(["English"]);
+  const [appLanguage, setAppLanguage] = useState<AppLanguage>("en");
   const [schoolSystem, setSchoolSystem] = useState("");
   const [gradeLevel, setGradeLevel] = useState("");
-  const [schoolGradeLevel, setSchoolGradeLevel] = useState("");
   const [additionLevel, setAdditionLevel] = useState("not_started");
   const [subtractionLevel, setSubtractionLevel] = useState("not_started");
   const [multiplicationLevel, setMultiplicationLevel] = useState("not_started");
   const [divisionLevel, setDivisionLevel] = useState("not_started");
   const [focusSubjects, setFocusSubjects] = useState<string[]>([]);
-  const [mainGoal, setMainGoal] = useState("");
-  const [selectedAvatar, setSelectedAvatar] = useState("fox");
+  const [selectedAvatar, setSelectedAvatar] = useState<string | null>(null);
+  const [openDropdown, setOpenDropdown] = useState<"school" | "grade" | null>(null);
 
   useEffect(() => {
     if (!isAddMode && childId) {
       fetchChild();
     }
   }, [childId, isAddMode]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadAppLanguage = async () => {
+      const language = await getStoredAppLanguage(userId);
+      if (cancelled) return;
+
+      setAppLanguage(language);
+      if (isAddMode) {
+        setLanguages([childLanguageForApp(language)]);
+      }
+    };
+
+    loadAppLanguage();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isAddMode, userId]);
 
   const fetchChild = async () => {
     if (!childId) {
@@ -158,7 +225,7 @@ export default function ChildSettingsForm({
 
     if (error) {
       console.error("[settings] fetch error:", error);
-      Alert.alert("Error", "Couldn't load child settings");
+      Alert.alert(COPY[appLanguage].error, COPY[appLanguage].loadFailed);
       setIsLoading(false);
       return;
     }
@@ -179,26 +246,24 @@ export default function ChildSettingsForm({
     setLanguages(Array.isArray(data.languages) ? data.languages : ["English"]);
     setSchoolSystem(data.school_system ?? "");
     setGradeLevel(data.grade_level ?? "");
-    setSchoolGradeLevel(data.school_grade_level ?? "");
     setAdditionLevel(data.max_addition_number ? String(data.max_addition_number) : "not_started");
     setSubtractionLevel(data.math_subtraction_level ?? "not_started");
     setMultiplicationLevel(data.max_times_table ? String(data.max_times_table) : "not_started");
     setDivisionLevel(data.math_division_level ?? "not_started");
     setFocusSubjects(Array.isArray(data.focus_subjects) ? data.focus_subjects : []);
-    setMainGoal(data.child_goal ?? "");
-    setSelectedAvatar(data.selected_avatar ?? "fox");
+    setSelectedAvatar(data.selected_avatar ?? null);
 
     setIsLoading(false);
   };
 
   const handleSave = async () => {
-    if (!name.trim() || !pin) {
-      Alert.alert("Error", "Name and PIN are required");
+    if (!name.trim()) {
+      Alert.alert(COPY[appLanguage].error, COPY[appLanguage].tagRequired);
       return;
     }
 
-    if (pin.length < 4 || pin.length > 6) {
-      Alert.alert("Error", "PIN must be 4–6 digits");
+    if (!isAddMode && pin && (pin.length < 4 || pin.length > 6)) {
+      Alert.alert(COPY[appLanguage].error, COPY[appLanguage].pinInvalid);
       return;
     }
 
@@ -213,22 +278,25 @@ export default function ChildSettingsForm({
     const additionValue = Number.isFinite(parsedAdditionValue) ? parsedAdditionValue : 10;
     const parsedMultiplicationValue = parseInt(multiplicationLevel, 10);
     const multiplicationValue = Number.isFinite(parsedMultiplicationValue) ? parsedMultiplicationValue : 0;
+    const savedPin = isAddMode ? String(Math.floor(1000 + Math.random() * 9000)) : pin;
 
     const updateData: any = {
       name: name.trim(),
-      pin,
+      pin: savedPin,
       languages,
       preferred_language: languages[0] || "English",
       school_system: schoolSystem,
       grade_level: gradeLevel,
-      school_grade_level: schoolGradeLevel || null,
+      school_grade_level: null,
       max_addition_number: additionValue,
       math_subtraction_level: subtractionLevel || "not_started",
       max_times_table: multiplicationValue,
       math_division_level: divisionLevel || "not_started",
       focus_subjects: focusSubjects,
-      child_goal: mainGoal,
-      selected_avatar: selectedAvatar,
+      child_goal: null,
+      selected_avatar: isAddMode ? null : selectedAvatar,
+      pin_setup_required: isAddMode,
+      intro_seen: !isAddMode,
     };
 
     if (birthYearInt) updateData.birth_year = birthYearInt;
@@ -241,7 +309,24 @@ export default function ChildSettingsForm({
 
     if (isAddMode) {
       if (!userId) {
-        Alert.alert("Error", "User ID is required");
+        Alert.alert(COPY[appLanguage].error, COPY[appLanguage].userIdRequired);
+        setIsSaving(false);
+        return;
+      }
+
+      const { data: userData, error: userError } = await supabase.auth.getUser();
+      if (userError || !userData.user) {
+        Alert.alert(COPY[appLanguage].error, COPY[appLanguage].signInAgain);
+        setIsSaving(false);
+        return;
+      }
+
+      const { error: profileError } = await ensureParentProfile(userData.user);
+      if (profileError) {
+        Alert.alert(
+          COPY[appLanguage].error,
+          `${COPY[appLanguage].profileFailed}\n\n${profileError.message}`
+        );
         setIsSaving(false);
         return;
       }
@@ -250,7 +335,7 @@ export default function ChildSettingsForm({
         .from("children")
         .insert({
           ...updateData,
-          parent_id: userId,
+          parent_id: userData.user.id,
         })
         .select();
 
@@ -285,21 +370,21 @@ export default function ChildSettingsForm({
 
     if (error) {
       console.error(isAddMode ? "[child-insert] error" : "[settings-save] error:", error);
-      Alert.alert("Error", `Couldn't save: ${error.message}`);
+      Alert.alert(COPY[appLanguage].error, COPY[appLanguage].saveFailed.replace("{message}", error.message));
       setIsSaving(false);
       return;
     }
 
-    Alert.alert("Success", isAddMode ? "Child added!" : "Settings saved!");
+    Alert.alert(COPY[appLanguage].success, isAddMode ? COPY[appLanguage].childAdded : COPY[appLanguage].settingsSaved);
     setIsSaving(false);
     onSaved?.(savedChild);
   };
 
   const handleDelete = () => {
-    Alert.alert("Delete Child", `Are you sure you want to delete ${name}? This cannot be undone.`, [
-      { text: "Cancel", onPress: () => {} },
+    Alert.alert(COPY[appLanguage].deleteTitle, COPY[appLanguage].deleteConfirm.replace("{name}", name), [
+      { text: COPY[appLanguage].cancel, onPress: () => {} },
       {
-        text: "Delete",
+        text: COPY[appLanguage].delete,
         onPress: async () => {
           console.log("[child-delete] attempting", { childId });
 
@@ -313,13 +398,13 @@ export default function ChildSettingsForm({
 
           if (error) {
             console.error("[child-delete] error:", error);
-            Alert.alert("Error", `Couldn't delete: ${error.message}`);
+            Alert.alert(COPY[appLanguage].error, COPY[appLanguage].saveFailed.replace("{message}", error.message));
             return;
           }
 
           if (!data || data.length === 0) {
             console.error("[child-delete] no rows deleted");
-            Alert.alert("Error", "Child was not found or already deleted");
+            Alert.alert(COPY[appLanguage].error, COPY[appLanguage].childNotFound);
             return;
           }
 
@@ -340,182 +425,137 @@ export default function ChildSettingsForm({
   }
 
   const availableGrades = schoolSystem && GRADES_BY_SYSTEM[schoolSystem] ? GRADES_BY_SYSTEM[schoolSystem] : [];
+  const copy = COPY[appLanguage];
+  const schoolSystemLabel = schoolSystem ? SCHOOL_SYSTEMS[schoolSystem] : copy.selectSchool;
+  const gradeLabel = gradeLevel || (schoolSystem ? copy.selectGrade : copy.selectSchoolFirst);
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
-      <Text style={styles.title}>{isAddMode ? "Add a Child" : `Edit ${name}'s Settings`}</Text>
+      <Text style={styles.title}>
+        {isAddMode ? copy.addTitle : copy.editTitle.replace("{name}", name)}
+      </Text>
 
       {/* Basic Info */}
-      <Text style={styles.sectionTitle}>Basic Information</Text>
+      <Text style={styles.sectionTitle}>{copy.basicInfo}</Text>
 
-      <Text style={styles.label}>Name</Text>
-      <TextInput style={styles.input} value={name} onChangeText={setName} placeholder="Name" />
-
-      <Text style={styles.label}>PIN (4–6 digits)</Text>
+      <Text style={styles.label}>{copy.skeelioTag}</Text>
       <TextInput
         style={styles.input}
-        value={pin}
-        onChangeText={setPin}
-        placeholder="Enter PIN"
-        keyboardType="number-pad"
-        maxLength={6}
+        value={name}
+        onChangeText={setName}
+        placeholder={copy.tagPlaceholder}
       />
 
-      <Text style={styles.label}>Languages</Text>
+      <Text style={styles.label}>{copy.managePin}</Text>
+      <View style={styles.infoBox}>
+        <Text style={styles.infoText}>
+          {copy.pinHelp}
+        </Text>
+      </View>
+      {!isAddMode && (
+        <TextInput
+          style={styles.input}
+          value={pin}
+          onChangeText={setPin}
+          placeholder={copy.pinPlaceholder}
+          keyboardType="number-pad"
+          maxLength={6}
+        />
+      )}
+
+      <Text style={styles.label}>{copy.languages}</Text>
       <View style={styles.optionRow}>
-        {["English", "French"].map((lang) => (
+        {LANGUAGE_OPTIONS.map((lang) => (
           <TouchableOpacity
-            key={lang}
-            style={[styles.optionButton, (languages || []).includes(lang) && styles.optionButtonActive]}
+            key={lang.value}
+            style={[styles.optionButton, (languages || []).includes(lang.value) && styles.optionButtonActive]}
             onPress={() =>
               setLanguages((prev) =>
-                (prev || []).includes(lang) ? (prev || []).filter((l) => l !== lang) : [...(prev || []), lang]
+                (prev || []).includes(lang.value) ? (prev || []).filter((l) => l !== lang.value) : [...(prev || []), lang.value]
               )
             }
           >
             <Text
-              style={[styles.optionButtonText, (languages || []).includes(lang) && styles.optionButtonTextActive]}
+              style={[styles.optionButtonText, (languages || []).includes(lang.value) && styles.optionButtonTextActive]}
             >
-              {lang}
+              {lang.labels[appLanguage]}
             </Text>
           </TouchableOpacity>
         ))}
       </View>
 
       {/* School Info */}
-      <Text style={styles.sectionTitle}>School Information</Text>
+      <Text style={styles.sectionTitle}>{copy.schoolInfo}</Text>
 
-      <Text style={styles.label}>School System</Text>
-      <View style={styles.pickerContainer}>
-        {Object.entries(SCHOOL_SYSTEMS).map(([key, label]) => (
-          <TouchableOpacity
-            key={key}
-            style={[styles.optionButton, schoolSystem === key && styles.optionButtonActive]}
-            onPress={() => setSchoolSystem(key)}
-          >
-            <Text
-              style={[
-                styles.optionButtonText,
-                schoolSystem === key && styles.optionButtonTextActive,
-              ]}
+      <Text style={styles.label}>{copy.schoolSystem}</Text>
+      <TouchableOpacity
+        style={styles.dropdownButton}
+        onPress={() => setOpenDropdown(openDropdown === "school" ? null : "school")}
+      >
+        <Text style={styles.dropdownButtonText}>{schoolSystemLabel}</Text>
+        <Text style={styles.dropdownChevron}>{openDropdown === "school" ? "▲" : "▼"}</Text>
+      </TouchableOpacity>
+      {openDropdown === "school" && (
+        <View style={styles.dropdownMenu}>
+          {Object.entries(SCHOOL_SYSTEMS).map(([key, label]) => (
+            <TouchableOpacity
+              key={key}
+              style={styles.dropdownItem}
+              onPress={() => {
+                setSchoolSystem(key);
+                setGradeLevel("");
+                setOpenDropdown(null);
+              }}
             >
-              {label}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
+              <Text style={styles.dropdownItemText}>{label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
 
-      <Text style={styles.label}>Grade Level</Text>
-      <View style={styles.pickerContainer}>
-        {(availableGrades || []).map((grade) => (
-          <TouchableOpacity
-            key={grade}
-            style={[styles.optionButton, gradeLevel === grade && styles.optionButtonActive]}
-            onPress={() => setGradeLevel(grade)}
-          >
-            <Text
-              style={[styles.optionButtonText, gradeLevel === grade && styles.optionButtonTextActive]}
+      <Text style={styles.label}>{copy.gradeLevel}</Text>
+      <TouchableOpacity
+        style={[styles.dropdownButton, !schoolSystem && styles.dropdownButtonDisabled]}
+        onPress={() => schoolSystem && setOpenDropdown(openDropdown === "grade" ? null : "grade")}
+        disabled={!schoolSystem}
+      >
+        <Text style={styles.dropdownButtonText}>{gradeLabel}</Text>
+        <Text style={styles.dropdownChevron}>{openDropdown === "grade" ? "▲" : "▼"}</Text>
+      </TouchableOpacity>
+      {openDropdown === "grade" && (
+        <View style={styles.dropdownMenu}>
+          {(availableGrades || []).map((grade) => (
+            <TouchableOpacity
+              key={grade}
+              style={styles.dropdownItem}
+              onPress={() => {
+                setGradeLevel(grade);
+                setOpenDropdown(null);
+              }}
             >
-              {grade}
-            </Text>
-          </TouchableOpacity>
-        ))}
+              <Text style={styles.dropdownItemText}>{grade}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
+
+      {/* Skills */}
+      <View style={styles.sectionTitleRow}>
+        <Text style={styles.sectionTitle}>{copy.skillsTitle}</Text>
+        <TouchableOpacity
+          style={styles.infoIcon}
+          onPress={() =>
+            Alert.alert(
+              copy.skillsTitle,
+              copy.skillsHelp
+            )
+          }
+        >
+          <Text style={styles.infoIconText}>i</Text>
+        </TouchableOpacity>
       </View>
-
-      <Text style={styles.label}>School Level (if different)</Text>
-      <TextInput
-        style={styles.input}
-        value={schoolGradeLevel}
-        onChangeText={setSchoolGradeLevel}
-        placeholder="Leave blank if same as grade level"
-      />
-
-      {/* Math Levels */}
-      <Text style={styles.sectionTitle}>Math Skills</Text>
-
-      <Text style={styles.label}>Addition up to</Text>
       <View style={styles.optionRow}>
-        {ADDITION_OPTIONS.map(({ key, label }) => (
-          <TouchableOpacity
-            key={key}
-            style={[styles.optionButton, additionLevel === key && styles.optionButtonActive]}
-            onPress={() => setAdditionLevel(key)}
-          >
-            <Text
-              style={[
-                styles.optionButtonText,
-                additionLevel === key && styles.optionButtonTextActive,
-              ]}
-            >
-              {label}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-
-      <Text style={styles.label}>Subtraction up to</Text>
-      <View style={styles.optionRow}>
-        {SUBTRACTION_OPTIONS.map(({ key, label }) => (
-          <TouchableOpacity
-            key={key}
-            style={[styles.optionButton, subtractionLevel === key && styles.optionButtonActive]}
-            onPress={() => setSubtractionLevel(key)}
-          >
-            <Text
-              style={[
-                styles.optionButtonText,
-                subtractionLevel === key && styles.optionButtonTextActive,
-              ]}
-            >
-              {label}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-
-      <Text style={styles.label}>Multiplication</Text>
-      <View style={styles.optionRow}>
-        {MULTIPLICATION_OPTIONS.map(({ key, label }) => (
-          <TouchableOpacity
-            key={key}
-            style={[styles.optionButton, multiplicationLevel === key && styles.optionButtonActive]}
-            onPress={() => setMultiplicationLevel(key)}
-          >
-            <Text
-              style={[
-                styles.optionButtonText,
-                multiplicationLevel === key && styles.optionButtonTextActive,
-              ]}
-            >
-              {label}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-
-      <Text style={styles.label}>Division</Text>
-      <View style={styles.optionRow}>
-        {DIVISION_OPTIONS.map(({ key, label }) => (
-          <TouchableOpacity
-            key={key}
-            style={[styles.optionButton, divisionLevel === key && styles.optionButtonActive]}
-            onPress={() => setDivisionLevel(key)}
-          >
-            <Text
-              style={[styles.optionButtonText, divisionLevel === key && styles.optionButtonTextActive]}
-            >
-              {label}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-
-      {/* Preferences */}
-      <Text style={styles.sectionTitle}>Preferences</Text>
-
-      <Text style={styles.label}>Subjects to Focus On</Text>
-      <View style={styles.optionRow}>
-        {SUBJECTS.map(({ key, label }) => (
+        {SUBJECTS.map(({ key, labels }) => (
           <TouchableOpacity
             key={key}
             style={[styles.optionButton, (focusSubjects || []).includes(key) && styles.optionButtonActive]}
@@ -531,38 +571,8 @@ export default function ChildSettingsForm({
                 (focusSubjects || []).includes(key) && styles.optionButtonTextActive,
               ]}
             >
-              {label}
+              {labels[appLanguage]}
             </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-
-      <Text style={styles.label}>Main Goal</Text>
-      <View style={styles.optionRow}>
-        {MAIN_GOALS.map(({ key, label }) => (
-          <TouchableOpacity
-            key={key}
-            style={[styles.optionButton, mainGoal === key && styles.optionButtonActive]}
-            onPress={() => setMainGoal(key)}
-          >
-            <Text
-              style={[styles.optionButtonText, mainGoal === key && styles.optionButtonTextActive]}
-            >
-              {label}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-
-      <Text style={styles.label}>Avatar</Text>
-      <View style={styles.avatarGrid}>
-        {AVATARS.map((avatar) => (
-          <TouchableOpacity
-            key={avatar}
-            style={[styles.avatarButton, selectedAvatar === avatar && styles.avatarButtonActive]}
-            onPress={() => setSelectedAvatar(avatar)}
-          >
-            <Text style={styles.avatarEmoji}>{AVATAR_EMOJI[avatar]}</Text>
           </TouchableOpacity>
         ))}
       </View>
@@ -576,20 +586,20 @@ export default function ChildSettingsForm({
         {isSaving ? (
           <ActivityIndicator color="#fff" />
         ) : (
-          <Text style={styles.buttonText}>{isAddMode ? "Add Child" : "Save Settings"}</Text>
+          <Text style={styles.buttonText}>{isAddMode ? copy.addButton : copy.saveButton}</Text>
         )}
       </TouchableOpacity>
 
       <TouchableOpacity style={styles.cancelButton} onPress={() => onCancel?.()} disabled={isSaving}>
-        <Text style={styles.cancelButtonText}>Cancel</Text>
+        <Text style={styles.cancelButtonText}>{copy.cancel}</Text>
       </TouchableOpacity>
 
       {/* Danger Zone (only in edit mode) */}
       {!isAddMode && (
         <View style={styles.dangerZone}>
-          <Text style={styles.dangerZoneTitle}>Danger Zone</Text>
+          <Text style={styles.dangerZoneTitle}>{copy.dangerZone}</Text>
           <TouchableOpacity style={styles.deleteButton} onPress={handleDelete}>
-            <Text style={styles.deleteButtonText}>Delete {name}</Text>
+            <Text style={styles.deleteButtonText}>{copy.deleteChild.replace("{name}", name)}</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -615,13 +625,20 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 24,
     fontWeight: "700",
-    marginBottom: 24,
+    marginBottom: 20,
     color: "#1a1a1a",
   },
   sectionTitle: {
     fontSize: 16,
     fontWeight: "700",
     color: "#1a1a1a",
+    marginTop: 20,
+    marginBottom: 12,
+  },
+  sectionTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
     marginTop: 20,
     marginBottom: 12,
   },
@@ -642,11 +659,78 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginBottom: 16,
   },
-  pickerContainer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
+  infoBox: {
+    backgroundColor: "#f1f5f9",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    padding: 12,
     marginBottom: 16,
+  },
+  infoText: {
+    color: "#475569",
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  infoIcon: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: "#e3f2fd",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  infoIconText: {
+    color: "#2196f3",
+    fontWeight: "800",
+    fontSize: 13,
+  },
+  dropdownButton: {
+    borderWidth: 1,
+    borderColor: "#ddd",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    marginBottom: 8,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    backgroundColor: "#fff",
+  },
+  dropdownButtonDisabled: {
+    backgroundColor: "#f5f5f5",
+    opacity: 0.7,
+  },
+  dropdownButtonText: {
+    color: "#1f2933",
+    fontSize: 15,
+    fontWeight: "600",
+    flex: 1,
+    paddingRight: 8,
+  },
+  dropdownChevron: {
+    color: "#64748b",
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  dropdownMenu: {
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    borderRadius: 8,
+    marginBottom: 16,
+    overflow: "hidden",
+  },
+  dropdownItem: {
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f1f5f9",
+    backgroundColor: "#fff",
+  },
+  dropdownItemText: {
+    color: "#334155",
+    fontSize: 14,
+    fontWeight: "600",
   },
   optionRow: {
     flexDirection: "row",
@@ -673,29 +757,6 @@ const styles = StyleSheet.create({
   },
   optionButtonTextActive: {
     color: "#fff",
-  },
-  avatarGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 12,
-    marginBottom: 24,
-  },
-  avatarButton: {
-    width: "23%",
-    aspectRatio: 1,
-    backgroundColor: "#f5f5f5",
-    borderWidth: 2,
-    borderColor: "#ddd",
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  avatarButtonActive: {
-    borderColor: "#0000ff",
-    backgroundColor: "#f0f8ff",
-  },
-  avatarEmoji: {
-    fontSize: 32,
   },
   saveButton: {
     backgroundColor: "#0000ff",

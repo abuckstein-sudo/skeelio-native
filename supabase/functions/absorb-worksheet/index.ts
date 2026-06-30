@@ -11,30 +11,58 @@ const INITIAL_PROMPT = `You are an expert elementary teacher (ages 6–10). You 
 {
  "language": "<the page's language>",
  "domain": "math" | "language",
- "source_type": "worksheet" | "textbook" | "explanatory" | "other",
+ "source_type": "worksheet" | "textbook" | "explanatory" | "spelling_list" | "other",
+ "spelling_words": ["<only when source_type is spelling_list: each spelling-list entry exactly as written, preserving accents/articles/apostrophes>"],
  "grade_band": "<best guess, e.g. CP-CE1 or Grade 1-2>",
  "concept": {
    "label": "<short name in the page's language>",
    "description": "<1–2 sentences in the page's language>",
-   "sub_skills": [ { "label": "<sub-skill name in page's language>", "description": "<1 sentence in page's language>" }, ... ]
+   "sub_skills": [ { "label": "<sub-skill name in page's language>", "description": "<1 sentence in page's language>" }, ... ],
+   "school_method": {
+     "name": "<short name for the classroom method/representation, or empty string if none is visible>",
+     "labels": ["<symbols/labels used on the worksheet, e.g. c, d, u>"],
+     "meaning": { "<label>": "<what it means in the page's language>" },
+     "when_to_use": "<when this method applies>"
+   },
+   "question_forms": [
+     {
+       "name": "<worksheet question form, e.g. fill c-d-u table, compare numbers, conjugation grid>",
+       "description": "<how questions are presented on the page>",
+       "same_form_prompt": "<how to generate another question in the same form>"
+     }
+   ],
+   "practice_modes": ["same_form", "near_transfer", "far_transfer"],
+   "evidence_policy": "context_only"
  },
- "lesson": "<a short, warm, age-appropriate mini-lesson in the page's language; plain text, no markdown>",
+ "lesson": "<a short, warm, age-appropriate mini-lesson in the page's language; plain text, no markdown. It MUST explicitly explain the detected classroom method/notation and at least one worksheet question form. If the page uses c/d/u, explain c=centaines, d=dizaines, u=unités and how to compare or transform collections with that notation before mentioning any broader topic.>",
  "practice": [ <exactly 6 items, DISTRIBUTED EVENLY across all sub_skills; each tagged with its sub_skill> ]
 }
 CRITICAL: Distribute the 6 practice items roughly evenly across ALL sub_skills — if there are 3 sub_skills, generate ~2 items for each. Do NOT cluster on one sub_skill.
+SPELLING LIST RULE:
+- If the page is mainly a list of words for the child to learn, classify it as source_type "spelling_list", domain "language".
+- Do NOT call it "vocabulary" unless the page asks for definitions, synonyms, categories, or meanings.
+- Extract the words/list entries into spelling_words exactly as written, preserving accents, apostrophes, and articles.
+- For spelling_list pages, the concept label should be "Spelling list" in English or "Liste d'orthographe" in French.
+- For spelling_list pages, practice items must be spelling prompts anchored ONLY to spelling_words, never invented vocabulary/meaning questions.
+LANGUAGE LABEL RULE:
+- If the page asks the child to conjugate verbs, the concept label MUST be a conjugation label in the page language, such as "Conjugaison" or "Conjuguer au présent". Do NOT label conjugation pages as "vocabulaire".
+- Use "vocabulaire" / "vocabulary" ONLY when the page asks about meanings, definitions, synonyms, categories, or word knowledge.
 Each practice MATH item MUST be SELF-CONTAINED — the question text includes EVERY number needed:
 - { "kind":"math", "answer_type":"number"|"yesno", "sub_skill":"<which sub_skill>", "unit":"€"|"" (€ if the answer is a money amount; "" if a plain count), "question":"<COMPLETE word problem in page's language with EVERY numeric value stated explicitly. E.g. 'Un livre coûte 5,20 € et un cahier coûte 3,50 €. Si tu achètes un livre et un cahier, combien dépenses-tu en tout ?' or 'Tu as 15 €. Une paire de chaussures coûte 12 €. As-tu assez d'argent pour les chaussures ?'>", "check_expression":"<arithmetic or boolean expression using the exact numeric values stated in the question text (in standard decimal form, e.g., 5.20 not 5,20); no variable names, only literals>", "claimed_answer":<number for 'number' type, or boolean for 'yesno'> }
 Other items (reference, open) can use simple text.
 CRITICAL:
 1. Derive sub_skills ONLY from question types on the page (don't invent).
-2. Each math item INVENTS a fresh scenario (different items/prices than the sheet) — NO reuse of sheet values.
-3. VARY the real-world contexts across items — rotate among everyday kid settings: school supplies (pencils, notebooks, erasers), toys (action figures, building blocks, board games), snacks/groceries (fruit, candy, juice, milk), sports gear (balls, skates, bikes), clothing (shoes, jackets, hats), books/comics. Do NOT stay only on the sheet's domain.
-4. EVERY number the child needs MUST appear in the question text itself (use French comma decimals: 5,20 € not 5.20 €).
-5. check_expression uses the SAME numbers as in the question, in standard decimal form (5.20 not 5,20).
-6. Include a "how many can you buy" item where relevant (e.g., "Tu as 10 €. Un stylo coûte 2 €. Combien de stylos peux-tu acheter?").
-7. Each item is distinct, NO duplicates; ALL text in page's language only.`;
+2. Identify the school method/representation from the page when visible: notation, labels, table layout, sentence frame, operation setup, diagram style, grammar terms, or teacher method. Example: if the page uses c/d/u, record c=centaines, d=dizaines, u=unités.
+3. evidence_policy MUST be "context_only": scanning a worksheet gives school context, not proficiency/mastery credit.
+3a. The lesson must teach from the visible school method, not just summarize the worksheet. For c/d/u pages, the lesson should sound like: "c veut dire centaines, d veut dire dizaines, u veut dire unités..." and show how to use that for the worksheet forms.
+4. Same-form math items MUST preserve the worksheet's task shape and classroom method. If the page uses c/d/u place value, generate c/d/u comparison, equalizing, or equivalent-writing items; do NOT turn those into generic multiplication, shopping, packets, students, balloons, or pens word problems.
+5. Only use fresh real-world scenarios for far-transfer items where that does not erase the worksheet method. If the page mixes sections, keep each generated item tied to a visible question form from the photo.
+6. EVERY number the child needs MUST appear in the question text itself (use French comma decimals: 5,20 € not 5.20 €).
+7. check_expression uses the SAME numbers as in the question, in standard decimal form (5.20 not 5,20).
+8. Include a "how many can you buy" item where relevant (e.g., "Tu as 10 €. Un stylo coûte 2 €. Combien de stylos peux-tu acheter?").
+9. Each item is distinct, NO duplicates; ALL text in page's language only.`;
 
-const RETRY_PROMPT = (subSkillsList: string, language: string) => `Generate 4 more DISTINCT math practice items (${language}) for sub-skills: ${subSkillsList}. Distribute evenly across the sub-skills listed. EACH ITEM MUST BE SELF-CONTAINED — every number the child needs must be IN THE QUESTION TEXT. Vary contexts widely across everyday kid settings: school supplies, toys, snacks/groceries, sports gear, clothing, books. Structure:
+const RETRY_PROMPT = (subSkillsList: string, language: string) => `Generate 4 more DISTINCT math practice items (${language}) for sub-skills: ${subSkillsList}. Distribute evenly across the sub-skills listed. EACH ITEM MUST BE SELF-CONTAINED — every number the child needs must be IN THE QUESTION TEXT. Preserve the worksheet task shape when the sub-skill names imply a specific school method such as c/d/u, equivalent writings, comparison, or equalizing collections. Structure:
 {
   "kind":"math",
   "answer_type":"number"|"yesno",
@@ -77,7 +105,7 @@ Structure:
 Return ONLY the JSON array, NO EXPLANATION, ALL TEXT IN ${language}:
 [...]`;
 
-const MATH_TOPUP_PROMPT = (subSkill: string, language: string) => `Generate 4 more math practice items (${language}) focused ONLY on the sub-skill: "${subSkill}". EACH ITEM MUST BE SELF-CONTAINED — every number the child needs must be IN THE QUESTION TEXT. Vary contexts (school supplies, toys, snacks, sports, clothing, books). Return ONLY the JSON array with structure { "kind":"math", "answer_type":"...", "sub_skill":"${subSkill}", "unit":"€"|"" (€ if money; "" if count), "question":"...", "check_expression":"...", "claimed_answer":... }:
+const MATH_TOPUP_PROMPT = (subSkill: string, language: string) => `Generate 4 more math practice items (${language}) focused ONLY on the sub-skill: "${subSkill}". EACH ITEM MUST be SELF-CONTAINED — every number the child needs must be IN THE QUESTION TEXT. Preserve worksheet-shaped methods such as c/d/u notation, equivalent writings, comparison, or equalizing collections instead of turning them into generic word problems. Return ONLY the JSON array with structure { "kind":"math", "answer_type":"...", "sub_skill":"${subSkill}", "unit":"€"|"" (€ if money; "" if count), "question":"...", "check_expression":"...", "claimed_answer":... }:
 [...]`;
 
 const LANGUAGE_TOPUP_PROMPT = (subSkill: string, language: string, conceptScope: string) => `Generate 4 more grammar/language practice items (${language}) focused ONLY on the sub-skill: "${subSkill}". Constrain to the RULE taught (NO irregulars/exceptions beyond scope).
@@ -154,12 +182,26 @@ Deno.serve(async (req) => {
     if (!worksheet) {
       return json({ error: "Failed to parse worksheet absorption" }, 502);
     }
+    attachWorksheetContextToConcept(worksheet);
 
     const domainRaw = worksheet.domain as string || "math";
     const languageRaw = worksheet.language as string;
 
     const isFr = isFrench(languageRaw);
     const isEn = isEnglish(languageRaw);
+    if (isLikelyWordListWorksheet(worksheet) && !hasEnoughSpellingWords(worksheet)) {
+      const extractedWords = await extractSpellingWordsFromImage(image, languageRaw);
+      if (extractedWords.length >= 3) {
+        worksheet.source_type = "spelling_list";
+        worksheet.domain = "language";
+        worksheet.spelling_words = extractedWords;
+      }
+    }
+
+    const spellingList = normalizeSpellingListWorksheet(worksheet);
+    if (spellingList) {
+      return json(spellingList, 200);
+    }
 
     let pathTaken = "math";
 
@@ -542,6 +584,172 @@ function isEnglish(language: string): boolean {
   return lower.includes("angl") || lower.includes("engl") || lower.startsWith("en");
 }
 
+function cleanSpellingEntry(value: unknown): string {
+  return String(value ?? "")
+    .normalize("NFC")
+    .replace(/^[\s\d.)\]-]+/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function hasEnoughSpellingWords(worksheet: Record<string, unknown>): boolean {
+  const rawWords = Array.isArray(worksheet.spelling_words) ? worksheet.spelling_words : [];
+  return rawWords.map(cleanSpellingEntry).filter((word) => word.length > 0).length >= 3;
+}
+
+function isLikelyWordListWorksheet(worksheet: Record<string, unknown>): boolean {
+  const sourceType = String(worksheet.source_type ?? "")
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase();
+  const conceptText = buildConceptScope(worksheet)
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase();
+
+  return (
+    sourceType === "spelling_list" ||
+    conceptText.includes("liste de mots") ||
+    conceptText.includes("mots de vocabulaire") ||
+    conceptText.includes("mots a apprendre") ||
+    conceptText.includes("orthographe") ||
+    conceptText.includes("word list") ||
+    conceptText.includes("spelling list")
+  );
+}
+
+async function extractSpellingWordsFromImage(image: string, language: string): Promise<string[]> {
+  const prompt = `You are reading a photo of a child's spelling or vocabulary word-list sheet.
+
+Return ONLY JSON:
+{ "words": ["<each visible list entry exactly as written>"] }
+
+Rules:
+- Extract only words or short entries visibly printed on the page.
+- Preserve accents, apostrophes, slashes, and articles exactly, e.g. "l'instituteur/l'institutrice", "premier/première".
+- Ignore handwriting, notebook lines, titles, dates, and explanations.
+- Do not invent words. If fewer than 3 list entries are visible, return { "words": [] }.
+- The page language appears to be ${language || "unknown"}.`;
+
+  try {
+    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
+      body: JSON.stringify({
+        model: "gpt-4o",
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: prompt },
+              { type: "image_url", image_url: { url: image } },
+            ],
+          },
+        ],
+      }),
+    });
+
+    if (!res.ok) {
+      console.error("[absorb-worksheet] spelling extraction error:", res.status);
+      return [];
+    }
+
+    const data = await res.json();
+    const raw = data.choices?.[0]?.message?.content ?? "";
+    const parsed = parseJsonResponse(raw);
+    const words = Array.isArray(parsed?.words) ? parsed.words : [];
+    return Array.from(new Set(words.map(cleanSpellingEntry).filter((word) => word.length > 0)));
+  } catch (error) {
+    console.error("[absorb-worksheet] spelling extraction failed:", error);
+    return [];
+  }
+}
+
+function normalizeSpellingListWorksheet(worksheet: Record<string, unknown>): Record<string, unknown> | null {
+  const sourceType = String(worksheet.source_type ?? "")
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase();
+  const conceptText = buildConceptScope(worksheet)
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase();
+  const rawWords = Array.isArray(worksheet.spelling_words) ? worksheet.spelling_words : [];
+  const words = Array.from(new Set(rawWords.map(cleanSpellingEntry).filter((word) => word.length > 0)));
+
+  const looksLikeSpellingList =
+    sourceType === "spelling_list" ||
+    words.length >= 3 ||
+    (
+      conceptText.includes("orthographe") ||
+      conceptText.includes("spelling list") ||
+      conceptText.includes("mots a apprendre") ||
+      conceptText.includes("word list")
+    );
+
+  if (!looksLikeSpellingList || words.length < 3) return null;
+
+  const language = String(worksheet.language ?? "");
+  const french = isFrench(language);
+  const conceptLabel = french ? "Liste d'orthographe" : "Spelling list";
+  const description = french
+    ? "S'entraîner à écrire correctement les mots de la liste."
+    : "Practice spelling the words from the list correctly.";
+  const prompt = french ? "Écris le mot dicté" : "Spell the dictated word";
+
+  worksheet.domain = "language";
+  worksheet.source_type = "spelling_list";
+  worksheet.concept = {
+    label: conceptLabel,
+    description,
+    sub_skills: [{ label: conceptLabel, description }],
+  };
+  worksheet.lesson = french
+    ? "Lis chaque mot attentivement, écoute ses sons, puis écris-le en gardant les accents et les lettres dans le bon ordre."
+    : "Read each word carefully, listen to its sounds, then write it with every letter in the correct order.";
+    worksheet.spelling_words = words;
+  attachWorksheetContextToConcept(worksheet);
+  worksheet.practice = words.slice(0, 6).map((word) => ({
+    kind: "spelling",
+    sub_skill: conceptLabel,
+    question: `${prompt} : « ${word} »`,
+    answer: word,
+  }));
+  worksheet.debug = {
+    ...(worksheet.debug as Record<string, unknown> | undefined),
+    path_taken: "spelling_list",
+    spelling_word_count: words.length,
+  };
+
+  return worksheet;
+}
+
+function attachWorksheetContextToConcept(worksheet: Record<string, unknown>) {
+  const concept = (worksheet.concept ?? {}) as Record<string, unknown>;
+
+  const schoolMethod = concept.school_method || worksheet.school_method || {
+    name: "",
+    labels: [],
+    meaning: {},
+    when_to_use: "",
+  };
+  const questionForms = concept.question_forms || worksheet.question_forms || [];
+  const practiceModes = concept.practice_modes || worksheet.practice_modes || [
+    "same_form",
+    "near_transfer",
+    "far_transfer",
+  ];
+
+  worksheet.concept = {
+    ...concept,
+    school_method: schoolMethod,
+    question_forms: questionForms,
+    practice_modes: practiceModes,
+    evidence_policy: "context_only",
+  };
+  worksheet.evidence_policy = "context_only";
+}
+
 // Normalize text for language answer comparison: NFC, lowercase, trim, collapse whitespace, replace curly quotes, strip articles, strip punctuation, keep accents
 function normalizeAnswerText(text: string): string {
   let normalized = text
@@ -631,6 +839,37 @@ function isLikelyConjugationPractice(worksheet: Record<string, unknown>): boolea
   );
 }
 
+function normalizeLanguageConceptLabel(
+  worksheet: Record<string, unknown>,
+  language: string,
+  isConjugationPractice: boolean,
+  subSkills: string[]
+) {
+  if (!isConjugationPractice) return;
+
+  const french = isFrench(language);
+  const concept = (worksheet.concept ?? {}) as {
+    label?: string;
+    description?: string;
+    sub_skills?: Array<{ label?: string; description?: string }>;
+  };
+  const preferredLabel = subSkills[0] || (french ? "Conjugaison" : "Conjugation");
+  const existingDescription = concept.description || "";
+  const fallbackDescription = french
+    ? "S'entraîner à conjuguer les verbes avec le bon pronom et le bon temps."
+    : "Practice conjugating verbs with the correct pronoun and tense.";
+
+  worksheet.concept = {
+    ...concept,
+    label: preferredLabel,
+    description: existingDescription || fallbackDescription,
+    sub_skills: subSkills.map((label) => ({
+      label,
+      description: concept.sub_skills?.find((skill) => skill.label === label)?.description || fallbackDescription,
+    })),
+  };
+}
+
 function getLanguageSubSkills(worksheet: Record<string, unknown>, isConjugationPractice: boolean): string[] {
   if (isConjugationPractice) {
     const scope = buildConceptScope(worksheet)
@@ -639,9 +878,9 @@ function getLanguageSubSkills(worksheet: Record<string, unknown>, isConjugationP
       .toLowerCase();
 
     if (scope.includes("futur")) return ["Conjuguer au futur simple"];
-    if (scope.includes("present")) return ["Conjuguer au present"];
-    if (scope.includes("imparfait")) return ["Conjuguer a l'imparfait"];
-    if (scope.includes("passe compose")) return ["Conjuguer au passe compose"];
+    if (scope.includes("present")) return ["Conjuguer au présent"];
+    if (scope.includes("imparfait")) return ["Conjuguer à l'imparfait"];
+    if (scope.includes("passe compose")) return ["Conjuguer au passé composé"];
     return ["Conjuguer le verbe"];
   }
 
@@ -698,9 +937,10 @@ function shouldRejectLanguageItem(item: Record<string, unknown>, isConjugationPr
 
 // Handle language/grammar practice: generate, verify by re-solving, filter
 async function handleLanguagePractice(worksheet: Record<string, unknown>, language: string, domainRaw: string): Promise<Response> {
-  const conceptScope = buildConceptScope(worksheet);
   const isConjugationPractice = isLikelyConjugationPractice(worksheet);
   const allSubSkills = getLanguageSubSkills(worksheet, isConjugationPractice);
+  normalizeLanguageConceptLabel(worksheet, language, isConjugationPractice, allSubSkills);
+  const conceptScope = buildConceptScope(worksheet);
   const subSkillsList = allSubSkills.join(", ");
 
   // Generate 8 candidate language items

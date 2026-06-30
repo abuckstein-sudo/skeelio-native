@@ -14,7 +14,7 @@ import {
   Platform,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { LADDERS, TEACH_NOTES, Operation, FACT_TIERS } from "@/lib/tutorConfig";
+import { Operation, FACT_TIERS, teachNoteForTier } from "@/lib/tutorConfig";
 import {
   pickAdditionStrategy,
   pickSubtractionStrategy,
@@ -24,6 +24,9 @@ import {
 import { pickTeachExample } from "@/lib/tutor/generate";
 import { computeExampleSteps } from "@/lib/tutor/steps";
 import { StrategyView } from "@/lib/tutor/visuals";
+import QuitButton from "@/components/QuitButton";
+import { supabase } from "@/lib/supabase";
+import { appLanguageForChild, AppLanguage } from "@/lib/appLanguage";
 
 const styles = StyleSheet.create({
   container: {
@@ -32,7 +35,9 @@ const styles = StyleSheet.create({
   },
   contentScroll: {
     flexGrow: 1,
-    padding: 20,
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+    paddingTop: 64,
   },
   header: {
     fontSize: 22,
@@ -141,6 +146,45 @@ interface TierInfo {
   operation: Operation;
 }
 
+const COPY = {
+  en: {
+    loading: "Loading...",
+    learn: "Let's learn:",
+    how: "How it works",
+    yourTurn: "Your turn",
+    placeholder: "Enter your answer",
+    nice: "Nice! ✓",
+    hide: "Hide",
+    showMe: "Show me how",
+    check: "Check",
+    ready: "Ready?",
+    readyPractice: (tier: string) => `Ready to practice ${tier}?`,
+    letsGo: "Let's go",
+    skip: "Skip",
+    gotIt: "Got it",
+    next: "Next",
+    start: "Start practice",
+  },
+  fr: {
+    loading: "Chargement...",
+    learn: "On apprend :",
+    how: "Comment ça marche",
+    yourTurn: "À toi",
+    placeholder: "Écris ta réponse",
+    nice: "Bravo ! ✓",
+    hide: "Masquer",
+    showMe: "Montre-moi",
+    check: "Valider",
+    ready: "Prêt ?",
+    readyPractice: (tier: string) => `Prêt à t'entraîner : ${tier} ?`,
+    letsGo: "C'est parti",
+    skip: "Passer",
+    gotIt: "J'ai compris",
+    next: "Suivant",
+    start: "Commencer",
+  },
+} as const;
+
 export default function LessonScreen() {
   const router = useRouter();
   const { childId, tierId, tierLabel, operation } = useLocalSearchParams<{
@@ -154,6 +198,17 @@ export default function LessonScreen() {
   const [userAnswer, setUserAnswer] = useState("");
   const [showAnswer, setShowAnswer] = useState(false);
   const [isCorrect, setIsCorrect] = useState(false);
+  const [appLanguage, setAppLanguage] = useState<AppLanguage>("en");
+
+  useEffect(() => {
+    if (!childId) return;
+    supabase
+      .from("children")
+      .select("languages, preferred_language")
+      .eq("id", childId)
+      .single()
+      .then(({ data }) => setAppLanguage(appLanguageForChild(data)));
+  }, [childId]);
 
   // Keep your-turn example stable across re-renders (only compute once per tier)
   const yourTurnQRef = useRef<any>(null);
@@ -162,10 +217,11 @@ export default function LessonScreen() {
   }
 
   if (!childId || !tierId || !tierLabel || !operation) {
+    const copy = COPY[appLanguage];
     return (
       <SafeAreaView style={styles.container} edges={["top"]}>
         <View style={styles.contentScroll}>
-          <Text>Loading...</Text>
+          <Text>{copy.loading}</Text>
         </View>
       </SafeAreaView>
     );
@@ -193,8 +249,9 @@ export default function LessonScreen() {
       ? "×"
       : "÷";
 
-  const teachNotes = TEACH_NOTES[tierId] || "";
+  const teachNotes = teachNoteForTier(tierId, appLanguage);
   const isFactTier = FACT_TIERS.has(tierId);
+  const copy = COPY[appLanguage];
 
   const handleCheck = () => {
     const correct = String(yourTurnQ.answer) === userAnswer.trim();
@@ -230,6 +287,7 @@ export default function LessonScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
+      <QuitButton />
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={styles.container}
@@ -238,7 +296,8 @@ export default function LessonScreen() {
         {page === 0 && (
           <>
             <Text style={styles.header}>
-              {"Let's learn: "}
+              {copy.learn}
+              {" "}
               {tierLabel}
             </Text>
             <Text style={styles.subtitle}>{teachNotes}</Text>
@@ -247,7 +306,7 @@ export default function LessonScreen() {
 
         {page === 1 && (
           <>
-            <Text style={styles.header}>How it works</Text>
+            <Text style={styles.header}>{copy.how}</Text>
             <View style={styles.exampleBox}>
               <Text style={styles.exampleText}>
                 {exampleQ.a} {opSymbol} {exampleQ.b} = ?
@@ -270,7 +329,7 @@ export default function LessonScreen() {
               })()
             ) : (
               <View>
-                {computeExampleSteps(operation as Operation, exampleQ.a, exampleQ.b, exampleQ.remainder).map(
+                {computeExampleSteps(operation as Operation, exampleQ.a, exampleQ.b, exampleQ.remainder, appLanguage).map(
                   (step, i) => (
                     <Text key={i} style={styles.stepText}>
                       {step}
@@ -285,7 +344,7 @@ export default function LessonScreen() {
         {page === 2 && (
           <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
             <View style={styles.yourTurnContent}>
-              <Text style={styles.header}>Your turn</Text>
+              <Text style={styles.header}>{copy.yourTurn}</Text>
               <View style={styles.exampleBox}>
                 <Text style={styles.exampleText}>
                   {yourTurnQ.a} {opSymbol} {yourTurnQ.b} = ?
@@ -294,14 +353,14 @@ export default function LessonScreen() {
 
               <TextInput
                 style={styles.inputBox}
-                placeholder="Enter your answer"
+                placeholder={copy.placeholder}
                 keyboardType="number-pad"
                 value={userAnswer}
                 onChangeText={setUserAnswer}
                 editable={!isCorrect}
               />
 
-              {isCorrect && <Text style={styles.feedbackText}>Nice! ✓</Text>}
+              {isCorrect && <Text style={styles.feedbackText}>{copy.nice}</Text>}
 
               <View style={styles.buttonRow}>
                 <TouchableOpacity
@@ -309,11 +368,11 @@ export default function LessonScreen() {
                   onPress={() => setShowAnswer(!showAnswer)}
                 >
                   <Text style={[styles.buttonText, styles.buttonTextSecondary]}>
-                    {showAnswer ? "Hide" : "Show me how"}
+                    {showAnswer ? copy.hide : copy.showMe}
                   </Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.button} onPress={handleCheck} disabled={!userAnswer.trim() || isCorrect}>
-                  <Text style={styles.buttonText}>Check</Text>
+                  <Text style={styles.buttonText}>{copy.check}</Text>
                 </TouchableOpacity>
               </View>
 
@@ -335,7 +394,7 @@ export default function LessonScreen() {
                     })()
                   ) : (
                     <View>
-                      {computeExampleSteps(operation as Operation, yourTurnQ.a, yourTurnQ.b, yourTurnQ.remainder).map(
+                      {computeExampleSteps(operation as Operation, yourTurnQ.a, yourTurnQ.b, yourTurnQ.remainder, appLanguage).map(
                         (step, i) => (
                           <Text key={i} style={styles.stepText}>
                             {step}
@@ -352,8 +411,8 @@ export default function LessonScreen() {
 
         {page === 3 && (
           <>
-            <Text style={styles.header}>Ready?</Text>
-            <Text style={styles.subtitle}>Ready to practice {tierLabel}?</Text>
+            <Text style={styles.header}>{copy.ready}</Text>
+            <Text style={styles.subtitle}>{copy.readyPractice(tierLabel)}</Text>
           </>
         )}
 
@@ -361,26 +420,26 @@ export default function LessonScreen() {
           {page === 0 && (
             <>
               <TouchableOpacity style={styles.navButton} onPress={() => setPage(1)}>
-                <Text style={styles.navButtonText}>{"Let's go"}</Text>
+                <Text style={styles.navButtonText}>{copy.letsGo}</Text>
               </TouchableOpacity>
               <TouchableOpacity style={[styles.navButton, { backgroundColor: "#f0f0f0" }]} onPress={handleSkip}>
-                <Text style={[styles.navButtonText, { color: "#1a1a1a" }]}>Skip</Text>
+                <Text style={[styles.navButtonText, { color: "#1a1a1a" }]}>{copy.skip}</Text>
               </TouchableOpacity>
             </>
           )}
           {page === 1 && (
             <TouchableOpacity style={styles.navButton} onPress={() => setPage(2)}>
-              <Text style={styles.navButtonText}>Got it</Text>
+              <Text style={styles.navButtonText}>{copy.gotIt}</Text>
             </TouchableOpacity>
           )}
           {page === 2 && (
             <TouchableOpacity style={styles.navButton} onPress={handleNext} disabled={!isCorrect}>
-              <Text style={styles.navButtonText}>Next</Text>
+              <Text style={styles.navButtonText}>{copy.next}</Text>
             </TouchableOpacity>
           )}
           {page === 3 && (
             <TouchableOpacity style={styles.navButton} onPress={handleNext}>
-              <Text style={styles.navButtonText}>Start practice</Text>
+              <Text style={styles.navButtonText}>{copy.start}</Text>
             </TouchableOpacity>
           )}
         </View>

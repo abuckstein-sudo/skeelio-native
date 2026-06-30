@@ -11,6 +11,7 @@ import {
   View,
 } from "react-native";
 import { supabase } from "@/lib/supabase";
+import { ensureParentProfile } from "@/lib/parentProfile";
 
 type AuthMode = "sign-in" | "create";
 
@@ -46,6 +47,10 @@ export default function LoginScreen() {
       setPassword("");
       setIsLoading(false);
       return;
+    }
+
+    if (result.data.user) {
+      await ensureParentProfile(result.data.user);
     }
 
     console.log("[auth] auth successful");

@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
 import {
   View,
   Text,
@@ -9,14 +9,15 @@ import {
   SafeAreaView,
   Modal,
   TextInput,
-  Alert,
   useWindowDimensions,
+  Alert,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { supabase } from "@/lib/supabase";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import GiraffeBackground from "@/components/GiraffeBackground";
+import { getHomeworkLockStatus } from "@/lib/homeworkTime";
 
 interface Child {
   id: string;
@@ -24,7 +25,10 @@ interface Child {
   grade_level: string;
   school_system?: string;
   pin: string;
-  selected_avatar?: string;
+  pin_setup_required?: boolean;
+  selected_avatar?: string | null;
+  intro_seen?: boolean;
+  created_at?: string;
 }
 
 const AVATAR_EMOJI: Record<string, string> = {
@@ -60,9 +64,11 @@ export default function ChildrenScreen() {
   const pinInputRef = useRef<TextInput>(null);
   const childTileWidth = Math.max(140, (width - 64) / 2);
 
-  useEffect(() => {
-    fetchChildren();
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      fetchChildren();
+    }, [])
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -101,7 +107,8 @@ export default function ChildrenScreen() {
 
     const { data, error: dbError } = await supabase
       .from("children")
-      .select("id, name, grade_level, school_system, pin, selected_avatar");
+      .select("id, name, grade_level, school_system, pin, pin_setup_required, selected_avatar, intro_seen, created_at")
+      .order("created_at", { ascending: true });
 
     if (dbError) {
       console.log("[nav] children fetch error:", dbError.message);
@@ -128,7 +135,28 @@ export default function ChildrenScreen() {
     setIsLoading(false);
   };
 
-  const handleSelectChild = (child: Child) => {
+  const showLimitMessageIfLocked = async (child: Child): Promise<boolean> => {
+    const status = await getHomeworkLockStatus(child.id);
+    if (!status.locked) return false;
+
+    Alert.alert(
+      "You have done a lot of work today!",
+      "Go play or let your adult know you need more time."
+    );
+    return true;
+  };
+
+  const handleSelectChild = async (child: Child) => {
+    if (await showLimitMessageIfLocked(child)) return;
+
+    if (child.pin_setup_required) {
+      router.push({
+        pathname: "/child-home/[childId]",
+        params: { childId: child.id },
+      });
+      return;
+    }
+
     console.log("[nav] opening PIN for:", child.id);
     setSelectedChildForPin(child);
     setPinModalVisible(true);
@@ -136,10 +164,16 @@ export default function ChildrenScreen() {
     setPinError("");
   };
 
-  const handlePinSubmit = () => {
+  const handlePinSubmit = async () => {
     if (!selectedChildForPin) return;
 
     if (enteredPin === selectedChildForPin.pin) {
+      if (await showLimitMessageIfLocked(selectedChildForPin)) {
+        setPinModalVisible(false);
+        setEnteredPin("");
+        setPinError("");
+        return;
+      }
       console.log("[nav] PIN correct, navigating to child home");
       setPinModalVisible(false);
       setEnteredPin("");
@@ -165,14 +199,6 @@ export default function ChildrenScreen() {
     setSelectedChildForPin(null);
     setEnteredPin("");
     setPinError("");
-  };
-
-  const handleParent = (childId: string) => {
-    console.log("[nav] parent dashboard:", childId);
-    router.push({
-      pathname: "/child/[id]",
-      params: { id: childId },
-    });
   };
 
   const handleParentSection = () => {
@@ -229,7 +255,7 @@ export default function ChildrenScreen() {
                 style={[styles.childTile, { width: childTileWidth }]}
                 onPress={() => handleSelectChild(item)}
               >
-                {item.selected_avatar && (
+                {item.intro_seen && item.selected_avatar && (
                   <Text style={styles.avatarEmoji}>
                     {AVATAR_EMOJI[item.selected_avatar] || AVATAR_EMOJI.fox}
                   </Text>
@@ -257,8 +283,12 @@ export default function ChildrenScreen() {
         animationType="fade"
         onRequestClose={handlePinCancel}
       >
-        <View style={styles.pinModalOverlay}>
-          <View style={styles.pinModalContainer}>
+        <TouchableOpacity style={styles.pinModalOverlay} activeOpacity={1} onPress={handlePinCancel}>
+          <TouchableOpacity
+            style={styles.pinModalContainer}
+            activeOpacity={1}
+            onPress={(event) => event.stopPropagation()}
+          >
             <Text style={styles.pinModalTitle}>
               {selectedChildForPin?.name}
               {"'s PIN"}
@@ -294,8 +324,8 @@ export default function ChildrenScreen() {
                 <Text style={styles.pinButtonCancelText}>Cancel</Text>
               </TouchableOpacity>
             </View>
-          </View>
-        </View>
+          </TouchableOpacity>
+        </TouchableOpacity>
       </Modal>
     </SafeAreaView>
   );
