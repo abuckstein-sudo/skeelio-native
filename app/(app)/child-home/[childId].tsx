@@ -96,19 +96,19 @@ const TIER_LABEL_COPY: Record<ChildHomeLanguage, Partial<Record<string, string>>
   en: {},
   fr: {
     A1: "les additions jusqu'à 10",
-    A2: "les additions jusqu'à 20 avec passage par 10",
+    A2: "les additions jusqu'à 18 avec passage par 10",
     A3: "les additions à deux chiffres plus un chiffre",
     A4: "les additions à deux chiffres sans retenue",
     A5: "les additions à deux chiffres avec retenue",
     A6: "les additions à trois chiffres avec retenue",
-    A7: "les grandes additions avec retenue",
+    A7: "les additions à quatre chiffres, avec ou sans retenue",
     S1: "les soustractions jusqu'à 10 sans emprunt",
     S2: "les soustractions jusqu'à 20 avec passage par 10",
     S3: "les soustractions à deux chiffres moins un chiffre",
     S4: "les soustractions à deux chiffres sans emprunt",
     S5: "les soustractions à deux chiffres avec emprunt",
     S6: "les soustractions à trois chiffres avec emprunt",
-    S7: "les grandes soustractions avec emprunts",
+    S7: "les soustractions à quatre chiffres avec emprunt à travers les zéros",
     M1: "les tables de 0, 1, 2 et 10",
     M2: "la table de 5",
     M3: "les tables de 3 et 4",
@@ -1059,7 +1059,8 @@ export default function ChildHomeScreen() {
   const hasRemainingHomework = homeworkFeed.length > 0 || remainingSchoolHomeworkCount > 0;
   const allMathStatusesLoaded = MATH_OPERATIONS.every((operation) => operationStatuses[operation]);
   const allMathSolid = allMathStatusesLoaded && MATH_OPERATIONS.every((operation) => operationStatuses[operation].band === "solid");
-  const nextMathStep = allMathSolid ? null : pickNextStep(child, attemptsByOperation);
+  const mathDataReady = !!child && allMathStatusesLoaded;
+  const nextMathStep = (!mathDataReady || allMathSolid) ? null : pickNextStep(child, attemptsByOperation);
   const nextMathTierLabel = nextMathStep
     ? tierLabelForChild(nextMathStep.operation, nextMathStep.tierId, childLanguage)
     : "";
