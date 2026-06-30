@@ -108,11 +108,15 @@ for (const [op, tiers] of Object.entries(LADDERS)) {
 
         // Check tier-specific constraints
         if (tier.gen.kind === "add") {
-          if (tier.gen.carry === "none") assertNoCarry(q.a, q.b, `${tier.id}(${i}): no carry`);
+          if (tier.gen.carry === "none" && !(tier.gen.allowResultMaxWithCarry && q.answer === tier.gen.resultMax)) {
+            assertNoCarry(q.a, q.b, `${tier.id}(${i}): no carry`);
+          }
           if (tier.gen.carry === "required") assertAlwaysCarry(q.a, q.b, `${tier.id}(${i}): required carry`);
           if (tier.gen.resultMax) assertInRange(q.answer, 0, tier.gen.resultMax, `${tier.id}(${i}): result`);
         } else if (tier.gen.kind === "sub") {
-          if (tier.gen.borrow === "none") assertNoBorrow(q.a, q.b, `${tier.id}(${i}): no borrow`);
+          if (tier.gen.borrow === "none" && !(tier.gen.allowMinuendMaxWithBorrow && q.a === tier.gen.aMax)) {
+            assertNoBorrow(q.a, q.b, `${tier.id}(${i}): no borrow`);
+          }
           if (tier.gen.borrow === "required") assertHasBorrow(q.a, q.b, `${tier.id}(${i}): required borrow`);
         } else if (tier.gen.kind === "mulFacts") {
           assert(tier.gen.factors.includes(Math.max(q.a, q.b)) || tier.gen.factors.includes(Math.min(q.a, q.b)), `${tier.id}(${i}): factor from list`);

@@ -39,7 +39,7 @@ function borrowsAcrossZero(a: number, b: number): boolean {
 }
 
 function generateAdd(params: Extract<GenParams, { kind: "add" }>): { a: number; b: number; answer: number } {
-  const { aMin, aMax, bMin, bMax, carry, resultMax } = params;
+  const { aMin, aMax, bMin, bMax, carry, resultMax, allowResultMaxWithCarry } = params;
   let a, b, answer;
 
   for (let attempt = 0; attempt < 100; attempt++) {
@@ -50,7 +50,7 @@ function generateAdd(params: Extract<GenParams, { kind: "add" }>): { a: number; 
     if (resultMax && answer > resultMax) continue;
 
     const doesCarry = hasCarry(a, b);
-    if (carry === "none" && doesCarry) continue;
+    if (carry === "none" && doesCarry && !(allowResultMaxWithCarry && resultMax !== undefined && answer === resultMax)) continue;
     if (carry === "required" && !doesCarry) continue;
 
     return { a, b, answer };
@@ -59,7 +59,7 @@ function generateAdd(params: Extract<GenParams, { kind: "add" }>): { a: number; 
 }
 
 function generateSub(params: Extract<GenParams, { kind: "sub" }>): { a: number; b: number; answer: number } {
-  const { aMin, aMax, bMin, bMax, borrow, acrossZero } = params;
+  const { aMin, aMax, bMin, bMax, borrow, acrossZero, allowMinuendMaxWithBorrow } = params;
   let a, b, answer;
 
   for (let attempt = 0; attempt < 100; attempt++) {
@@ -70,7 +70,7 @@ function generateSub(params: Extract<GenParams, { kind: "sub" }>): { a: number; 
     answer = a - b;
 
     const doesBorrow = hasBorrow(a, b);
-    if (borrow === "none" && doesBorrow) continue;
+    if (borrow === "none" && doesBorrow && !(allowMinuendMaxWithBorrow && a === aMax)) continue;
     if (borrow === "required" && !doesBorrow) continue;
 
     if (acrossZero && !borrowsAcrossZero(a, b)) continue;

@@ -8,8 +8,8 @@ export type Operation = "addition" | "subtraction" | "multiplication" | "divisio
 export type Constraint = "none" | "required" | "either"; // carry / borrow / remainder
 
 export type GenParams =
-  | { kind: "add"; aMin: number; aMax: number; bMin: number; bMax: number; carry: Constraint; resultMax?: number }
-  | { kind: "sub"; aMin: number; aMax: number; bMin: number; bMax: number; borrow: Constraint; acrossZero?: boolean }
+  | { kind: "add"; aMin: number; aMax: number; bMin: number; bMax: number; carry: Constraint; resultMax?: number; allowResultMaxWithCarry?: boolean }
+  | { kind: "sub"; aMin: number; aMax: number; bMin: number; bMax: number; borrow: Constraint; acrossZero?: boolean; allowMinuendMaxWithBorrow?: boolean }
   | { kind: "mulFacts"; factors: number[]; otherMin: number; otherMax: number }
   | { kind: "mulMulti"; aMin: number; aMax: number; bMin: number; bMax: number }
   | { kind: "divFacts"; divisors: number[]; quotientMin: number; quotientMax: number; remainder: Constraint }
@@ -19,7 +19,8 @@ export interface Tier { id: string; label: string; gen: GenParams }
 
 export const LADDERS: Record<Operation, Tier[]> = {
   addition: [
-    { id: "A1", label: "Sums within 10", gen: { kind: "add", aMin: 1, aMax: 9, bMin: 1, bMax: 9, carry: "none", resultMax: 10 } },
+    // A1 is bonds to 10: permit the exact resultMax even though single-digit sums to 10 look like a carry.
+    { id: "A1", label: "Sums within 10", gen: { kind: "add", aMin: 1, aMax: 9, bMin: 1, bMax: 9, carry: "none", resultMax: 10, allowResultMaxWithCarry: true } },
     { id: "A2", label: "Within 20, crossing ten", gen: { kind: "add", aMin: 2, aMax: 9, bMin: 2, bMax: 9, carry: "required", resultMax: 18 } },
     { id: "A3", label: "2-digit + 1-digit, no carry", gen: { kind: "add", aMin: 10, aMax: 99, bMin: 1, bMax: 9, carry: "none" } },
     { id: "A4", label: "2-digit + 2-digit, no carry", gen: { kind: "add", aMin: 10, aMax: 99, bMin: 10, bMax: 99, carry: "none" } },
@@ -28,7 +29,8 @@ export const LADDERS: Record<Operation, Tier[]> = {
     { id: "A7", label: "4-digit, carrying", gen: { kind: "add", aMin: 1000, aMax: 9999, bMin: 1000, bMax: 9999, carry: "either" } },
   ],
   subtraction: [
-    { id: "S1", label: "Within 10, no borrow", gen: { kind: "sub", aMin: 2, aMax: 10, bMin: 1, bMax: 9, borrow: "none" } },
+    // S1 is takeaways from 10: permit minuend 10 even though 10 - n uses the tens column.
+    { id: "S1", label: "Within 10, no borrow", gen: { kind: "sub", aMin: 2, aMax: 10, bMin: 1, bMax: 9, borrow: "none", allowMinuendMaxWithBorrow: true } },
     { id: "S2", label: "Within 20, crossing ten", gen: { kind: "sub", aMin: 11, aMax: 18, bMin: 2, bMax: 9, borrow: "required" } },
     { id: "S3", label: "2-digit − 1-digit, no borrow", gen: { kind: "sub", aMin: 10, aMax: 99, bMin: 1, bMax: 9, borrow: "none" } },
     { id: "S4", label: "2-digit − 2-digit, no borrow", gen: { kind: "sub", aMin: 10, aMax: 99, bMin: 10, bMax: 99, borrow: "none" } },
