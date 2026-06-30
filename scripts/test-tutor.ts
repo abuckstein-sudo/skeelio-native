@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
-import { LADDERS, GATE, startingTier } from "../lib/tutorConfig";
-import { generateQuestion } from "../lib/tutor/generate";
-import { tierStats, currentTierAndBand, Attempt } from "../lib/tutor/ability";
+import { LADDERS, GATE, startingTier, FACT_TIERS, Operation } from "../lib/tutorConfig";
+import { coverageKeysForQuestion, generateQuestion, pickUncoveredFactKey, producibleCoverageKeysForTier } from "../lib/tutor/generate";
+import { factTierCoverageKeys, requiredCoverageKeys, tierStats, currentTierAndBand, Attempt } from "../lib/tutor/ability";
 import { pickNextStep } from "../lib/tutor/selector";
 
 function assert(condition: boolean, message: string) {
@@ -76,6 +76,31 @@ function assertNoBorrow(a: number, b: number, message: string) {
     }
   }
   assert(!hasBorrow, `${message} (${a} - ${b} has borrow)`);
+}
+
+function operationForTier(tierId: string): Operation {
+  for (const [operation, tiers] of Object.entries(LADDERS)) {
+    if (tiers.some((tier) => tier.id === tierId)) return operation as Operation;
+  }
+  throw new Error(`Unknown tier ${tierId}`);
+}
+
+function questionToAttempt(question: ReturnType<typeof generateQuestion>): Attempt {
+  return {
+    tierId: question.tierId,
+    correct: true,
+    hintUsed: false,
+    questionText: `${question.a} ${
+      question.operation === "addition"
+        ? "+"
+        : question.operation === "subtraction"
+        ? "−"
+        : question.operation === "multiplication"
+        ? "×"
+        : "÷"
+    } ${question.b}`,
+    evidenceSource: "adaptive_practice",
+  };
 }
 
 console.log("\n====== TIER CONSTRAINT TESTS ======\n");
@@ -221,6 +246,52 @@ assert(step7.operation === "subtraction", `Should pick struggling subtraction, g
 assert(step7.tierId === "S4", `Should pick S4, got ${step7.tierId}`);
 assert(step7.mode === "practice", `S4 has attempts, should be practice mode, got ${step7.mode}`);
 console.log(`  ✅ pickNextStep: ${step7.operation} ${step7.tierId} mode=${step7.mode}`);
+
+console.log("\n====== FACT COVERAGE GENERATION TESTS ======\n");
+
+console.log("Test 8: every fact tier can produce every required coverage key");
+for (const tierId of FACT_TIERS) {
+  const operation = operationForTier(tierId);
+  const required = requiredCoverageKeys(tierId);
+  assert(required !== null, `${tierId}: should have required coverage keys`);
+  const produced = new Set(producibleCoverageKeysForTier(operation, tierId) || []);
+  const missing = [...(required || new Set<string>())].filter((key) => !produced.has(key));
+  assert(missing.length === 0, `${tierId}: missing producible coverage keys ${missing.join(", ")}`);
+}
+console.log("  ✅ all FACT_TIERS can produce their required coverage keys");
+
+console.log("\nTest 9: coverage target picker prefers uncovered keys and falls back when complete");
+assert(pickUncoveredFactKey("A1", new Set(["2", "3"])) === "4", "A1 should pick first uncovered key 4");
+assert(pickUncoveredFactKey("M3", new Set(["3"])) === "4", "M3 should pick uncovered factor 4");
+assert(pickUncoveredFactKey("S1", new Set(["2", "3", "4", "5", "6", "7", "8", "9", "10"])) === null, "S1 should fall back when fully covered");
+console.log("  ✅ target picker returns uncovered keys and null when complete");
+
+console.log("\nTest 10: coverage-aware generation completes A1 and S1 quickly");
+for (const tierId of ["A1", "S1"]) {
+  const operation = operationForTier(tierId);
+  const required = requiredCoverageKeys(tierId);
+  assert(required !== null, `${tierId}: should have required keys`);
+  const attempts: Attempt[] = [];
+  const maxQuestions = (required?.size || 0) * 2;
+
+  for (let i = 0; i < maxQuestions; i++) {
+    const coverage = factTierCoverageKeys(tierId, attempts);
+    const question = generateQuestion(operation, tierId, undefined, {
+      coveredFactKeys: new Set(coverage?.covered || []),
+    });
+    attempts.push(questionToAttempt(question));
+    const nextCoverage = factTierCoverageKeys(tierId, attempts);
+    if (nextCoverage && nextCoverage.covered.length === nextCoverage.required.length) break;
+  }
+
+  const finalCoverage = factTierCoverageKeys(tierId, attempts);
+  assert(
+    !!finalCoverage && finalCoverage.covered.length === finalCoverage.required.length,
+    `${tierId}: should complete coverage within ${maxQuestions} questions`
+  );
+  assert(attempts.length <= maxQuestions, `${tierId}: should stay within bounded coverage window`);
+  console.log(`  ✅ ${tierId}: covered ${finalCoverage?.covered.length}/${finalCoverage?.required.length} in ${attempts.length} questions`);
+}
 
 console.log("\n====== ALL TESTS COMPLETE ======\n");
 

@@ -15,8 +15,8 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "@/lib/supabase";
 import { addStars } from "@/lib/addStars";
-import { generateQuestion, pickTeachExample } from "@/lib/tutor/generate";
-import { currentTierAndBand, Attempt, factTierCoverageProgress, tierStats, isSolidTierStat } from "@/lib/tutor/ability";
+import { coverageKeysForQuestion, generateQuestion, pickTeachExample } from "@/lib/tutor/generate";
+import { currentTierAndBand, Attempt, factTierCoverageKeys, factTierCoverageProgress, tierStats, isSolidTierStat } from "@/lib/tutor/ability";
 import { LADDERS, GATE, Operation, FACT_TIERS } from "@/lib/tutorConfig";
 import { TIER_GATE } from "@/lib/masteryConfig";
 import { computeExampleSteps } from "@/lib/tutor/steps";
@@ -292,9 +292,19 @@ export default function PracticeScreen() {
         // Generate set of questions
         const numQuestions = GATE.minAttemptsToAdvance;
         const qs = [];
+        const tierCoverage = factTierCoverageKeys(
+          workingTierId,
+          attempts.filter((attempt) => attempt.tierId === workingTierId)
+        );
+        const plannedCoveredFactKeys = new Set(tierCoverage?.covered || []);
         for (let i = 0; i < numQuestions; i++) {
-          const q = generateQuestion(topic as Operation, workingTierId, childData?.max_times_table);
+          const q = generateQuestion(topic as Operation, workingTierId, childData?.max_times_table, {
+            coveredFactKeys: plannedCoveredFactKeys,
+          });
           qs.push(q);
+          coverageKeysForQuestion(q).forEach((key) => {
+            if (tierCoverage?.required.includes(key)) plannedCoveredFactKeys.add(key);
+          });
         }
         setQuestions(qs);
         setHintUsedPerQuestion(new Array(numQuestions).fill(false));

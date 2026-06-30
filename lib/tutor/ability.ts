@@ -42,7 +42,7 @@ function rangeKeys(min: number, max: number): Set<string> {
   return keys;
 }
 
-function requiredCoverageKeys(tierId: string): Set<string> | null {
+export function requiredCoverageKeys(tierId: string): Set<string> | null {
   if (!FACT_TIERS.has(tierId)) return null;
   const tier = Object.values(LADDERS).flat().find((t) => t.id === tierId);
   const gen = tier?.gen;
@@ -57,7 +57,7 @@ function requiredCoverageKeys(tierId: string): Set<string> | null {
   return null;
 }
 
-function coverageKeysForAttempt(tierId: string, attempt: Attempt): string[] {
+export function coverageKeysForAttempt(tierId: string, attempt: Attempt): string[] {
   const nums = parseQuestionNumbers(attempt.questionText);
   if (!nums) return [];
 
@@ -113,6 +113,28 @@ export function factTierCoverageProgress(
   }
 
   return { covered: covered.size, required: required.size };
+}
+
+export function factTierCoverageKeys(
+  tierId: string,
+  attempts: Attempt[]
+): { covered: string[]; required: string[] } | null {
+  const required = requiredCoverageKeys(tierId);
+  if (!required || required.size === 0) return null;
+
+  const covered = new Set<string>();
+  for (const attempt of attempts) {
+    if (attempt.hintUsed || !attempt.correct) continue;
+    for (const key of coverageKeysForAttempt(tierId, attempt)) {
+      if (required.has(key)) covered.add(key);
+    }
+  }
+
+  const sortNumeric = (a: string, b: string) => Number(a) - Number(b);
+  return {
+    covered: Array.from(covered).sort(sortNumeric),
+    required: Array.from(required).sort(sortNumeric),
+  };
 }
 
 export function tierStats(attempts: Attempt[]): Record<string, TierStats> {
