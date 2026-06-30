@@ -35,9 +35,14 @@ const INITIAL_PROMPT = `You are an expert elementary teacher (ages 6–10). You 
    "evidence_policy": "context_only"
  },
  "lesson": "<a short, warm, age-appropriate mini-lesson in the page's language; plain text, no markdown. It MUST explicitly explain the detected classroom method/notation and at least one worksheet question form. If the page uses c/d/u, explain c=centaines, d=dizaines, u=unités and how to compare or transform collections with that notation before mentioning any broader topic.>",
- "practice": [ <exactly 6 items, DISTRIBUTED EVENLY across all sub_skills; each tagged with its sub_skill> ]
+ "practice": [ <adaptive count: about 3 items per detected sub_skill, minimum 6 and maximum 12 total; distributed evenly across all sub_skills; each item tagged with sub_skill and practice_mode> ]
 }
-CRITICAL: Distribute the 6 practice items roughly evenly across ALL sub_skills — if there are 3 sub_skills, generate ~2 items for each. Do NOT cluster on one sub_skill.
+CRITICAL: Generate an adaptive number of practice items: about 3 items per detected sub_skill, with a minimum of 6 items and a maximum of 12 total. Distribute items roughly evenly across ALL sub_skills. Do NOT cluster on one sub_skill.
+VARIETY RULES:
+- For EACH sub_skill, include a mode spread where the skill allows it: same_form (preserve the worksheet's method/shape), near_transfer (same skill with modified numbers/context), and far_transfer (fresh real-world scenario).
+- Tag every generated practice item with "practice_mode": "same_form" | "near_transfer" | "far_transfer".
+- Far-transfer items must NOT erase a visible school method. If the worksheet uses a classroom method such as c/d/u, equivalent writings, comparison frames, operation setup, or a specific diagram/table shape, keep that method visible whenever it is the skill being practised.
+- Vary numbers, objects, names, and contexts. Even if the worksheet itself is repetitive, practice must NOT contain near-duplicates, literal copies, or two items that are the same problem with only a single number changed.
 SPELLING LIST RULE:
 - If the page is mainly a list of words for the child to learn, classify it as source_type "spelling_list", domain "language".
 - Do NOT call it "vocabulary" unless the page asks for definitions, synonyms, categories, or meanings.
@@ -48,7 +53,7 @@ LANGUAGE LABEL RULE:
 - If the page asks the child to conjugate verbs, the concept label MUST be a conjugation label in the page language, such as "Conjugaison" or "Conjuguer au présent". Do NOT label conjugation pages as "vocabulaire".
 - Use "vocabulaire" / "vocabulary" ONLY when the page asks about meanings, definitions, synonyms, categories, or word knowledge.
 Each practice MATH item MUST be SELF-CONTAINED — the question text includes EVERY number needed:
-- { "kind":"math", "answer_type":"number"|"yesno", "sub_skill":"<which sub_skill>", "unit":"€"|"" (€ if the answer is a money amount; "" if a plain count), "question":"<COMPLETE word problem in page's language with EVERY numeric value stated explicitly. E.g. 'Un livre coûte 5,20 € et un cahier coûte 3,50 €. Si tu achètes un livre et un cahier, combien dépenses-tu en tout ?' or 'Tu as 15 €. Une paire de chaussures coûte 12 €. As-tu assez d'argent pour les chaussures ?'>", "check_expression":"<arithmetic or boolean expression using the exact numeric values stated in the question text (in standard decimal form, e.g., 5.20 not 5,20); no variable names, only literals>", "claimed_answer":<number for 'number' type, or boolean for 'yesno'> }
+- { "kind":"math", "answer_type":"number"|"yesno", "sub_skill":"<which sub_skill>", "practice_mode":"same_form"|"near_transfer"|"far_transfer", "unit":"€"|"" (€ if the answer is a money amount; "" if a plain count), "question":"<COMPLETE word problem in page's language with EVERY numeric value stated explicitly. E.g. 'Un livre coûte 5,20 € et un cahier coûte 3,50 €. Si tu achètes un livre et un cahier, combien dépenses-tu en tout ?' or 'Tu as 15 €. Une paire de chaussures coûte 12 €. As-tu assez d'argent pour les chaussures ?'>", "check_expression":"<arithmetic or boolean expression using the exact numeric values stated in the question text (in standard decimal form, e.g., 5.20 not 5,20); no variable names, only literals>", "claimed_answer":<number for 'number' type, or boolean for 'yesno'> }
 Other items (reference, open) can use simple text.
 CRITICAL:
 1. Derive sub_skills ONLY from question types on the page (don't invent).
@@ -60,13 +65,14 @@ CRITICAL:
 6. EVERY number the child needs MUST appear in the question text itself (use French comma decimals: 5,20 € not 5.20 €).
 7. check_expression uses the SAME numbers as in the question, in standard decimal form (5.20 not 5,20).
 8. Include a "how many can you buy" item where relevant (e.g., "Tu as 10 €. Un stylo coûte 2 €. Combien de stylos peux-tu acheter?").
-9. Each item is distinct, NO duplicates; ALL text in page's language only.`;
+9. Each item is distinct, NO duplicates or near-clones; ALL text in page's language only.`;
 
-const RETRY_PROMPT = (subSkillsList: string, language: string) => `Generate 4 more DISTINCT math practice items (${language}) for sub-skills: ${subSkillsList}. Distribute evenly across the sub-skills listed. EACH ITEM MUST BE SELF-CONTAINED — every number the child needs must be IN THE QUESTION TEXT. Preserve the worksheet task shape when the sub-skill names imply a specific school method such as c/d/u, equivalent writings, comparison, or equalizing collections. Structure:
+const RETRY_PROMPT = (subSkillsList: string, language: string) => `Generate 4 more DISTINCT math practice items (${language}) for sub-skills: ${subSkillsList}. Distribute evenly across the sub-skills listed. Use a spread of practice_mode values where the skill allows it: same_form, near_transfer, far_transfer. EACH ITEM MUST BE SELF-CONTAINED — every number the child needs must be IN THE QUESTION TEXT. Preserve the worksheet task shape when the sub-skill names imply a specific school method such as c/d/u, equivalent writings, comparison, or equalizing collections. Far-transfer items must not erase visible school methods. Vary numbers, objects, names, and contexts; do not create near-duplicates or the same problem with only one number changed. Structure:
 {
   "kind":"math",
   "answer_type":"number"|"yesno",
   "sub_skill":"<which sub_skill>",
+  "practice_mode":"same_form"|"near_transfer"|"far_transfer",
   "unit":"€"|"" (€ if the answer is money; "" if a count),
   "question":"<COMPLETE word problem in ${language} with every numeric value stated. Use French comma decimals (5,20 €) in the text. Example: 'Tu as 15 €. Un stylo coûte 2,50 €. Combien de stylos peux-tu acheter?'>",
   "check_expression":"<expression using the SAME numbers from the question, in standard decimal form (2.50 not 2,50); e.g., floor(15 / 2.50)>",
@@ -75,10 +81,16 @@ const RETRY_PROMPT = (subSkillsList: string, language: string) => `Generate 4 mo
 Include affordability/how-many-can-you-buy items. Return ONLY the JSON array, NO EXPLANATION, ALL TEXT IN ${language}:
 [...]`;
 
-const LANGUAGE_PROMPT = (subSkillsList: string, language: string, conceptScope: string) => `You are an expert French/English teacher. Generate 8 grammar/language practice items for these sub-skills: ${subSkillsList}. CONSTRAIN each item to the RULE/SCOPE actually taught (NO irregulars, NO exceptions beyond what's taught). Grade-appropriate.
+const LANGUAGE_PROMPT = (subSkillsList: string, language: string, conceptScope: string, targetPracticeCount: number) => `You are an expert French/English teacher. Generate ${targetPracticeCount} grammar/language practice items for these sub-skills: ${subSkillsList}. CONSTRAIN each item to the RULE/SCOPE actually taught (NO irregulars, NO exceptions beyond what's taught). Grade-appropriate.
 
 WORKSHEET SCOPE TO PRESERVE:
 ${conceptScope}
+
+VARIETY RULES:
+- Distribute items roughly evenly across all sub-skills.
+- For EACH sub_skill, include a mode spread where the skill allows it: same_form (preserve the worksheet's exact exercise shape), near_transfer (same rule with changed words/context), and far_transfer (fresh sentence/context).
+- Tag every generated practice item with "practice_mode": "same_form" | "near_transfer" | "far_transfer".
+- Vary words, names, sentence frames, and contexts. Practice must NOT contain near-duplicates, literal copies, or two items that are the same exercise with only one word changed.
 
 CRITICAL TASK-TYPE RULE:
 - Match the ACTUAL task type on the worksheet, not merely the broad topic.
@@ -99,16 +111,17 @@ Structure:
 {
   "kind":"reference",
   "sub_skill":"<which sub_skill>",
+  "practice_mode":"same_form"|"near_transfer"|"far_transfer",
   "question":"<exercise in ${language}: state instruction, then target word in « ». E.g. 'Mets ce mot au pluriel : « chien »'>",
   "expected_answer":"<ONE WORD, no article, lowercase, no punctuation>"
 }
 Return ONLY the JSON array, NO EXPLANATION, ALL TEXT IN ${language}:
 [...]`;
 
-const MATH_TOPUP_PROMPT = (subSkill: string, language: string) => `Generate 4 more math practice items (${language}) focused ONLY on the sub-skill: "${subSkill}". EACH ITEM MUST be SELF-CONTAINED — every number the child needs must be IN THE QUESTION TEXT. Preserve worksheet-shaped methods such as c/d/u notation, equivalent writings, comparison, or equalizing collections instead of turning them into generic word problems. Return ONLY the JSON array with structure { "kind":"math", "answer_type":"...", "sub_skill":"${subSkill}", "unit":"€"|"" (€ if money; "" if count), "question":"...", "check_expression":"...", "claimed_answer":... }:
+const MATH_TOPUP_PROMPT = (subSkill: string, language: string) => `Generate 4 more math practice items (${language}) focused ONLY on the sub-skill: "${subSkill}". Include a spread of practice_mode values where the skill allows it: same_form, near_transfer, far_transfer. EACH ITEM MUST be SELF-CONTAINED — every number the child needs must be IN THE QUESTION TEXT. Preserve worksheet-shaped methods such as c/d/u notation, equivalent writings, comparison, or equalizing collections instead of turning them into generic word problems. Far-transfer items must not erase visible school methods. Vary numbers, objects, names, and contexts; do not create near-duplicates or the same problem with only one number changed. Return ONLY the JSON array with structure { "kind":"math", "answer_type":"...", "sub_skill":"${subSkill}", "practice_mode":"same_form"|"near_transfer"|"far_transfer", "unit":"€"|"" (€ if money; "" if count), "question":"...", "check_expression":"...", "claimed_answer":... }:
 [...]`;
 
-const LANGUAGE_TOPUP_PROMPT = (subSkill: string, language: string, conceptScope: string) => `Generate 4 more grammar/language practice items (${language}) focused ONLY on the sub-skill: "${subSkill}". Constrain to the RULE taught (NO irregulars/exceptions beyond scope).
+const LANGUAGE_TOPUP_PROMPT = (subSkill: string, language: string, conceptScope: string) => `Generate 4 more grammar/language practice items (${language}) focused ONLY on the sub-skill: "${subSkill}". Constrain to the RULE taught (NO irregulars/exceptions beyond scope). Include a spread of practice_mode values where the skill allows it: same_form, near_transfer, far_transfer. Vary words, names, sentence frames, and contexts; do not create near-duplicates or the same exercise with only one word changed.
 
 WORKSHEET SCOPE TO PRESERVE:
 ${conceptScope}
@@ -127,7 +140,7 @@ CRITICAL WORDING RULE:
 - Use "(juste le mot)" ONLY if a format hint is needed.
 - Statement format: State the transformation instruction, THEN the target word in quotes. E.g., "Mets ce mot au pluriel : « chien »"
 
-Structure { "kind":"reference", "sub_skill":"${subSkill}", "question":"<exercise in ${language}: state instruction, then target word in « ». E.g. 'Mets ce mot au pluriel : « chien »'>", "expected_answer":"<ONE WORD, no article, lowercase, no punctuation>" }. Return ONLY JSON array:
+Structure { "kind":"reference", "sub_skill":"${subSkill}", "practice_mode":"same_form"|"near_transfer"|"far_transfer", "question":"<exercise in ${language}: state instruction, then target word in « ». E.g. 'Mets ce mot au pluriel : « chien »'>", "expected_answer":"<ONE WORD, no article, lowercase, no punctuation>" }. Return ONLY JSON array:
 [...]`;
 
 const LANGUAGE_VERIFY_PROMPT = (language: string, questions: string[]) => `You are a student learning French/English grammar. Answer each question below by giving ONLY the minimal form requested: ONE WORD, no article, no punctuation, lowercase. Return JSON with the answers in the same order.
@@ -153,7 +166,7 @@ Deno.serve(async (req) => {
     const { image } = await req.json();
     if (!image) return json({ error: "image (data URL) is required" }, 400);
 
-    // Initial call to generate concept + 6 practice items
+    // Initial call to generate concept + adaptive practice items
     const openaiRes = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
@@ -295,10 +308,14 @@ Deno.serve(async (req) => {
       }
     }
 
-    // If fewer than 3 verified math items, request more
-    if (verifiedMathItems.length < 3 && worksheet.concept?.sub_skills) {
-      console.log("[absorb-worksheet] only", verifiedMathItems.length, "verified math items, requesting 4 more");
-      const subSkillsStr = worksheet.concept.sub_skills.map((s: Record<string, unknown>) => s.label).join(", ");
+    const mathConcept = worksheet.concept as { sub_skills?: Array<{ label: string }> } | undefined;
+    const allSubSkills = mathConcept?.sub_skills?.map((s) => s.label) || [];
+    const targetPracticeCount = getTargetPracticeCount(allSubSkills);
+
+    // If fewer than the adaptive target verified, request more
+    if (verifiedMathItems.length < targetPracticeCount && mathConcept?.sub_skills) {
+      console.log("[absorb-worksheet] only", verifiedMathItems.length, "verified math items, target:", targetPracticeCount, "requesting 4 more");
+      const subSkillsStr = allSubSkills.join(", ");
       const language = worksheet.language as string;
 
       const retryRes = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -388,7 +405,6 @@ Deno.serve(async (req) => {
     }
 
     // Check coverage: which sub-skills have zero math items?
-    const allSubSkills = (worksheet.concept?.sub_skills as Array<{label: string}>)?.map((s) => s.label) || [];
     let missingSubSkills = getMissingSubSkills(allSubSkills, verifiedMathItems);
 
     // Top-up for each missing sub-skill
@@ -484,12 +500,104 @@ Deno.serve(async (req) => {
       if (missingSubSkills.length === 0) break; // All covered
     }
 
-    // Final selection: prefer diversity, cap at 4-5 items
-    const { final: finalItems, uncovered } = selectFinalItems(verifiedMathItems, allSubSkills, 5);
+    let backfillSubSkills = getBackfillSubSkills(allSubSkills, verifiedMathItems, targetPracticeCount);
+    for (const skill of backfillSubSkills) {
+      if (verifiedMathItems.length >= targetPracticeCount) break;
+      console.log("[absorb-worksheet] generating math backfill for target count:", skill, "verified:", verifiedMathItems.length, "target:", targetPracticeCount);
+
+      const topupRes = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
+        body: JSON.stringify({
+          model: "gpt-4o",
+          messages: [
+            { role: "user", content: MATH_TOPUP_PROMPT(skill, worksheet.language as string) },
+          ],
+        }),
+      });
+
+      if (!topupRes.ok) {
+        console.error("[absorb-worksheet] math backfill generation failed:", topupRes.status);
+        continue;
+      }
+
+      const topupData = await topupRes.json();
+      const topupRaw = topupData.choices?.[0]?.message?.content ?? "";
+
+      let topupCandidates: Record<string, unknown>[] = [];
+      try {
+        const cleaned = topupRaw.trim().replace(/^```[\s\S]*?\n/, "").replace(/```$/, "");
+        const arrayMatch = cleaned.match(/\[[\s\S]*\]/);
+        if (arrayMatch) {
+          topupCandidates = JSON.parse(arrayMatch[0]);
+        }
+      } catch {
+        console.log("[absorb-worksheet] failed to parse math backfill items");
+        continue;
+      }
+
+      for (const item of topupCandidates) {
+        if (verifiedMathItems.length >= targetPracticeCount) break;
+        if (item.kind === "math") {
+          try {
+            const question = item.question as string;
+            const checkExpr = item.check_expression as string;
+            const answerType = item.answer_type as string;
+            const claimedAnswer = item.claimed_answer;
+
+            // GUARD: numeric verification
+            const questionNumbers = extractNumbersFromText(question);
+            const exprNumbers = extractNumbersFromExpression(checkExpr);
+
+            let allNumbersInQuestion = true;
+            for (const num of exprNumbers) {
+              if (!questionNumbers.has(num)) {
+                console.log("[absorb-worksheet] GUARD (backfill): expression contains", num, "but not in question");
+                allNumbersInQuestion = false;
+                break;
+              }
+            }
+
+            if (!allNumbersInQuestion) {
+              continue;
+            }
+
+            // Evaluate
+            const computed = evaluate(checkExpr);
+
+            let verified = false;
+            if (answerType === "yesno") {
+              verified = computed === claimedAnswer;
+              if (verified) {
+                item.answer = computed ? "Oui" : "Non";
+                item.verified = true;
+                verifiedMathItems.push(item);
+              }
+            } else {
+              verified = Math.abs(computed as number - (claimedAnswer as number)) < 0.005;
+              if (verified) {
+                item.answer = computed;
+                item.verified = true;
+                verifiedMathItems.push(item);
+              }
+            }
+          } catch {
+            // Skip on eval error
+          }
+        }
+      }
+
+      totalGenerated += topupCandidates.length;
+      backfillSubSkills = getBackfillSubSkills(allSubSkills, verifiedMathItems, targetPracticeCount);
+      if (backfillSubSkills.length === 0) break;
+    }
+
+    // Final selection: prefer sub-skill and mode diversity, cap at adaptive target
+    const { final: finalItems, uncovered } = selectFinalItems(verifiedMathItems, allSubSkills, targetPracticeCount);
 
     // Add other items if space
     for (const item of otherItems) {
-      if (finalItems.length >= 5) break;
+      if (finalItems.length >= targetPracticeCount) break;
       finalItems.push(item);
     }
 
@@ -509,6 +617,7 @@ Deno.serve(async (req) => {
       domain_raw: domainRaw,
       language_raw: languageRaw,
       path_taken: pathTaken,
+      target_count: targetPracticeCount,
       uncovered_subskills: uncovered.length > 0 ? uncovered : undefined,
     };
 
@@ -774,14 +883,37 @@ function getMissingSubSkills(allSubSkills: string[], verifiedItems: Record<strin
   return allSubSkills.filter((skill) => !coveredSubSkills.has(skill));
 }
 
-// Select final items: prefer diversity (at least one per sub_skill), then fill remaining slots
+function getTargetPracticeCount(allSubSkills: string[]): number {
+  const subSkillCount = Math.max(1, allSubSkills.length);
+  return Math.min(12, Math.max(6, subSkillCount * 3));
+}
+
+function getBackfillSubSkills(
+  allSubSkills: string[],
+  verifiedItems: Record<string, unknown>[],
+  targetPracticeCount: number
+): string[] {
+  if (verifiedItems.length >= targetPracticeCount) return [];
+  const skills = allSubSkills.length > 0 ? allSubSkills : ["math"];
+  const counts = new Map<string, number>();
+  for (const skill of skills) counts.set(skill, 0);
+  for (const item of verifiedItems) {
+    const skill = item.sub_skill as string;
+    counts.set(skill, (counts.get(skill) ?? 0) + 1);
+  }
+
+  return [...skills].sort((a, b) => (counts.get(a) ?? 0) - (counts.get(b) ?? 0));
+}
+
+// Select final items: prefer sub-skill and mode diversity, then fill remaining slots
 function selectFinalItems(
   verifiedItems: Record<string, unknown>[],
   allSubSkills: string[],
-  maxItems: number = 4
+  maxItems: number = 6
 ): { final: Record<string, unknown>[]; uncovered: string[] } {
   const final: Record<string, unknown>[] = [];
   const usedSubSkills = new Set<string>();
+  const modes = ["same_form", "near_transfer", "far_transfer"];
 
   // First pass: one item per sub-skill
   for (const skill of allSubSkills) {
@@ -793,7 +925,23 @@ function selectFinalItems(
     }
   }
 
-  // Second pass: fill remaining slots with best items
+  // Second pass: prefer mode spread within each sub-skill
+  for (const skill of allSubSkills) {
+    for (const mode of modes) {
+      if (final.length >= maxItems) break;
+      const item = verifiedItems.find((i) =>
+        i.sub_skill === skill &&
+        i.practice_mode === mode &&
+        !final.includes(i)
+      );
+      if (item) {
+        final.push(item);
+        usedSubSkills.add(skill);
+      }
+    }
+  }
+
+  // Third pass: fill remaining slots with best items
   for (const item of verifiedItems) {
     if (final.length >= maxItems) break;
     if (!final.includes(item)) {
@@ -942,15 +1090,16 @@ async function handleLanguagePractice(worksheet: Record<string, unknown>, langua
   normalizeLanguageConceptLabel(worksheet, language, isConjugationPractice, allSubSkills);
   const conceptScope = buildConceptScope(worksheet);
   const subSkillsList = allSubSkills.join(", ");
+  const targetPracticeCount = getTargetPracticeCount(allSubSkills);
 
-  // Generate 8 candidate language items
+  // Generate adaptive candidate language items
   const genRes = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${Deno.env.get("OPENAI_API_KEY")}` },
     body: JSON.stringify({
       model: "gpt-4o",
       messages: [
-        { role: "user", content: LANGUAGE_PROMPT(subSkillsList, language, conceptScope) },
+        { role: "user", content: LANGUAGE_PROMPT(subSkillsList, language, conceptScope, targetPracticeCount) },
       ],
     }),
   });
@@ -964,6 +1113,7 @@ async function handleLanguagePractice(worksheet: Record<string, unknown>, langua
       domain_raw: domainRaw,
       language_raw: language,
       path_taken: "reference",
+      target_count: targetPracticeCount,
       reference_candidates: [],
     };
     return json(worksheet, 200);
@@ -989,6 +1139,7 @@ async function handleLanguagePractice(worksheet: Record<string, unknown>, langua
       domain_raw: domainRaw,
       language_raw: language,
       path_taken: "reference",
+      target_count: targetPracticeCount,
       reference_candidates: [],
     };
     return json(worksheet, 200);
@@ -1036,6 +1187,7 @@ async function handleLanguagePractice(worksheet: Record<string, unknown>, langua
       domain_raw: domainRaw,
       language_raw: language,
       path_taken: "reference",
+      target_count: targetPracticeCount,
       reference_candidates: [],
     };
     return json(worksheet, 200);
@@ -1171,11 +1323,109 @@ async function handleLanguagePractice(worksheet: Record<string, unknown>, langua
 
     // Re-check coverage
     missingSubSkills = getMissingSubSkills(allSubSkills, verifiedItems);
-    if (missingSubSkills.length === 0) break; // All covered
+	  if (missingSubSkills.length === 0) break; // All covered
   }
 
-  // Final selection: prefer diversity, cap at 4-5 items
-  const { final: finalItems, uncovered } = selectFinalItems(verifiedItems, allSubSkills, 5);
+  let backfillSubSkills = getBackfillSubSkills(allSubSkills, verifiedItems, targetPracticeCount);
+  for (const skill of backfillSubSkills) {
+    if (verifiedItems.length >= targetPracticeCount) break;
+    console.log("[absorb-worksheet] generating language backfill for target count:", skill, "verified:", verifiedItems.length, "target:", targetPracticeCount);
+
+    const topupRes = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
+      body: JSON.stringify({
+        model: "gpt-4o",
+        messages: [
+          { role: "user", content: LANGUAGE_TOPUP_PROMPT(skill, language, conceptScope) },
+        ],
+      }),
+    });
+
+    if (!topupRes.ok) {
+      console.error("[absorb-worksheet] language backfill generation failed:", topupRes.status);
+      continue;
+    }
+
+    const topupData = await topupRes.json();
+    const topupRaw = topupData.choices?.[0]?.message?.content ?? "";
+
+    let topupCandidates: Record<string, unknown>[] = [];
+    try {
+      const cleaned = topupRaw.trim().replace(/^```[\s\S]*?\n/, "").replace(/```$/, "");
+      const arrayMatch = cleaned.match(/\[[\s\S]*\]/);
+      if (arrayMatch) {
+        topupCandidates = JSON.parse(arrayMatch[0]);
+      }
+    } catch {
+      console.log("[absorb-worksheet] failed to parse language backfill items");
+      continue;
+    }
+
+    const topupVerifyRes = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
+      body: JSON.stringify({
+        model: "gpt-4o",
+        messages: [
+          { role: "user", content: LANGUAGE_VERIFY_PROMPT(language, topupCandidates.map((c) => c.question as string)) },
+        ],
+      }),
+    });
+
+    if (topupVerifyRes.ok) {
+      const topupVerifyData = await topupVerifyRes.json();
+      const topupVerifyRaw = topupVerifyData.choices?.[0]?.message?.content ?? "";
+
+      let topupSolverAnswers: Record<string, unknown> = {};
+      try {
+        const jsonMatch = topupVerifyRaw.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          topupSolverAnswers = JSON.parse(jsonMatch[0]);
+        }
+      } catch {
+        console.log("[absorb-worksheet] failed to parse language backfill solver response");
+        continue;
+      }
+
+      const topupSolverAnswerArray = (topupSolverAnswers.answers as Array<{i: number; answer: string}>) || [];
+
+      for (let i = 0; i < topupCandidates.length; i++) {
+        if (verifiedItems.length >= targetPracticeCount) break;
+        const item = topupCandidates[i];
+        const solverAnswer = topupSolverAnswerArray.find((a) => a.i === i + 1)?.answer || "";
+
+        const expectedNorm = normalizeAnswerText(item.expected_answer as string);
+        const solverNorm = normalizeAnswerText(solverAnswer);
+
+        if (expectedNorm === solverNorm && !shouldRejectLanguageItem(item, isConjugationPractice)) {
+          item.verified = true;
+          item.answer = item.expected_answer;
+          verifiedItems.push(item);
+          referenceCandidates.push({
+            question: item.question,
+            expected_answer: item.expected_answer,
+            solver_answer: solverAnswer,
+            matched: true,
+          });
+        } else {
+          referenceCandidates.push({
+            question: item.question,
+            expected_answer: item.expected_answer,
+            solver_answer: solverAnswer,
+            matched: false,
+          });
+        }
+      }
+    }
+
+    totalGenerated += topupCandidates.length;
+    backfillSubSkills = getBackfillSubSkills(allSubSkills, verifiedItems, targetPracticeCount);
+    if (backfillSubSkills.length === 0) break;
+  }
+
+  // Final selection: prefer sub-skill and mode diversity, cap at adaptive target
+  const { final: finalItems, uncovered } = selectFinalItems(verifiedItems, allSubSkills, targetPracticeCount);
 
   // Clean up: remove expected_answer
   const cleanedItems = finalItems.map((item) => {
@@ -1190,6 +1440,7 @@ async function handleLanguagePractice(worksheet: Record<string, unknown>, langua
     domain_raw: domainRaw,
     language_raw: language,
     path_taken: "reference",
+    target_count: targetPracticeCount,
     reference_candidates: referenceCandidates,
     uncovered_subskills: uncovered.length > 0 ? uncovered : undefined,
   };
