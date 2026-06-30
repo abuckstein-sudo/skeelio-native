@@ -97,6 +97,24 @@ function coverageForTier(tierId: string, attempts: Attempt[]): { coverage: numbe
   return { coverage, met: coverage >= GATE.factCoverageRequired };
 }
 
+export function factTierCoverageProgress(
+  tierId: string,
+  attempts: Attempt[]
+): { covered: number; required: number } | null {
+  const required = requiredCoverageKeys(tierId);
+  if (!required || required.size === 0) return null;
+
+  const covered = new Set<string>();
+  for (const attempt of attempts) {
+    if (attempt.hintUsed || !attempt.correct) continue;
+    for (const key of coverageKeysForAttempt(tierId, attempt)) {
+      if (required.has(key)) covered.add(key);
+    }
+  }
+
+  return { covered: covered.size, required: required.size };
+}
+
 export function tierStats(attempts: Attempt[]): Record<string, TierStats> {
   const stats: Record<string, TierStats> = {};
 

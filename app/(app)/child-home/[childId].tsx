@@ -5,8 +5,9 @@ import * as ImageManipulator from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
 import { supabase } from "@/lib/supabase";
 import { getOperationStatus, OperationStatus, getWordProblemsStatus, WordProblemsStatus } from "@/lib/tutor/status";
-import { LADDERS, Operation } from "@/lib/tutorConfig";
-import { Attempt } from "@/lib/tutor/ability";
+import { GATE, LADDERS, Operation } from "@/lib/tutorConfig";
+import { TIER_GATE } from "@/lib/masteryConfig";
+import { Attempt, factTierCoverageProgress, tierStats } from "@/lib/tutor/ability";
 import { NextStep, pickNextStep } from "@/lib/tutor/selector";
 import { listAssignmentsForChild, Assignment } from "@/lib/assignments";
 import {
@@ -169,6 +170,7 @@ const SETUP_COPY = {
     nextMathKicker: "Next up",
     nextMathActionTeach: "Learn",
     nextMathActionPractice: "Practice",
+    almostThereFacts: (covered: number, required: number) => `Almost there — ${covered} of ${required} facts`,
     settings: "Settings",
     addHomework: "Add homework",
     addHomeworkPlaceholder: "Write one homework item per line",
@@ -238,6 +240,7 @@ const SETUP_COPY = {
     nextMathKicker: "Et maintenant",
     nextMathActionTeach: "Découvrir",
     nextMathActionPractice: "S'entraîner",
+    almostThereFacts: (covered: number, required: number) => `Tu y es presque — ${covered} faits sur ${required}`,
     settings: "Réglages",
     addHomework: "Ajouter un devoir",
     addHomeworkPlaceholder: "Écris un devoir par ligne",
@@ -294,6 +297,23 @@ const tierLabelForChild = (
   language: ChildHomeLanguage
 ) => {
   return TIER_LABEL_COPY[language][tierId] || LADDERS[operation].find((tier) => tier.id === tierId)?.label || tierId;
+};
+
+const coverageProgressForStep = (
+  step: NextStep,
+  attemptsByOperation: Record<Operation, Attempt[]>
+) => {
+  const attempts = attemptsByOperation[step.operation] || [];
+  const stat = tierStats(attempts)[step.tierId];
+  const progress = factTierCoverageProgress(step.tierId, attempts);
+  if (!stat || !progress || progress.covered >= progress.required) return null;
+
+  const otherGatesMet =
+    stat.masteryEvidence >= GATE.minAttemptsToAdvance &&
+    stat.adaptive_unaided_attempts >= TIER_GATE.minAdaptiveUnaidedAttempts &&
+    stat.masteryRate >= GATE.accuracyToAdvance;
+
+  return otherGatesMet && !stat.coverageMet ? progress : null;
 };
 
 export default function ChildHomeScreen() {
@@ -463,6 +483,46 @@ export default function ChildHomeScreen() {
     ]);
   }, [fetchPendingAssignments, fetchPendingEpisodes, fetchSchoolHomework]);
 
+  const refreshMathProgress = useCallback(async (childForStatus?: Child | null) => {
+    if (!childId) return;
+
+    const { data: attemptRows, error: attemptError } = await supabase
+      .from("learning_attempts")
+      .select("topic, tier, question_text, was_correct, ai_hint_used, evidence_source")
+      .eq("child_id", childId)
+      .in("topic", MATH_OPERATIONS)
+      .not("tier", "is", null);
+
+    if (attemptError) {
+      console.error("[child-home] failed to fetch math attempts:", attemptError);
+      setAttemptsByOperation(emptyMathAttempts());
+    } else {
+      const groupedAttempts = emptyMathAttempts();
+      (attemptRows || []).forEach((row: any) => {
+        const operation = row.topic as Operation;
+        if (!MATH_OPERATIONS.includes(operation)) return;
+        groupedAttempts[operation].push({
+          tierId: row.tier,
+          correct: row.was_correct,
+          hintUsed: row.ai_hint_used || false,
+          questionText: row.question_text,
+          evidenceSource: row.evidence_source,
+        });
+      });
+      setAttemptsByOperation(groupedAttempts);
+    }
+
+    const statusChild = childForStatus || child;
+    if (!statusChild) return;
+
+    const statuses: Record<Operation, OperationStatus> = {} as any;
+    for (const op of MATH_OPERATIONS) {
+      const status = await getOperationStatus(childId, op, statusChild);
+      statuses[op] = status;
+    }
+    setOperationStatuses(statuses);
+  }, [child, childId]);
+
   useEffect(() => {
     if (childId) {
       skipNextFocusFeedRefreshRef.current = true;
@@ -480,7 +540,8 @@ export default function ChildHomeScreen() {
         return;
       }
       refreshHomeworkFeed();
-    }, [fetchStars, refreshHomeworkFeed])
+      refreshMathProgress();
+    }, [fetchStars, refreshHomeworkFeed, refreshMathProgress])
   );
 
   const fetchChild = async () => {
@@ -514,39 +575,7 @@ export default function ChildHomeScreen() {
 
     setStars(rewardsData?.stars ?? 0);
 
-    const { data: attemptRows, error: attemptError } = await supabase
-      .from("learning_attempts")
-      .select("topic, tier, question_text, was_correct, ai_hint_used, evidence_source")
-      .eq("child_id", childId)
-      .in("topic", MATH_OPERATIONS)
-      .not("tier", "is", null);
-
-    if (attemptError) {
-      console.error("[child-home] failed to fetch math attempts:", attemptError);
-      setAttemptsByOperation(emptyMathAttempts());
-    } else {
-      const groupedAttempts = emptyMathAttempts();
-      (attemptRows || []).forEach((row: any) => {
-        const operation = row.topic as Operation;
-        if (!MATH_OPERATIONS.includes(operation)) return;
-        groupedAttempts[operation].push({
-          tierId: row.tier,
-          correct: row.was_correct,
-          hintUsed: row.ai_hint_used || false,
-          questionText: row.question_text,
-          evidenceSource: row.evidence_source,
-        });
-      });
-      setAttemptsByOperation(groupedAttempts);
-    }
-
-    // Fetch tier-based operation statuses
-    const statuses: Record<Operation, OperationStatus> = {} as any;
-    for (const op of MATH_OPERATIONS) {
-      const status = await getOperationStatus(childId, op, data || {});
-      statuses[op] = status;
-    }
-    setOperationStatuses(statuses);
+    await refreshMathProgress(data as Child);
 
     // Fetch word problems status
     const wpStatus = await getWordProblemsStatus(childId, data || {});
@@ -1064,6 +1093,12 @@ export default function ChildHomeScreen() {
   const nextMathTierLabel = nextMathStep
     ? tierLabelForChild(nextMathStep.operation, nextMathStep.tierId, childLanguage)
     : "";
+  const nextMathCoverageProgress = nextMathStep
+    ? coverageProgressForStep(nextMathStep, attemptsByOperation)
+    : null;
+  const nextMathCoverageText = nextMathCoverageProgress
+    ? setupCopy.almostThereFacts(nextMathCoverageProgress.covered, nextMathCoverageProgress.required)
+    : "";
   const introSlides = setupCopy.introSlides;
   const currentIntroSlide = introSlides[introSlideIndex];
   const introVisible = !!child && !child.pin_setup_required && !child.intro_seen;
@@ -1507,6 +1542,9 @@ export default function ChildHomeScreen() {
             <Text style={styles.nextMathMeta}>
               {nextMathStep.mode === "teach" ? setupCopy.nextMathActionTeach : setupCopy.nextMathActionPractice}
             </Text>
+            {nextMathCoverageText ? (
+              <Text style={styles.nextMathCoverage}>{nextMathCoverageText}</Text>
+            ) : null}
           </View>
           <MaterialCommunityIcons name="chevron-right" size={24} color="#1565c0" />
         </TouchableOpacity>
@@ -1856,6 +1894,12 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "700",
     color: "#1565c0",
+  },
+  nextMathCoverage: {
+    marginTop: 4,
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#5c6f82",
   },
   button: {
     backgroundColor: "#0000ff",

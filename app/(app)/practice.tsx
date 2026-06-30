@@ -16,8 +16,9 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "@/lib/supabase";
 import { addStars } from "@/lib/addStars";
 import { generateQuestion, pickTeachExample } from "@/lib/tutor/generate";
-import { currentTierAndBand, Attempt, tierStats, isSolidTierStat } from "@/lib/tutor/ability";
+import { currentTierAndBand, Attempt, factTierCoverageProgress, tierStats, isSolidTierStat } from "@/lib/tutor/ability";
 import { LADDERS, GATE, Operation, FACT_TIERS } from "@/lib/tutorConfig";
+import { TIER_GATE } from "@/lib/masteryConfig";
 import { computeExampleSteps } from "@/lib/tutor/steps";
 import {
   pickMultiplicationStrategy,
@@ -81,6 +82,7 @@ const COPY = {
     keepWorking: (tier: string) => `Let's keep working on ${tier}.`,
     niceProgress: (tier: string) => `Nice progress on ${tier}!`,
     movingUp: (tier: string, nextTier: string) => `Solid at ${tier} — moving up to ${nextTier}!`,
+    almostThereFacts: (covered: number, required: number) => `Almost there — ${covered} of ${required} facts`,
   },
   fr: {
     sessionComplete: "Séance terminée !",
@@ -101,6 +103,7 @@ const COPY = {
     keepWorking: (tier: string) => `On continue à travailler : ${tier}.`,
     niceProgress: (tier: string) => `Beau progrès sur ${tier} !`,
     movingUp: (tier: string, nextTier: string) => `Solide sur ${tier} — on passe à ${nextTier} !`,
+    almostThereFacts: (covered: number, required: number) => `Tu y es presque — ${covered} faits sur ${required}`,
   },
 } as const;
 
@@ -517,6 +520,17 @@ export default function PracticeScreen() {
         topic as Operation,
         childData || {}
       );
+      const currentTierAttempts = attempts.filter((attempt) => attempt.tierId === tierId);
+      const currentTierStat = tierStats(attempts)[tierId];
+      const coverageProgress = factTierCoverageProgress(tierId, currentTierAttempts);
+      const coverageIncomplete =
+        !!currentTierStat &&
+        !!coverageProgress &&
+        coverageProgress.covered < coverageProgress.required &&
+        currentTierStat.masteryEvidence >= GATE.minAttemptsToAdvance &&
+        currentTierStat.adaptive_unaided_attempts >= TIER_GATE.minAdaptiveUnaidedAttempts &&
+        currentTierStat.masteryRate >= GATE.accuracyToAdvance &&
+        !currentTierStat.coverageMet;
 
       setOutcomeBand(band);
 
@@ -526,6 +540,8 @@ export default function PracticeScreen() {
         const nextTierObj = ladder.find((t) => t.id === nextTierId);
         const nextTierLabel = nextTierObj?.label || nextTierId;
         setOutcomeMessage(COPY[appLanguage].movingUp(tierLabel, nextTierLabel));
+      } else if (coverageIncomplete && coverageProgress) {
+        setOutcomeMessage(COPY[appLanguage].almostThereFacts(coverageProgress.covered, coverageProgress.required));
       } else if (band === "struggling") {
         setOutcomeMessage(COPY[appLanguage].keepWorking(tierLabel));
       } else {
