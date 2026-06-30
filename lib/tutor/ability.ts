@@ -137,6 +137,22 @@ export function factTierCoverageKeys(
   };
 }
 
+export function factTierCoverageGapAfterOtherGates(
+  tierId: string,
+  attempts: Attempt[]
+): { covered: number; required: number } | null {
+  const stat = tierStats(attempts)[tierId];
+  const progress = factTierCoverageProgress(tierId, attempts);
+  if (!stat || !progress || progress.covered >= progress.required) return null;
+
+  const otherGatesMet =
+    stat.masteryEvidence >= GATE.minAttemptsToAdvance &&
+    stat.adaptive_unaided_attempts >= TIER_GATE.minAdaptiveUnaidedAttempts &&
+    stat.masteryRate >= GATE.accuracyToAdvance;
+
+  return otherGatesMet && !stat.coverageMet ? progress : null;
+}
+
 export function tierStats(attempts: Attempt[]): Record<string, TierStats> {
   const stats: Record<string, TierStats> = {};
 

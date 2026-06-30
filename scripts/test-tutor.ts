@@ -4,6 +4,7 @@ import { LADDERS, GATE, startingTier, FACT_TIERS, Operation } from "../lib/tutor
 import { coverageKeysForQuestion, generateQuestion, pickUncoveredFactKey, producibleCoverageKeysForTier } from "../lib/tutor/generate";
 import { factTierCoverageKeys, requiredCoverageKeys, tierStats, currentTierAndBand, Attempt } from "../lib/tutor/ability";
 import { pickNextStep } from "../lib/tutor/selector";
+import { computeUnlockState } from "../lib/tutor/unlockGraph";
 
 function assert(condition: boolean, message: string) {
   if (!condition) {
@@ -326,6 +327,49 @@ try {
   Math.random = originalRandom;
 }
 console.log("  ✅ S7 fallback path returns a valid borrowing/across-zero question");
+
+console.log("\n====== SUBJECT UNLOCK GRAPH TESTS ======\n");
+
+const noSolid = {
+  addition: null,
+  subtraction: null,
+  multiplication: null,
+  division: null,
+};
+
+console.log("Test 12: beginner unlocks addition and independent subjects only");
+const unlock1 = computeUnlockState(noSolid, {});
+assert(unlock1.addition.unlocked, "Addition should be unlocked for beginners");
+assert(unlock1.spelling.unlocked, "Spelling should be unlocked for beginners");
+assert(unlock1.conjugation.unlocked, "Conjugation should be unlocked for beginners");
+assert(unlock1.reading.unlocked, "Reading should be unlocked for beginners");
+assert(!unlock1.subtraction.unlocked, "Subtraction should start locked");
+assert(!unlock1.multiplication.unlocked, "Multiplication should start locked");
+assert(!unlock1.division.unlocked, "Division should start locked");
+assert(!unlock1.word_problems.unlocked, "Word problems should start locked");
+console.log("  ✅ beginner unlock state is correct");
+
+console.log("\nTest 13: addition through A1 unlocks subtraction and word problems");
+const unlock2 = computeUnlockState({ ...noSolid, addition: "A1" }, {});
+assert(unlock2.subtraction.unlocked, "Subtraction should unlock after A1");
+assert(unlock2.word_problems.unlocked, "Word problems should unlock after A1");
+assert(!unlock2.multiplication.unlocked, "Multiplication should still require A4");
+console.log("  ✅ A1 unlocks subtraction and word problems");
+
+console.log("\nTest 14: addition through A4 unlocks multiplication");
+const unlock3 = computeUnlockState({ ...noSolid, addition: "A4" }, {});
+assert(unlock3.multiplication.unlocked, "Multiplication should unlock after A4");
+console.log("  ✅ A4 unlocks multiplication");
+
+console.log("\nTest 15: multiplication through M2 unlocks division");
+const unlock4 = computeUnlockState({ ...noSolid, multiplication: "M2" }, {});
+assert(unlock4.division.unlocked, "Division should unlock after M2");
+console.log("  ✅ M2 unlocks division");
+
+console.log("\nTest 16: parent-set division level unlocks division immediately");
+const unlock5 = computeUnlockState(noSolid, { math_division_level: "long" });
+assert(unlock5.division.unlocked, "Division should unlock when parent sets a non-beginner division level");
+console.log("  ✅ parent-set division placement unlocks division");
 
 console.log("\n====== ALL TESTS COMPLETE ======\n");
 
