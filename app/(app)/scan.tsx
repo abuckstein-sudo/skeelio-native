@@ -11,6 +11,7 @@ import {
   ScrollView,
   FlatList,
   Modal,
+  TextInput,
 } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
@@ -59,10 +60,16 @@ interface QuestionForm {
   same_form_prompt?: string;
 }
 
+interface SubSkill {
+  label: string;
+  description?: string;
+}
+
 interface WorksheetData {
   concept: {
     label: string;
     description?: string;
+    sub_skills?: SubSkill[];
     school_method?: SchoolMethod;
     question_forms?: QuestionForm[];
     practice_modes?: string[];
@@ -137,6 +144,9 @@ export default function ScanScreen() {
 
   const [showReview, setShowReview] = useState(false);
   const [reviewData, setReviewData] = useState<WorksheetData | null>(null);
+  const [reviewEdited, setReviewEdited] = useState(false);
+  const [regeneratingPractice, setRegeneratingPractice] = useState(false);
+  const [editingSubSkillIndex, setEditingSubSkillIndex] = useState<number | null>(null);
   const [assigning, setAssigning] = useState(false);
 
   const [showConfirmation, setShowConfirmation] = useState(false);
@@ -226,6 +236,7 @@ export default function ScanScreen() {
       setBase64Raw(null);
       setReviewData(null);
       setShowReview(false);
+      resetReviewEditState();
       return;
     }
     if (showReview) {
@@ -234,6 +245,7 @@ export default function ScanScreen() {
       setImageUri(null);
       setJpegBase64(null);
       setBase64Raw(null);
+      resetReviewEditState();
       return;
     }
     router.back();
@@ -241,6 +253,112 @@ export default function ScanScreen() {
 
   const handleConfirmationDone = () => {
     router.replace("/(app)/parent");
+  };
+
+  const resetReviewEditState = () => {
+    setReviewEdited(false);
+    setRegeneratingPractice(false);
+    setEditingSubSkillIndex(null);
+  };
+
+  const updateReviewConceptLabel = (label: string) => {
+    setReviewData((current) => current
+      ? { ...current, concept: { ...current.concept, label } }
+      : current
+    );
+    setReviewEdited(true);
+  };
+
+  const updateReviewSubSkillLabel = (index: number, label: string) => {
+    setReviewData((current) => {
+      if (!current) return current;
+      const subSkills = [...(current.concept.sub_skills || [])];
+      subSkills[index] = { ...(subSkills[index] || { label: "" }), label };
+      return { ...current, concept: { ...current.concept, sub_skills: subSkills } };
+    });
+    setReviewEdited(true);
+  };
+
+  const removeReviewSubSkill = (index: number) => {
+    setReviewData((current) => {
+      if (!current) return current;
+      const subSkills = (current.concept.sub_skills || []).filter((_, idx) => idx !== index);
+      return { ...current, concept: { ...current.concept, sub_skills: subSkills } };
+    });
+    setEditingSubSkillIndex(null);
+    setReviewEdited(true);
+  };
+
+  const addReviewSubSkill = () => {
+    setReviewData((current) => {
+      if (!current) return current;
+      const subSkills = [...(current.concept.sub_skills || []), { label: "" }];
+      setEditingSubSkillIndex(subSkills.length - 1);
+      return { ...current, concept: { ...current.concept, sub_skills: subSkills } };
+    });
+    setReviewEdited(true);
+  };
+
+  const handleRegeneratePractice = async () => {
+    if (!reviewData || isSpellingListReview(reviewData) || !reviewEdited || regeneratingPractice) return;
+
+    const editedSubSkills = (reviewData.concept.sub_skills || [])
+      .map((skill) => ({ ...skill, label: skill.label.trim() }))
+      .filter((skill) => skill.label.length > 0);
+
+    if (!reviewData.concept.label.trim() || editedSubSkills.length === 0) {
+      setError("Keep a concept label and at least one sub-skill before regenerating.");
+      return;
+    }
+
+    const editedConcept = {
+      ...reviewData.concept,
+      label: reviewData.concept.label.trim(),
+      sub_skills: editedSubSkills,
+    };
+
+    setRegeneratingPractice(true);
+    setError("");
+
+    try {
+      const { data, error: invokeError } = await supabase.functions.invoke("absorb-worksheet", {
+        body: {
+          mode: "regenerate",
+          concept: editedConcept,
+          domain: reviewData.domain,
+          language: reviewData.language,
+          grade_band: reviewData.grade_band,
+          lesson: reviewData.lesson,
+          source_type: reviewData.source_type || "worksheet",
+        },
+      });
+
+      if (invokeError) throw invokeError;
+      if (!data?.practice || !Array.isArray(data.practice)) {
+        throw new Error("Regenerate response did not include practice items");
+      }
+
+      setReviewData((current) => current
+        ? {
+            ...current,
+            ...data,
+            concept: {
+              ...editedConcept,
+              ...((data.concept || {}) as WorksheetData["concept"]),
+              sub_skills: editedSubSkills,
+            },
+            practice: data.practice,
+          }
+        : current
+      );
+      setReviewEdited(false);
+      setEditingSubSkillIndex(null);
+    } catch (err) {
+      console.error("[scan] regenerate practice error:", err);
+      setError("Could not regenerate practice. The current practice is unchanged.");
+    } finally {
+      setRegeneratingPractice(false);
+    }
   };
 
   const pickImage = async () => {
@@ -359,6 +477,7 @@ export default function ScanScreen() {
 
       // Show review screen instead of immediately assigning
       setReviewData(result);
+      resetReviewEditState();
       setShowReview(true);
       setLoading(false);
     } catch (err) {
@@ -543,6 +662,7 @@ export default function ScanScreen() {
     const practiceItems = (reviewData.practice || []).slice(0, 3);
     const spellingWords = uniqueWords(reviewData.spelling_words);
     const isSpellingList = isSpellingListReview(reviewData);
+    const subSkills = reviewData.concept.sub_skills || [];
 
     return (
       <SafeAreaView style={styles.container}>
@@ -574,11 +694,84 @@ export default function ScanScreen() {
           {/* Ce que Skeelio va travailler */}
           <View style={styles.reviewSection}>
             <Text style={styles.reviewSectionTitle}>Ce que Skeelio va travailler</Text>
-            <Text style={styles.reviewConceptLabel}>{reviewData.concept.label}</Text>
+            {isSpellingList ? (
+              <Text style={styles.reviewConceptLabel}>{reviewData.concept.label}</Text>
+            ) : (
+              <TextInput
+                value={reviewData.concept.label}
+                onChangeText={updateReviewConceptLabel}
+                style={styles.reviewConceptInput}
+                placeholder="Nom du concept"
+                placeholderTextColor="#999"
+              />
+            )}
             {reviewData.concept.description && (
               <Text style={styles.reviewDescription}>{reviewData.concept.description}</Text>
             )}
           </View>
+
+          {!isSpellingList && (
+            <View style={styles.reviewSection}>
+              <Text style={styles.reviewSectionTitle}>Sous-compétences</Text>
+              <View style={styles.subSkillChipContainer}>
+                {subSkills.map((skill, idx) => {
+                  const isEditing = editingSubSkillIndex === idx;
+                  return (
+                    <View key={`${idx}-${skill.label}`} style={styles.subSkillChip}>
+                      {isEditing ? (
+                        <TextInput
+                          value={skill.label}
+                          onChangeText={(text) => updateReviewSubSkillLabel(idx, text)}
+                          onBlur={() => setEditingSubSkillIndex(null)}
+                          autoFocus
+                          style={styles.subSkillInput}
+                          placeholder="Sous-compétence"
+                          placeholderTextColor="#999"
+                        />
+                      ) : (
+                        <TouchableOpacity
+                          style={styles.subSkillLabelButton}
+                          onPress={() => setEditingSubSkillIndex(idx)}
+                        >
+                          <Text style={styles.subSkillChipText}>
+                            {skill.label || "Sous-compétence"}
+                          </Text>
+                        </TouchableOpacity>
+                      )}
+                      <TouchableOpacity
+                        style={styles.subSkillRemoveButton}
+                        onPress={() => removeReviewSubSkill(idx)}
+                      >
+                        <MaterialCommunityIcons name="close" size={16} color="#555" />
+                      </TouchableOpacity>
+                    </View>
+                  );
+                })}
+                <TouchableOpacity style={styles.addSubSkillButton} onPress={addReviewSubSkill}>
+                  <MaterialCommunityIcons name="plus" size={16} color="#1769aa" />
+                  <Text style={styles.addSubSkillText}>Add sub-skill</Text>
+                </TouchableOpacity>
+              </View>
+
+              <TouchableOpacity
+                style={[
+                  styles.regenerateButton,
+                  (!reviewEdited || regeneratingPractice) && styles.buttonDisabled,
+                ]}
+                onPress={handleRegeneratePractice}
+                disabled={!reviewEdited || regeneratingPractice}
+              >
+                {regeneratingPractice ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <>
+                    <MaterialCommunityIcons name="refresh" size={17} color="#fff" />
+                    <Text style={styles.regenerateButtonText}>Regenerate practice</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          )}
 
           {reviewData.concept.school_method?.name ? (
             <View style={styles.reviewSection}>
@@ -1081,6 +1274,18 @@ const styles = StyleSheet.create({
     color: "#2196f3",
     marginBottom: 4,
   },
+  reviewConceptInput: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#1769aa",
+    borderWidth: 1,
+    borderColor: "#cfe7ff",
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginBottom: 8,
+    backgroundColor: "#f8fbff",
+  },
   reviewMethodName: {
     fontSize: 15,
     fontWeight: "700",
@@ -1114,6 +1319,80 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "600",
     color: "#1769aa",
+  },
+  subSkillChipContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  subSkillChip: {
+    minHeight: 34,
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#cfe7ff",
+    borderRadius: 8,
+    backgroundColor: "#eef6ff",
+  },
+  subSkillLabelButton: {
+    paddingLeft: 10,
+    paddingRight: 6,
+    paddingVertical: 7,
+  },
+  subSkillChipText: {
+    maxWidth: 220,
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#1769aa",
+  },
+  subSkillInput: {
+    minWidth: 150,
+    maxWidth: 240,
+    paddingLeft: 10,
+    paddingRight: 6,
+    paddingVertical: 6,
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#1769aa",
+  },
+  subSkillRemoveButton: {
+    width: 30,
+    height: 32,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  addSubSkillButton: {
+    minHeight: 34,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 10,
+    borderWidth: 1,
+    borderColor: "#cfe7ff",
+    borderRadius: 8,
+    backgroundColor: "#fff",
+  },
+  addSubSkillText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#1769aa",
+  },
+  regenerateButton: {
+    marginTop: 12,
+    minHeight: 40,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    backgroundColor: "#2196f3",
+    borderRadius: 8,
+  },
+  regenerateButtonText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#fff",
   },
   reviewQuestionCard: {
     backgroundColor: "#f9f9f9",
