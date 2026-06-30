@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, SafeAreaView, Modal, TextInput, Image, Alert, Linking, KeyboardAvoidingView, Platform } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
 import * as ImageManipulator from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
 import { supabase } from "@/lib/supabase";
 import { getOperationStatus, OperationStatus, getWordProblemsStatus, WordProblemsStatus } from "@/lib/tutor/status";
-import { GATE, LADDERS, Operation } from "@/lib/tutorConfig";
-import { TIER_GATE } from "@/lib/masteryConfig";
-import { Attempt, factTierCoverageProgress, tierStats } from "@/lib/tutor/ability";
-import { NextStep, pickNextStep } from "@/lib/tutor/selector";
+import { LADDERS, Operation } from "@/lib/tutorConfig";
+import { Attempt, factTierCoverageGapAfterOtherGates } from "@/lib/tutor/ability";
+import { computeUnlockState, SubjectId, SubjectUnlockState } from "@/lib/tutor/unlockGraph";
 import { listAssignmentsForChild, Assignment } from "@/lib/assignments";
 import {
   listSchoolHomeworkWeek,
@@ -48,6 +48,7 @@ interface Child {
   max_times_table?: number | null;
   math_subtraction_level?: string | null;
   math_division_level?: string | null;
+  focus_subjects?: string[] | null;
 }
 
 const AVATAR_EMOJI: Record<string, string> = {
@@ -92,6 +93,12 @@ const SUBJECT_COPY: Record<ChildHomeLanguage, Record<string, { label: string; de
 };
 
 const MATH_OPERATIONS: Operation[] = ["addition", "subtraction", "multiplication", "division"];
+const UNLOCK_STORAGE_PREFIX = "skeelio:unlockedSeen:";
+
+interface NextUpTile {
+  subject: SubjectTile;
+  unlockState: SubjectUnlockState;
+}
 
 const TIER_LABEL_COPY: Record<ChildHomeLanguage, Partial<Record<string, string>>> = {
   en: {},
@@ -171,6 +178,10 @@ const SETUP_COPY = {
     nextMathActionTeach: "Learn",
     nextMathActionPractice: "Practice",
     almostThereFacts: (covered: number, required: number) => `Almost there — ${covered} of ${required} facts`,
+    locked: "Locked",
+    lockedUntil: (tierLabel: string, subjectLabel: string) => `Master ${tierLabel} to unlock ${subjectLabel}`,
+    unlockedTitle: "You unlocked it!",
+    unlockedBody: (subjectLabel: string) => `Great work! You unlocked ${subjectLabel}!`,
     settings: "Settings",
     addHomework: "Add homework",
     addHomeworkPlaceholder: "Write one homework item per line",
@@ -241,6 +252,10 @@ const SETUP_COPY = {
     nextMathActionTeach: "Découvrir",
     nextMathActionPractice: "S'entraîner",
     almostThereFacts: (covered: number, required: number) => `Tu y es presque — ${covered} faits sur ${required}`,
+    locked: "Verrouillé",
+    lockedUntil: (tierLabel: string, subjectLabel: string) => `Réussis ${tierLabel} pour débloquer ${subjectLabel}`,
+    unlockedTitle: "Bravo !",
+    unlockedBody: (subjectLabel: string) => `Tu as débloqué ${subjectLabel} !`,
     settings: "Réglages",
     addHomework: "Ajouter un devoir",
     addHomeworkPlaceholder: "Écris un devoir par ligne",
@@ -299,21 +314,12 @@ const tierLabelForChild = (
   return TIER_LABEL_COPY[language][tierId] || LADDERS[operation].find((tier) => tier.id === tierId)?.label || tierId;
 };
 
-const coverageProgressForStep = (
-  step: NextStep,
+const coverageProgressForMathTile = (
+  operation: Operation,
+  tierId: string,
   attemptsByOperation: Record<Operation, Attempt[]>
 ) => {
-  const attempts = attemptsByOperation[step.operation] || [];
-  const stat = tierStats(attempts)[step.tierId];
-  const progress = factTierCoverageProgress(step.tierId, attempts);
-  if (!stat || !progress || progress.covered >= progress.required) return null;
-
-  const otherGatesMet =
-    stat.masteryEvidence >= GATE.minAttemptsToAdvance &&
-    stat.adaptive_unaided_attempts >= TIER_GATE.minAdaptiveUnaidedAttempts &&
-    stat.masteryRate >= GATE.accuracyToAdvance;
-
-  return otherGatesMet && !stat.coverageMet ? progress : null;
+  return factTierCoverageGapAfterOtherGates(tierId, attemptsByOperation[operation] || []);
 };
 
 export default function ChildHomeScreen() {
@@ -353,6 +359,7 @@ export default function ChildHomeScreen() {
   const [pinSetupError, setPinSetupError] = useState("");
   const [introSlideIndex, setIntroSlideIndex] = useState(0);
   const [introError, setIntroError] = useState("");
+  const [unlockCelebration, setUnlockCelebration] = useState<{ subjectId: SubjectId; label: string } | null>(null);
   const skipNextFocusFeedRefreshRef = useRef(false);
 
   const fetchStars = useCallback(async () => {
@@ -483,7 +490,45 @@ export default function ChildHomeScreen() {
     ]);
   }, [fetchPendingAssignments, fetchPendingEpisodes, fetchSchoolHomework]);
 
-  const refreshMathProgress = useCallback(async (childForStatus?: Child | null) => {
+  const maybeCelebrateUnlocks = useCallback(async (
+    statuses: Record<Operation, OperationStatus>,
+    childForUnlock: Child,
+    shouldCelebrate: boolean
+  ) => {
+    if (!childId) return;
+
+    const highestSolidTierByOperation = MATH_OPERATIONS.reduce((acc, operation) => {
+      acc[operation] = statuses[operation]?.highestSolidTierId ?? null;
+      return acc;
+    }, {} as Record<Operation, string | null>);
+    const unlockState = computeUnlockState(highestSolidTierByOperation, childForUnlock);
+    const unlockedIds = Object.entries(unlockState)
+      .filter(([, state]) => state.unlocked)
+      .map(([subjectId]) => subjectId as SubjectId);
+    const storageKey = `${UNLOCK_STORAGE_PREFIX}${childId}`;
+    const stored = await AsyncStorage.getItem(storageKey);
+
+    if (!stored) {
+      await AsyncStorage.setItem(storageKey, JSON.stringify(unlockedIds));
+      return;
+    }
+
+    const seenIds = new Set<string>(JSON.parse(stored));
+    const newlyUnlocked = unlockedIds.filter((subjectId) => !seenIds.has(subjectId));
+    if (newlyUnlocked.length === 0) return;
+
+    await AsyncStorage.setItem(storageKey, JSON.stringify(Array.from(new Set([...seenIds, ...unlockedIds]))));
+    if (!shouldCelebrate) return;
+
+    const language = getChildHomeLanguage(childForUnlock);
+    const subjectId = newlyUnlocked[0];
+    setUnlockCelebration({
+      subjectId,
+      label: SUBJECT_COPY[language][subjectId]?.label || subjectId,
+    });
+  }, [childId]);
+
+  const refreshMathProgress = useCallback(async (childForStatus?: Child | null, shouldCelebrate = false) => {
     if (!childId) return;
 
     const { data: attemptRows, error: attemptError } = await supabase
@@ -521,7 +566,8 @@ export default function ChildHomeScreen() {
       statuses[op] = status;
     }
     setOperationStatuses(statuses);
-  }, [child, childId]);
+    await maybeCelebrateUnlocks(statuses, statusChild, shouldCelebrate);
+  }, [child, childId, maybeCelebrateUnlocks]);
 
   useEffect(() => {
     if (childId) {
@@ -540,8 +586,8 @@ export default function ChildHomeScreen() {
         return;
       }
       refreshHomeworkFeed();
-      refreshMathProgress();
-    }, [fetchStars, refreshHomeworkFeed, refreshMathProgress])
+      refreshMathProgress(child, true);
+    }, [child, fetchStars, refreshHomeworkFeed, refreshMathProgress])
   );
 
   const fetchChild = async () => {
@@ -552,7 +598,7 @@ export default function ChildHomeScreen() {
 
     const { data, error: dbError } = await supabase
       .from("children")
-      .select("id, name, grade_level, selected_avatar, home_background, pin, pin_setup_required, intro_seen, preferred_language, languages, allow_child_homework_entry, max_addition_number, max_times_table, math_subtraction_level, math_division_level")
+      .select("id, name, grade_level, selected_avatar, home_background, pin, pin_setup_required, intro_seen, preferred_language, languages, allow_child_homework_entry, max_addition_number, max_times_table, math_subtraction_level, math_division_level, focus_subjects")
       .eq("id", childId)
       .single();
 
@@ -575,7 +621,7 @@ export default function ChildHomeScreen() {
 
     setStars(rewardsData?.stars ?? 0);
 
-    await refreshMathProgress(data as Child);
+    await refreshMathProgress(data as Child, false);
 
     // Fetch word problems status
     const wpStatus = await getWordProblemsStatus(childId, data || {});
@@ -643,17 +689,22 @@ export default function ChildHomeScreen() {
     }
   };
 
-  const handleNextMathTap = (step: NextStep, tierLabel: string) => {
+  const handleNextMathTap = (
+    operation: Operation,
+    tierId: string,
+    tierLabel: string,
+    mode: "teach" | "practice"
+  ) => {
     if (!childId) return;
 
-    if (step.mode === "teach") {
+    if (mode === "teach") {
       router.push({
         pathname: "/lesson/[childId]",
         params: {
           childId,
-          tierId: step.tierId,
+          tierId,
           tierLabel,
-          operation: step.operation,
+          operation,
         },
       });
       return;
@@ -662,9 +713,9 @@ export default function ChildHomeScreen() {
     router.push({
       pathname: "/practice",
       params: {
-        topic: step.operation,
+        topic: operation,
         childId,
-        tierId: step.tierId,
+        tierId,
         tierLabel,
       },
     });
@@ -1087,18 +1138,53 @@ export default function ChildHomeScreen() {
   );
   const hasRemainingHomework = homeworkFeed.length > 0 || remainingSchoolHomeworkCount > 0;
   const allMathStatusesLoaded = MATH_OPERATIONS.every((operation) => operationStatuses[operation]);
-  const allMathSolid = allMathStatusesLoaded && MATH_OPERATIONS.every((operation) => operationStatuses[operation].band === "solid");
   const mathDataReady = !!child && allMathStatusesLoaded;
-  const nextMathStep = (!mathDataReady || allMathSolid) ? null : pickNextStep(child, attemptsByOperation);
-  const nextMathTierLabel = nextMathStep
-    ? tierLabelForChild(nextMathStep.operation, nextMathStep.tierId, childLanguage)
-    : "";
-  const nextMathCoverageProgress = nextMathStep
-    ? coverageProgressForStep(nextMathStep, attemptsByOperation)
+  const highestSolidTierByOperation = MATH_OPERATIONS.reduce((acc, operation) => {
+    acc[operation] = operationStatuses[operation]?.highestSolidTierId ?? null;
+    return acc;
+  }, {} as Record<Operation, string | null>);
+  const unlockState = mathDataReady
+    ? computeUnlockState(highestSolidTierByOperation, child)
     : null;
-  const nextMathCoverageText = nextMathCoverageProgress
-    ? setupCopy.almostThereFacts(nextMathCoverageProgress.covered, nextMathCoverageProgress.required)
-    : "";
+  const focusedSubjects = Array.isArray(child?.focus_subjects)
+    ? new Set(child.focus_subjects)
+    : new Set(SUBJECTS.map((subject) => subject.topic));
+  const nextUpTiles: NextUpTile[] = unlockState
+    ? SUBJECTS
+        .filter((subject) => subject.isActive)
+        .filter((subject) => focusedSubjects.has(subject.topic))
+        .map((subject) => ({
+          subject,
+          unlockState: unlockState[subject.topic as SubjectId],
+        }))
+    : [];
+  const subjectLabel = (topic: string) => SUBJECT_COPY[childLanguage][topic]?.label || topic;
+  const subjectDescription = (topic: string) => SUBJECT_COPY[childLanguage][topic]?.description || "";
+  const lockedText = (state: SubjectUnlockState, topic: string) => {
+    if (!state.reasonOperation || !state.reasonTierId) return setupCopy.locked;
+    return setupCopy.lockedUntil(
+      tierLabelForChild(state.reasonOperation, state.reasonTierId, childLanguage),
+      subjectLabel(topic)
+    );
+  };
+  const mathTileMeta = (operation: Operation) => {
+    const status = operationStatuses[operation];
+    if (!status) return null;
+    const tierId = status.workingTierId;
+    const tierLabel = tierLabelForChild(operation, tierId, childLanguage);
+    const tierAttempts = attemptsByOperation[operation] || [];
+    const isBrandNewTier = !tierAttempts.some((attempt) => attempt.tierId === tierId);
+    const coverageProgress = coverageProgressForMathTile(operation, tierId, attemptsByOperation);
+    return {
+      tierId,
+      tierLabel,
+      mode: isBrandNewTier ? "teach" as const : "practice" as const,
+      action: isBrandNewTier ? setupCopy.nextMathActionTeach : setupCopy.nextMathActionPractice,
+      coverageText: coverageProgress
+        ? setupCopy.almostThereFacts(coverageProgress.covered, coverageProgress.required)
+        : "",
+    };
+  };
   const introSlides = setupCopy.introSlides;
   const currentIntroSlide = introSlides[introSlideIndex];
   const introVisible = !!child && !child.pin_setup_required && !child.intro_seen;
@@ -1527,27 +1613,55 @@ export default function ChildHomeScreen() {
         </View>
       )}
 
-      {nextMathStep && (
-        <TouchableOpacity
-          style={styles.nextMathCard}
-          activeOpacity={0.86}
-          onPress={() => handleNextMathTap(nextMathStep, nextMathTierLabel)}
-        >
-          <View style={styles.nextMathIconWrap}>
-            <MaterialCommunityIcons name="calculator-variant-outline" size={26} color="#fff" />
-          </View>
-          <View style={styles.nextMathTextWrap}>
-            <Text style={styles.nextMathKicker}>{setupCopy.nextMathKicker}</Text>
-            <Text style={styles.nextMathTitle}>{nextMathTierLabel}</Text>
-            <Text style={styles.nextMathMeta}>
-              {nextMathStep.mode === "teach" ? setupCopy.nextMathActionTeach : setupCopy.nextMathActionPractice}
-            </Text>
-            {nextMathCoverageText ? (
-              <Text style={styles.nextMathCoverage}>{nextMathCoverageText}</Text>
-            ) : null}
-          </View>
-          <MaterialCommunityIcons name="chevron-right" size={24} color="#1565c0" />
-        </TouchableOpacity>
+      {nextUpTiles.length > 0 && (
+        <View style={styles.nextUpSection}>
+          <Text style={styles.homeworkSectionTitle}>{setupCopy.nextMathKicker}</Text>
+          {nextUpTiles.map(({ subject, unlockState: state }) => {
+            const isMathSubject = MATH_OPERATIONS.includes(subject.topic as Operation);
+            const mathMeta = isMathSubject ? mathTileMeta(subject.topic as Operation) : null;
+            const unlocked = state?.unlocked;
+            const title = mathMeta?.tierLabel || subjectLabel(subject.topic);
+            const subtitle = unlocked
+              ? mathMeta?.action || subjectDescription(subject.topic)
+              : lockedText(state, subject.topic);
+
+            return (
+              <TouchableOpacity
+                key={`next-${subject.topic}`}
+                style={[styles.nextMathCard, !unlocked && styles.nextMathCardLocked]}
+                activeOpacity={unlocked ? 0.86 : 1}
+                onPress={() => {
+                  if (!unlocked) return;
+                  if (mathMeta && isMathSubject) {
+                    handleNextMathTap(subject.topic as Operation, mathMeta.tierId, mathMeta.tierLabel, mathMeta.mode);
+                    return;
+                  }
+                  handleSubjectTap(subject.topic);
+                }}
+                disabled={!unlocked}
+              >
+                <View style={[styles.nextMathIconWrap, !unlocked && styles.nextMathIconWrapLocked]}>
+                  <MaterialCommunityIcons
+                    name={unlocked ? "arrow-right-circle" : "lock-outline"}
+                    size={26}
+                    color="#fff"
+                  />
+                </View>
+                <View style={styles.nextMathTextWrap}>
+                  <Text style={styles.nextMathKicker}>{unlocked ? subjectLabel(subject.topic) : setupCopy.locked}</Text>
+                  <Text style={styles.nextMathTitle}>{title}</Text>
+                  <Text style={styles.nextMathMeta}>{subtitle}</Text>
+                  {mathMeta?.coverageText ? (
+                    <Text style={styles.nextMathCoverage}>{mathMeta.coverageText}</Text>
+                  ) : null}
+                </View>
+                {unlocked ? (
+                  <MaterialCommunityIcons name="chevron-right" size={24} color="#1565c0" />
+                ) : null}
+              </TouchableOpacity>
+            );
+          })}
+        </View>
       )}
 
       <View style={styles.subjectsContainer}>
@@ -1576,6 +1690,26 @@ export default function ChildHomeScreen() {
         })}
       </View>
       </ScrollView>
+
+      <Modal
+        visible={!!unlockCelebration}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setUnlockCelebration(null)}
+      >
+        <View style={styles.unlockModalBackdrop}>
+          <View style={styles.unlockModalCard}>
+            <MaterialCommunityIcons name="star-circle" size={52} color="#ffc107" />
+            <Text style={styles.unlockModalTitle}>{setupCopy.unlockedTitle}</Text>
+            <Text style={styles.unlockModalBody}>
+              {unlockCelebration ? setupCopy.unlockedBody(unlockCelebration.label) : ""}
+            </Text>
+            <TouchableOpacity style={styles.unlockModalButton} onPress={() => setUnlockCelebration(null)}>
+              <Text style={styles.unlockModalButtonText}>OK</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       {homeworkLimit?.daily_limit_minutes ? (
         <View style={styles.homeworkTimerDebug}>
@@ -1853,6 +1987,9 @@ const styles = StyleSheet.create({
     textAlign: "center",
     lineHeight: 14,
   },
+  nextUpSection: {
+    marginBottom: 18,
+  },
   nextMathCard: {
     minHeight: 96,
     flexDirection: "row",
@@ -1865,6 +2002,10 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: "#90caf9",
   },
+  nextMathCardLocked: {
+    backgroundColor: "#eeeeee",
+    borderColor: "#d6d6d6",
+  },
   nextMathIconWrap: {
     width: 46,
     height: 46,
@@ -1872,6 +2013,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "#2196f3",
+  },
+  nextMathIconWrapLocked: {
+    backgroundColor: "#9e9e9e",
   },
   nextMathTextWrap: {
     flex: 1,
@@ -1900,6 +2044,46 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "700",
     color: "#5c6f82",
+  },
+  unlockModalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.35)",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 24,
+  },
+  unlockModalCard: {
+    width: "100%",
+    maxWidth: 340,
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    padding: 24,
+    alignItems: "center",
+  },
+  unlockModalTitle: {
+    fontSize: 22,
+    fontWeight: "800",
+    color: "#1a1a1a",
+    marginTop: 12,
+    marginBottom: 8,
+  },
+  unlockModalBody: {
+    fontSize: 16,
+    color: "#444",
+    textAlign: "center",
+    lineHeight: 22,
+  },
+  unlockModalButton: {
+    marginTop: 18,
+    backgroundColor: "#2196f3",
+    borderRadius: 8,
+    paddingHorizontal: 24,
+    paddingVertical: 10,
+  },
+  unlockModalButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "800",
   },
   button: {
     backgroundColor: "#0000ff",
