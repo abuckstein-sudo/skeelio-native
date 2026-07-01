@@ -78,6 +78,20 @@ const SUBJECTS: SubjectTile[] = [
   { topic: "reading", label: "Reading", description: "Read and understand", isActive: false },
 ];
 
+const CURRICULUM_ORDER: Record<string, number> = {
+  addition: 0,
+  subtraction: 1,
+  multiplication: 2,
+  division: 3,
+  word_problems: 4,
+  spelling: 5,
+  conjugation: 6,
+  reading: 7,
+};
+
+const curriculumOrderFor = (topic: string) =>
+  CURRICULUM_ORDER[topic] ?? Number.MAX_SAFE_INTEGER;
+
 const SUBJECT_COPY: Record<ChildHomeLanguage, Record<string, { label: string; description: string }>> = {
   en: Object.fromEntries(SUBJECTS.map((subject) => [subject.topic, { label: subject.label, description: subject.description }])),
   fr: {
@@ -1157,6 +1171,11 @@ export default function ChildHomeScreen() {
           subject,
           unlockState: unlockState[subject.topic as SubjectId],
         }))
+        .sort((a, b) => {
+          const aLocked = a.unlockState?.unlocked ? 0 : 1;
+          const bLocked = b.unlockState?.unlocked ? 0 : 1;
+          return aLocked - bLocked || curriculumOrderFor(a.subject.topic) - curriculumOrderFor(b.subject.topic);
+        })
     : [];
   const subjectLabel = (topic: string) => SUBJECT_COPY[childLanguage][topic]?.label || topic;
   const subjectDescription = (topic: string) => SUBJECT_COPY[childLanguage][topic]?.description || "";
