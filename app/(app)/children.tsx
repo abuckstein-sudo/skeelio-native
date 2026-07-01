@@ -12,12 +12,12 @@ import {
   useWindowDimensions,
   Alert,
 } from "react-native";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect, useRouter } from "expo-router";
 import { supabase } from "@/lib/supabase";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import GiraffeBackground from "@/components/GiraffeBackground";
 import { getHomeworkLockStatus } from "@/lib/homeworkTime";
+import { hasSeenOnboarding } from "@/lib/onboardingSeen";
 
 interface Child {
   id: string;
@@ -78,7 +78,7 @@ export default function ChildrenScreen() {
       const userId = data.user?.id;
       if (!userId || cancelled) return;
 
-      const seen = await AsyncStorage.getItem(`skeelio:onboardingSeen:${userId}`);
+      const seen = await hasSeenOnboarding(userId);
       if (!seen && !cancelled) {
         router.replace("/(app)/onboarding");
       }

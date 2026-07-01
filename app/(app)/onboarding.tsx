@@ -1,9 +1,9 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import OnboardingCarousel from "@/components/OnboardingCarousel";
 import { AppLanguage, getStoredAppLanguage, setStoredAppLanguage } from "@/lib/appLanguage";
+import { markOnboardingSeen } from "@/lib/onboardingSeen";
 import { supabase } from "@/lib/supabase";
 
 const SLIDES: Record<AppLanguage, { id: string; title: string; body: string; cta?: string }[]> = {
@@ -69,7 +69,7 @@ export default function OnboardingScreen() {
     const { data } = await supabase.auth.getUser();
     const id = data.user?.id;
     if (id) {
-      await AsyncStorage.setItem(`skeelio:onboardingSeen:${id}`, "1");
+      await markOnboardingSeen(id);
     }
   };
 
