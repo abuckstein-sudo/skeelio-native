@@ -19,6 +19,7 @@ import ParentProofSection from "@/components/ParentProofSection";
 import RewardsManager from "@/components/RewardsManager";
 import SchoolHomeworkManager from "@/components/SchoolHomeworkManager";
 import ChildDocumentsSection from "@/components/ChildDocumentsSection";
+import { hasSeenOnboarding } from "@/lib/onboardingSeen";
 
 interface Child {
   id: string;
@@ -49,6 +50,7 @@ export default function ParentScreen() {
   const [children, setChildren] = useState<Child[]>([]);
   const [selectedChildId, setSelectedChildId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [checkingOnboarding, setCheckingOnboarding] = useState(true);
   const [error, setError] = useState("");
   const [showMenu, setShowMenu] = useState(false);
   const [parentName, setParentName] = useState("");
@@ -56,9 +58,36 @@ export default function ParentScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      fetchChildren();
-      fetchParentName();
-    }, [])
+      let cancelled = false;
+
+      const loadParentEntry = async () => {
+        const userId = session?.user?.id;
+        if (!userId) {
+          setCheckingOnboarding(false);
+          setIsLoading(false);
+          return;
+        }
+
+        setCheckingOnboarding(true);
+        const seen = await hasSeenOnboarding(userId);
+        if (cancelled) return;
+
+        if (!seen) {
+          router.replace("/(app)/onboarding");
+          return;
+        }
+
+        setCheckingOnboarding(false);
+        fetchChildren();
+        fetchParentName();
+      };
+
+      loadParentEntry();
+
+      return () => {
+        cancelled = true;
+      };
+    }, [router, session?.user?.id])
   );
 
   const fetchParentName = async () => {
@@ -170,7 +199,7 @@ export default function ParentScreen() {
     { id: "documents", label: "Photos/docs", icon: "folder-image", color: "#f97316", softColor: "#ffedd5" },
   ];
 
-  if (isLoading) {
+  if (checkingOnboarding || isLoading) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.loadingContainer}>
