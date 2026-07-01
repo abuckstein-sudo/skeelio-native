@@ -882,16 +882,6 @@ export default function SchoolHomeworkManager({ childId }: { childId: string }) 
             <MaterialCommunityIcons name="playlist-plus" size={18} color="#fff" />
             <Text style={styles.practicePanelButtonText}>Create practice assignment</Text>
           </TouchableOpacity>
-          <View style={styles.inputActionRow}>
-            <TouchableOpacity style={styles.photoHomeworkButton} onPress={() => setAgendaCameraVisible(true)}>
-              <MaterialCommunityIcons name="camera-outline" size={18} color="#1565c0" />
-              <Text style={styles.photoHomeworkButtonText}>Take photo</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.photoHomeworkButton} onPress={() => void handlePickAgendaPhoto()}>
-              <MaterialCommunityIcons name="image-outline" size={18} color="#1565c0" />
-              <Text style={styles.photoHomeworkButtonText}>Choose photo</Text>
-            </TouchableOpacity>
-          </View>
         </View>
       )}
       <DatePickerModal
