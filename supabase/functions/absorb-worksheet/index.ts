@@ -163,7 +163,27 @@ Deno.serve(async (req) => {
   try {
     if (!OPENAI_API_KEY) return json({ error: "OPENAI_API_KEY not configured" }, 500);
 
-    const { image } = await req.json();
+    const body = await req.json();
+    const { image, mode, concept, domain, language } = body;
+
+    if (mode === "regenerate") {
+      if (!concept || !domain || !language) {
+        return json({ error: "concept, domain, and language are required for regenerate mode" }, 400);
+      }
+
+      const worksheet: Record<string, unknown> = {
+        source_type: body.source_type || "worksheet",
+        domain,
+        language,
+        grade_band: body.grade_band || "",
+        concept,
+        lesson: body.lesson || "",
+        practice: [],
+      };
+      attachWorksheetContextToConcept(worksheet);
+      return await generateWorksheetPractice(worksheet, null);
+    }
+
     if (!image) return json({ error: "image (data URL) is required" }, 400);
 
     // Initial call to generate concept + adaptive practice items
@@ -197,60 +217,168 @@ Deno.serve(async (req) => {
     }
     attachWorksheetContextToConcept(worksheet);
 
-    const domainRaw = worksheet.domain as string || "math";
-    const languageRaw = worksheet.language as string;
+    return await generateWorksheetPractice(worksheet, image);
+  } catch (e) {
+    console.error("[absorb-worksheet] unexpected error", e);
+    return json({ error: String(e) }, 500);
+  }
+});
 
-    const isFr = isFrench(languageRaw);
-    const isEn = isEnglish(languageRaw);
-    if (isLikelyWordListWorksheet(worksheet) && !hasEnoughSpellingWords(worksheet)) {
-      const extractedWords = await extractSpellingWordsFromImage(image, languageRaw);
-      if (extractedWords.length >= 3) {
-        worksheet.source_type = "spelling_list";
-        worksheet.domain = "language";
-        worksheet.spelling_words = extractedWords;
+async function generateWorksheetPractice(worksheet: Record<string, unknown>, image: string | null): Promise<Response> {
+  const domainRaw = worksheet.domain as string || "math";
+  const languageRaw = worksheet.language as string;
+
+  const isFr = isFrench(languageRaw);
+  const isEn = isEnglish(languageRaw);
+  if (image && isLikelyWordListWorksheet(worksheet) && !hasEnoughSpellingWords(worksheet)) {
+    const extractedWords = await extractSpellingWordsFromImage(image, languageRaw);
+    if (extractedWords.length >= 3) {
+      worksheet.source_type = "spelling_list";
+      worksheet.domain = "language";
+      worksheet.spelling_words = extractedWords;
+    }
+  }
+
+  const spellingList = normalizeSpellingListWorksheet(worksheet);
+  if (spellingList) {
+    return json(spellingList, 200);
+  }
+
+  let pathTaken = "math";
+
+  // Branch by domain and language
+  if (domainRaw === "math") {
+    // MATH PATH
+    pathTaken = "math";
+  } else if (isFr || isEn) {
+    // LANGUAGE PATH: Generate and verify language items
+    pathTaken = "reference";
+    return await handleLanguagePractice(worksheet, languageRaw, domainRaw);
+  } else {
+    // Unsupported language for practice
+    pathTaken = "unsupported";
+    worksheet.practice = [];
+    worksheet.debug = {
+      generated: 0,
+      kept: 0,
+      domain_raw: domainRaw,
+      language_raw: languageRaw,
+      path_taken: pathTaken,
+      reference_candidates: [],
+    };
+    worksheet.practice_not_supported_language = true;
+    return json(worksheet, 200);
+  }
+
+  // MATH PATH: Existing logic
+  const mathjs = await import("https://esm.sh/mathjs@12");
+  const evaluate = mathjs.evaluate;
+  let verifiedMathItems: Record<string, unknown>[] = [];
+  let otherItems: Record<string, unknown>[] = [];
+  let totalGenerated = worksheet.practice?.length ?? 0;
+
+  if (worksheet.practice && Array.isArray(worksheet.practice)) {
+    for (const item of worksheet.practice) {
+      if (item.kind === "math") {
+        try {
+          const question = item.question as string;
+          const checkExpr = item.check_expression as string;
+          const answerType = item.answer_type as string;
+          const claimedAnswer = item.claimed_answer;
+
+          // GUARD: Extract numbers from question and expression; verify all expression numbers appear in question
+          const questionNumbers = extractNumbersFromText(question);
+          const exprNumbers = extractNumbersFromExpression(checkExpr);
+
+          let allNumbersInQuestion = true;
+          for (const num of exprNumbers) {
+            if (!questionNumbers.has(num)) {
+              console.log("[absorb-worksheet] GUARD: expression contains", num, "but not in question:", question.substring(0, 100));
+              allNumbersInQuestion = false;
+              break;
+            }
+          }
+
+          if (!allNumbersInQuestion) {
+            continue; // Drop this item
+          }
+
+          // Evaluate expression directly (no context needed)
+          const computed = evaluate(checkExpr);
+
+          let verified = false;
+          if (answerType === "yesno") {
+            verified = computed === claimedAnswer;
+            if (verified) {
+              item.answer = computed ? "Oui" : "Non";
+              item.verified = true;
+              verifiedMathItems.push(item);
+            } else {
+              console.log("[absorb-worksheet] yesno item failed verification:", checkExpr, "computed:", computed, "claimed:", claimedAnswer);
+            }
+          } else {
+            // number type
+            verified = Math.abs(computed as number - (claimedAnswer as number)) < 0.005;
+            if (verified) {
+              item.answer = computed;
+              item.verified = true;
+              verifiedMathItems.push(item);
+            } else {
+              console.log("[absorb-worksheet] number item failed verification:", checkExpr, "computed:", computed, "claimed:", claimedAnswer);
+            }
+          }
+        } catch (evalError) {
+          console.error("[absorb-worksheet] failed to evaluate", item.check_expression, "error:", evalError);
+        }
+      } else {
+        otherItems.push(item);
       }
     }
+  }
 
-    const spellingList = normalizeSpellingListWorksheet(worksheet);
-    if (spellingList) {
-      return json(spellingList, 200);
-    }
+  const mathConcept = worksheet.concept as { sub_skills?: Array<{ label: string }> } | undefined;
+  const allSubSkills = mathConcept?.sub_skills?.map((s) => s.label) || [];
+  const targetPracticeCount = getTargetPracticeCount(allSubSkills);
 
-    let pathTaken = "math";
+  // If fewer than the adaptive target verified, request more
+  if (verifiedMathItems.length < targetPracticeCount && mathConcept?.sub_skills) {
+    console.log("[absorb-worksheet] only", verifiedMathItems.length, "verified math items, target:", targetPracticeCount, "requesting 4 more");
+    const subSkillsStr = allSubSkills.join(", ");
+    const language = worksheet.language as string;
 
-    // Branch by domain and language
-    if (domainRaw === "math") {
-      // MATH PATH
-      pathTaken = "math";
-    } else if (isFr || isEn) {
-      // LANGUAGE PATH: Generate and verify language items
-      pathTaken = "reference";
-      return await handleLanguagePractice(worksheet, languageRaw, domainRaw);
-    } else {
-      // Unsupported language for practice
-      pathTaken = "unsupported";
-      worksheet.practice = [];
-      worksheet.debug = {
-        generated: 0,
-        kept: 0,
-        domain_raw: domainRaw,
-        language_raw: languageRaw,
-        path_taken: pathTaken,
-        reference_candidates: [],
-      };
-      worksheet.practice_not_supported_language = true;
-      return json(worksheet, 200);
-    }
+    const retryRes = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
+      body: JSON.stringify({
+        model: "gpt-4o",
+        messages: [
+          { role: "user", content: promptContent(RETRY_PROMPT(subSkillsStr, language), image) },
+        ],
+      }),
+    });
 
-    // MATH PATH: Existing logic
-    const mathjs = await import("https://esm.sh/mathjs@12");
-    const evaluate = mathjs.evaluate;
-    let verifiedMathItems: Record<string, unknown>[] = [];
-    let otherItems: Record<string, unknown>[] = [];
-    let totalGenerated = worksheet.practice?.length ?? 0;
+    if (retryRes.ok) {
+      const retryData = await retryRes.json();
+      const retryRaw = retryData.choices?.[0]?.message?.content ?? "";
+      console.log("[absorb-worksheet] retry response:", retryRaw.substring(0, 300));
 
-    if (worksheet.practice && Array.isArray(worksheet.practice)) {
-      for (const item of worksheet.practice) {
+      let retryItems: Record<string, unknown>[] = [];
+      try {
+        retryItems = JSON.parse(retryRaw);
+      } catch {
+        // Try to extract JSON array
+        const arrayMatch = retryRaw.match(/\[[\s\S]*\]/);
+        if (arrayMatch) {
+          try {
+            retryItems = JSON.parse(arrayMatch[0]);
+          } catch {
+            console.log("[absorb-worksheet] failed to parse retry items");
+          }
+        }
+      }
+
+      // Verify retry items
+      for (const item of retryItems) {
         if (item.kind === "math") {
           try {
             const question = item.question as string;
@@ -265,7 +393,7 @@ Deno.serve(async (req) => {
             let allNumbersInQuestion = true;
             for (const num of exprNumbers) {
               if (!questionNumbers.has(num)) {
-                console.log("[absorb-worksheet] GUARD: expression contains", num, "but not in question:", question.substring(0, 100));
+                console.log("[absorb-worksheet] GUARD (retry): expression contains", num, "but not in question");
                 allNumbersInQuestion = false;
                 break;
               }
@@ -275,213 +403,18 @@ Deno.serve(async (req) => {
               continue; // Drop this item
             }
 
-            // Evaluate expression directly (no context needed)
+            // Evaluate expression directly
             const computed = evaluate(checkExpr);
 
-            let verified = false;
             if (answerType === "yesno") {
-              verified = computed === claimedAnswer;
-              if (verified) {
+              if (computed === claimedAnswer) {
                 item.answer = computed ? "Oui" : "Non";
                 item.verified = true;
                 verifiedMathItems.push(item);
-              } else {
-                console.log("[absorb-worksheet] yesno item failed verification:", checkExpr, "computed:", computed, "claimed:", claimedAnswer);
               }
             } else {
               // number type
-              verified = Math.abs(computed as number - (claimedAnswer as number)) < 0.005;
-              if (verified) {
-                item.answer = computed;
-                item.verified = true;
-                verifiedMathItems.push(item);
-              } else {
-                console.log("[absorb-worksheet] number item failed verification:", checkExpr, "computed:", computed, "claimed:", claimedAnswer);
-              }
-            }
-          } catch (evalError) {
-            console.error("[absorb-worksheet] failed to evaluate", item.check_expression, "error:", evalError);
-          }
-        } else {
-          otherItems.push(item);
-        }
-      }
-    }
-
-    const mathConcept = worksheet.concept as { sub_skills?: Array<{ label: string }> } | undefined;
-    const allSubSkills = mathConcept?.sub_skills?.map((s) => s.label) || [];
-    const targetPracticeCount = getTargetPracticeCount(allSubSkills);
-
-    // If fewer than the adaptive target verified, request more
-    if (verifiedMathItems.length < targetPracticeCount && mathConcept?.sub_skills) {
-      console.log("[absorb-worksheet] only", verifiedMathItems.length, "verified math items, target:", targetPracticeCount, "requesting 4 more");
-      const subSkillsStr = allSubSkills.join(", ");
-      const language = worksheet.language as string;
-
-      const retryRes = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
-        body: JSON.stringify({
-          model: "gpt-4o",
-          messages: [
-            { role: "user", content: [
-              { type: "text", text: RETRY_PROMPT(subSkillsStr, language) },
-              { type: "image_url", image_url: { url: image } },
-            ] },
-          ],
-        }),
-      });
-
-      if (retryRes.ok) {
-        const retryData = await retryRes.json();
-        const retryRaw = retryData.choices?.[0]?.message?.content ?? "";
-        console.log("[absorb-worksheet] retry response:", retryRaw.substring(0, 300));
-
-        let retryItems: Record<string, unknown>[] = [];
-        try {
-          retryItems = JSON.parse(retryRaw);
-        } catch {
-          // Try to extract JSON array
-          const arrayMatch = retryRaw.match(/\[[\s\S]*\]/);
-          if (arrayMatch) {
-            try {
-              retryItems = JSON.parse(arrayMatch[0]);
-            } catch {
-              console.log("[absorb-worksheet] failed to parse retry items");
-            }
-          }
-        }
-
-        // Verify retry items
-        for (const item of retryItems) {
-          if (item.kind === "math") {
-            try {
-              const question = item.question as string;
-              const checkExpr = item.check_expression as string;
-              const answerType = item.answer_type as string;
-              const claimedAnswer = item.claimed_answer;
-
-              // GUARD: Extract numbers from question and expression; verify all expression numbers appear in question
-              const questionNumbers = extractNumbersFromText(question);
-              const exprNumbers = extractNumbersFromExpression(checkExpr);
-
-              let allNumbersInQuestion = true;
-              for (const num of exprNumbers) {
-                if (!questionNumbers.has(num)) {
-                  console.log("[absorb-worksheet] GUARD (retry): expression contains", num, "but not in question");
-                  allNumbersInQuestion = false;
-                  break;
-                }
-              }
-
-              if (!allNumbersInQuestion) {
-                continue; // Drop this item
-              }
-
-              // Evaluate expression directly
-              const computed = evaluate(checkExpr);
-
-              if (answerType === "yesno") {
-                if (computed === claimedAnswer) {
-                  item.answer = computed ? "Oui" : "Non";
-                  item.verified = true;
-                  verifiedMathItems.push(item);
-                }
-              } else {
-                // number type
-                if (Math.abs(computed as number - (claimedAnswer as number)) < 0.005) {
-                  item.answer = computed;
-                  item.verified = true;
-                  verifiedMathItems.push(item);
-                }
-              }
-            } catch {
-              // Skip on eval error
-            }
-          }
-        }
-        totalGenerated += retryItems.length;
-      }
-    }
-
-    // Check coverage: which sub-skills have zero math items?
-    let missingSubSkills = getMissingSubSkills(allSubSkills, verifiedMathItems);
-
-    // Top-up for each missing sub-skill
-    for (const missingSkill of missingSubSkills) {
-      console.log("[absorb-worksheet] generating math top-up for missing sub-skill:", missingSkill);
-
-      const topupRes = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
-        body: JSON.stringify({
-          model: "gpt-4o",
-          messages: [
-            { role: "user", content: MATH_TOPUP_PROMPT(missingSkill, worksheet.language as string) },
-          ],
-        }),
-      });
-
-      if (!topupRes.ok) {
-        console.error("[absorb-worksheet] math top-up generation failed:", topupRes.status);
-        continue;
-      }
-
-      const topupData = await topupRes.json();
-      const topupRaw = topupData.choices?.[0]?.message?.content ?? "";
-
-      let topupCandidates: Record<string, unknown>[] = [];
-      try {
-        const cleaned = topupRaw.trim().replace(/^```[\s\S]*?\n/, "").replace(/```$/, "");
-        const arrayMatch = cleaned.match(/\[[\s\S]*\]/);
-        if (arrayMatch) {
-          topupCandidates = JSON.parse(arrayMatch[0]);
-        }
-      } catch {
-        console.log("[absorb-worksheet] failed to parse math top-up items");
-        continue;
-      }
-
-      // Verify top-up items
-      for (const item of topupCandidates) {
-        if (item.kind === "math") {
-          try {
-            const question = item.question as string;
-            const checkExpr = item.check_expression as string;
-            const answerType = item.answer_type as string;
-            const claimedAnswer = item.claimed_answer;
-
-            // GUARD: numeric verification
-            const questionNumbers = extractNumbersFromText(question);
-            const exprNumbers = extractNumbersFromExpression(checkExpr);
-
-            let allNumbersInQuestion = true;
-            for (const num of exprNumbers) {
-              if (!questionNumbers.has(num)) {
-                console.log("[absorb-worksheet] GUARD (topup): expression contains", num, "but not in question");
-                allNumbersInQuestion = false;
-                break;
-              }
-            }
-
-            if (!allNumbersInQuestion) {
-              continue;
-            }
-
-            // Evaluate
-            const computed = evaluate(checkExpr);
-
-            let verified = false;
-            if (answerType === "yesno") {
-              verified = computed === claimedAnswer;
-              if (verified) {
-                item.answer = computed ? "Oui" : "Non";
-                item.verified = true;
-                verifiedMathItems.push(item);
-              }
-            } else {
-              verified = Math.abs(computed as number - (claimedAnswer as number)) < 0.005;
-              if (verified) {
+              if (Math.abs(computed as number - (claimedAnswer as number)) < 0.005) {
                 item.answer = computed;
                 item.verified = true;
                 verifiedMathItems.push(item);
@@ -492,142 +425,237 @@ Deno.serve(async (req) => {
           }
         }
       }
-
-      totalGenerated += topupCandidates.length;
-
-      // Re-check coverage
-      missingSubSkills = getMissingSubSkills(allSubSkills, verifiedMathItems);
-      if (missingSubSkills.length === 0) break; // All covered
+      totalGenerated += retryItems.length;
     }
+  }
 
-    let backfillSubSkills = getBackfillSubSkills(allSubSkills, verifiedMathItems, targetPracticeCount);
-    for (const skill of backfillSubSkills) {
-      if (verifiedMathItems.length >= targetPracticeCount) break;
-      console.log("[absorb-worksheet] generating math backfill for target count:", skill, "verified:", verifiedMathItems.length, "target:", targetPracticeCount);
+  // Check coverage: which sub-skills have zero math items?
+  let missingSubSkills = getMissingSubSkills(allSubSkills, verifiedMathItems);
 
-      const topupRes = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
-        body: JSON.stringify({
-          model: "gpt-4o",
-          messages: [
-            { role: "user", content: MATH_TOPUP_PROMPT(skill, worksheet.language as string) },
-          ],
-        }),
-      });
+  // Top-up for each missing sub-skill
+  for (const missingSkill of missingSubSkills) {
+    console.log("[absorb-worksheet] generating math top-up for missing sub-skill:", missingSkill);
 
-      if (!topupRes.ok) {
-        console.error("[absorb-worksheet] math backfill generation failed:", topupRes.status);
-        continue;
-      }
-
-      const topupData = await topupRes.json();
-      const topupRaw = topupData.choices?.[0]?.message?.content ?? "";
-
-      let topupCandidates: Record<string, unknown>[] = [];
-      try {
-        const cleaned = topupRaw.trim().replace(/^```[\s\S]*?\n/, "").replace(/```$/, "");
-        const arrayMatch = cleaned.match(/\[[\s\S]*\]/);
-        if (arrayMatch) {
-          topupCandidates = JSON.parse(arrayMatch[0]);
-        }
-      } catch {
-        console.log("[absorb-worksheet] failed to parse math backfill items");
-        continue;
-      }
-
-      for (const item of topupCandidates) {
-        if (verifiedMathItems.length >= targetPracticeCount) break;
-        if (item.kind === "math") {
-          try {
-            const question = item.question as string;
-            const checkExpr = item.check_expression as string;
-            const answerType = item.answer_type as string;
-            const claimedAnswer = item.claimed_answer;
-
-            // GUARD: numeric verification
-            const questionNumbers = extractNumbersFromText(question);
-            const exprNumbers = extractNumbersFromExpression(checkExpr);
-
-            let allNumbersInQuestion = true;
-            for (const num of exprNumbers) {
-              if (!questionNumbers.has(num)) {
-                console.log("[absorb-worksheet] GUARD (backfill): expression contains", num, "but not in question");
-                allNumbersInQuestion = false;
-                break;
-              }
-            }
-
-            if (!allNumbersInQuestion) {
-              continue;
-            }
-
-            // Evaluate
-            const computed = evaluate(checkExpr);
-
-            let verified = false;
-            if (answerType === "yesno") {
-              verified = computed === claimedAnswer;
-              if (verified) {
-                item.answer = computed ? "Oui" : "Non";
-                item.verified = true;
-                verifiedMathItems.push(item);
-              }
-            } else {
-              verified = Math.abs(computed as number - (claimedAnswer as number)) < 0.005;
-              if (verified) {
-                item.answer = computed;
-                item.verified = true;
-                verifiedMathItems.push(item);
-              }
-            }
-          } catch {
-            // Skip on eval error
-          }
-        }
-      }
-
-      totalGenerated += topupCandidates.length;
-      backfillSubSkills = getBackfillSubSkills(allSubSkills, verifiedMathItems, targetPracticeCount);
-      if (backfillSubSkills.length === 0) break;
-    }
-
-    // Final selection: prefer sub-skill and mode diversity, cap at adaptive target
-    const { final: finalItems, uncovered } = selectFinalItems(verifiedMathItems, allSubSkills, targetPracticeCount);
-
-    // Add other items if space
-    for (const item of otherItems) {
-      if (finalItems.length >= targetPracticeCount) break;
-      finalItems.push(item);
-    }
-
-    // Clean up response: remove check_expression, claimed_answer, and context from returned math items
-    const cleanedItems = finalItems.map((item: Record<string, unknown>) => {
-      if (item.kind === "math") {
-        const { check_expression, claimed_answer, context, ...rest } = item;
-        return rest;
-      }
-      return item;
+    const topupRes = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
+      body: JSON.stringify({
+        model: "gpt-4o",
+        messages: [
+          { role: "user", content: MATH_TOPUP_PROMPT(missingSkill, worksheet.language as string) },
+        ],
+      }),
     });
 
-    worksheet.practice = cleanedItems;
-    worksheet.debug = {
-      generated: totalGenerated,
-      kept: cleanedItems.length,
-      domain_raw: domainRaw,
-      language_raw: languageRaw,
-      path_taken: pathTaken,
-      target_count: targetPracticeCount,
-      uncovered_subskills: uncovered.length > 0 ? uncovered : undefined,
-    };
+    if (!topupRes.ok) {
+      console.error("[absorb-worksheet] math top-up generation failed:", topupRes.status);
+      continue;
+    }
 
-    console.log("[absorb-worksheet] final result: concept:", worksheet.concept?.label, "items:", cleanedItems.length, "path:", pathTaken, "uncovered:", uncovered, "debug:", worksheet.debug);
-    return json(worksheet, 200);
-  } catch (e) {
-    console.error("[absorb-worksheet] unexpected error", e);
-    return json({ error: String(e) }, 500);
+    const topupData = await topupRes.json();
+    const topupRaw = topupData.choices?.[0]?.message?.content ?? "";
+
+    let topupCandidates: Record<string, unknown>[] = [];
+    try {
+      const cleaned = topupRaw.trim().replace(/^```[\s\S]*?\n/, "").replace(/```$/, "");
+      const arrayMatch = cleaned.match(/\[[\s\S]*\]/);
+      if (arrayMatch) {
+        topupCandidates = JSON.parse(arrayMatch[0]);
+      }
+    } catch {
+      console.log("[absorb-worksheet] failed to parse math top-up items");
+      continue;
+    }
+
+    // Verify top-up items
+    for (const item of topupCandidates) {
+      if (item.kind === "math") {
+        try {
+          const question = item.question as string;
+          const checkExpr = item.check_expression as string;
+          const answerType = item.answer_type as string;
+          const claimedAnswer = item.claimed_answer;
+
+          // GUARD: numeric verification
+          const questionNumbers = extractNumbersFromText(question);
+          const exprNumbers = extractNumbersFromExpression(checkExpr);
+
+          let allNumbersInQuestion = true;
+          for (const num of exprNumbers) {
+            if (!questionNumbers.has(num)) {
+              console.log("[absorb-worksheet] GUARD (topup): expression contains", num, "but not in question");
+              allNumbersInQuestion = false;
+              break;
+            }
+          }
+
+          if (!allNumbersInQuestion) {
+            continue;
+          }
+
+          // Evaluate
+          const computed = evaluate(checkExpr);
+
+          let verified = false;
+          if (answerType === "yesno") {
+            verified = computed === claimedAnswer;
+            if (verified) {
+              item.answer = computed ? "Oui" : "Non";
+              item.verified = true;
+              verifiedMathItems.push(item);
+            }
+          } else {
+            verified = Math.abs(computed as number - (claimedAnswer as number)) < 0.005;
+            if (verified) {
+              item.answer = computed;
+              item.verified = true;
+              verifiedMathItems.push(item);
+            }
+          }
+        } catch {
+          // Skip on eval error
+        }
+      }
+    }
+
+    totalGenerated += topupCandidates.length;
+
+    // Re-check coverage
+    missingSubSkills = getMissingSubSkills(allSubSkills, verifiedMathItems);
+    if (missingSubSkills.length === 0) break; // All covered
   }
-});
+
+  let backfillSubSkills = getBackfillSubSkills(allSubSkills, verifiedMathItems, targetPracticeCount);
+  for (const skill of backfillSubSkills) {
+    if (verifiedMathItems.length >= targetPracticeCount) break;
+    console.log("[absorb-worksheet] generating math backfill for target count:", skill, "verified:", verifiedMathItems.length, "target:", targetPracticeCount);
+
+    const topupRes = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
+      body: JSON.stringify({
+        model: "gpt-4o",
+        messages: [
+          { role: "user", content: MATH_TOPUP_PROMPT(skill, worksheet.language as string) },
+        ],
+      }),
+    });
+
+    if (!topupRes.ok) {
+      console.error("[absorb-worksheet] math backfill generation failed:", topupRes.status);
+      continue;
+    }
+
+    const topupData = await topupRes.json();
+    const topupRaw = topupData.choices?.[0]?.message?.content ?? "";
+
+    let topupCandidates: Record<string, unknown>[] = [];
+    try {
+      const cleaned = topupRaw.trim().replace(/^```[\s\S]*?\n/, "").replace(/```$/, "");
+      const arrayMatch = cleaned.match(/\[[\s\S]*\]/);
+      if (arrayMatch) {
+        topupCandidates = JSON.parse(arrayMatch[0]);
+      }
+    } catch {
+      console.log("[absorb-worksheet] failed to parse math backfill items");
+      continue;
+    }
+
+    for (const item of topupCandidates) {
+      if (verifiedMathItems.length >= targetPracticeCount) break;
+      if (item.kind === "math") {
+        try {
+          const question = item.question as string;
+          const checkExpr = item.check_expression as string;
+          const answerType = item.answer_type as string;
+          const claimedAnswer = item.claimed_answer;
+
+          // GUARD: numeric verification
+          const questionNumbers = extractNumbersFromText(question);
+          const exprNumbers = extractNumbersFromExpression(checkExpr);
+
+          let allNumbersInQuestion = true;
+          for (const num of exprNumbers) {
+            if (!questionNumbers.has(num)) {
+              console.log("[absorb-worksheet] GUARD (backfill): expression contains", num, "but not in question");
+              allNumbersInQuestion = false;
+              break;
+            }
+          }
+
+          if (!allNumbersInQuestion) {
+            continue;
+          }
+
+          // Evaluate
+          const computed = evaluate(checkExpr);
+
+          let verified = false;
+          if (answerType === "yesno") {
+            verified = computed === claimedAnswer;
+            if (verified) {
+              item.answer = computed ? "Oui" : "Non";
+              item.verified = true;
+              verifiedMathItems.push(item);
+            }
+          } else {
+            verified = Math.abs(computed as number - (claimedAnswer as number)) < 0.005;
+            if (verified) {
+              item.answer = computed;
+              item.verified = true;
+              verifiedMathItems.push(item);
+            }
+          }
+        } catch {
+          // Skip on eval error
+        }
+      }
+    }
+
+    totalGenerated += topupCandidates.length;
+    backfillSubSkills = getBackfillSubSkills(allSubSkills, verifiedMathItems, targetPracticeCount);
+    if (backfillSubSkills.length === 0) break;
+  }
+
+  // Final selection: prefer sub-skill and mode diversity, cap at adaptive target
+  const { final: finalItems, uncovered } = selectFinalItems(verifiedMathItems, allSubSkills, targetPracticeCount);
+
+  // Add other items if space
+  for (const item of otherItems) {
+    if (finalItems.length >= targetPracticeCount) break;
+    finalItems.push(item);
+  }
+
+  // Clean up response: remove check_expression, claimed_answer, and context from returned math items
+  const cleanedItems = finalItems.map((item: Record<string, unknown>) => {
+    if (item.kind === "math") {
+      const { check_expression, claimed_answer, context, ...rest } = item;
+      return rest;
+    }
+    return item;
+  });
+
+  worksheet.practice = cleanedItems;
+  worksheet.debug = {
+    generated: totalGenerated,
+    kept: cleanedItems.length,
+    domain_raw: domainRaw,
+    language_raw: languageRaw,
+    path_taken: pathTaken,
+    target_count: targetPracticeCount,
+    uncovered_subskills: uncovered.length > 0 ? uncovered : undefined,
+  };
+
+  console.log("[absorb-worksheet] final result: concept:", worksheet.concept?.label, "items:", cleanedItems.length, "path:", pathTaken, "uncovered:", uncovered, "debug:", worksheet.debug);
+  return json(worksheet, 200);
+
+}
+
+function promptContent(text: string, image: string | null): Array<Record<string, unknown>> {
+  const content: Array<Record<string, unknown>> = [{ type: "text", text }];
+  if (image) content.push({ type: "image_url", image_url: { url: image } });
+  return content;
+}
 
 function parseJsonResponse(raw: string): Record<string, unknown> | null {
   let cleanJson = raw.trim();
