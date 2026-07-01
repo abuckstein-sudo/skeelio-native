@@ -51,6 +51,13 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     marginBottom: 24,
   },
+  lessonChoiceHint: {
+    fontSize: 14,
+    color: "#4b5563",
+    lineHeight: 20,
+    marginTop: -10,
+    marginBottom: 4,
+  },
   exampleBox: {
     backgroundColor: "#f5f5f5",
     padding: 16,
@@ -159,8 +166,9 @@ const COPY = {
     check: "Check",
     ready: "Ready?",
     readyPractice: (tier: string) => `Ready to practice ${tier}?`,
+    lessonChoiceHint: "Start with the lesson, or skip it and go straight to practice.",
     letsGo: "Let's go",
-    skip: "Skip",
+    skip: "Skip lesson",
     gotIt: "Got it",
     next: "Next",
     start: "Start practice",
@@ -177,8 +185,9 @@ const COPY = {
     check: "Valider",
     ready: "Prêt ?",
     readyPractice: (tier: string) => `Prêt à t'entraîner : ${tier} ?`,
+    lessonChoiceHint: "Commence par la leçon, ou passe directement aux exercices.",
     letsGo: "C'est parti",
-    skip: "Passer",
+    skip: "Passer la leçon",
     gotIt: "J'ai compris",
     next: "Suivant",
     start: "Commencer",
@@ -301,6 +310,7 @@ export default function LessonScreen() {
               {tierLabel}
             </Text>
             <Text style={styles.subtitle}>{teachNotes}</Text>
+            <Text style={styles.lessonChoiceHint}>{copy.lessonChoiceHint}</Text>
           </>
         )}
 
