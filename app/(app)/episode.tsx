@@ -15,7 +15,8 @@ import {
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { supabase } from "@/lib/supabase";
-import { SKILL_SESSION, ASSESSMENT } from "@/lib/masteryConfig";
+import { addStars } from "@/lib/addStars";
+import { SKILL_SESSION } from "@/lib/masteryConfig";
 import { drawPlurals } from "@/lib/grammarBank";
 
 interface SubSkill {
@@ -95,6 +96,7 @@ export default function EpisodeScreen() {
   const firstTryHistoryRef = useRef<{ correct: boolean; key: string; aided: boolean }[]>([]);
   const [firstTryWrong, setFirstTryWrong] = useState(0);
   const initialFetchStartedRef = useRef(false);
+  const episodeCompletionInFlightRef = useRef(false);
   const shownQuestionKeysRef = useRef<Set<string>>(new Set());
 
   // Track wrong attempts per sub-skill for adaptive teaching
@@ -287,16 +289,14 @@ export default function EpisodeScreen() {
 
       // No-stall guard: AI returned nothing on a refetch -> end gracefully, never freeze.
       if (items.length === 0 && currentItem !== null) {
-        const hist = firstTryHistoryRef.current;
-        const unaided = hist.filter((h) => !h.aided);
-        const distinct = new Set(unaided.map((h) => h.key)).size;
-        const rate = unaided.length ? unaided.filter((h) => h.correct).length / unaided.length : 0;
-        const supplyMastered =
-          distinct >= SKILL_SESSION.masteryMinDistinctItems && rate >= ASSESSMENT.onTrackUnaidedRate;
+        const supplyMastered = isMasteredFromHistory(firstTryHistoryRef.current);
+        const { correct, total, hinted } = getCompletionStats();
         await completeEpisode(supplyMastered);
         Alert.alert(
           supplyMastered ? "Bravo ! 🎉" : "À bientôt !",
-          supplyMastered ? "Tu maîtrises bien ça !" : "On continue une autre fois 💪"
+          supplyMastered
+            ? `Tu as réussi ${correct} sur ${total}${formatHintSummary(hinted)} ! Tu maîtrises bien ça ! 🎉`
+            : `Beau travail ! Tu as réussi ${correct} sur ${total}${formatHintSummary(hinted)}. Tu peux être fier de tes efforts aujourd'hui.`
         );
         navigateAfterEpisodeComplete();
         setLoading(false);
@@ -466,6 +466,46 @@ export default function EpisodeScreen() {
       best = Math.max(best, current);
     }
     return best;
+  };
+
+  const isMasteredFromHistory = (history: { correct: boolean; key: string; aided: boolean }[]) => {
+    const recent = history.slice(-SKILL_SESSION.masteryWindow);
+    if (recent.length < SKILL_SESSION.masteryWindow) return false;
+
+    const hintUsedInWindow = recent.some((h) => h.aided);
+    const correctInWindow = recent.filter((h) => h.correct).length;
+    const distinctInWindow = new Set(recent.map((h) => h.key)).size;
+
+    return (
+      !hintUsedInWindow &&
+      correctInWindow >= SKILL_SESSION.masteryFirstTryCorrect &&
+      distinctInWindow >= SKILL_SESSION.masteryMinDistinctItems
+    );
+  };
+
+  const getCompletionStats = () => {
+    const history = firstTryHistoryRef.current;
+    const correct = history.filter((h) => h.correct).length;
+    const hinted = history.filter((h) => h.aided).length;
+    const unaidedCorrect = history.filter((h) => h.correct && !h.aided).length;
+
+    return {
+      total: history.length,
+      correct,
+      hinted,
+      unaidedCorrect,
+    };
+  };
+
+  const formatHintSummary = (hinted: number) => {
+    if (hinted === 0) return " (sans indice)";
+    return ` (${hinted} avec ${hinted === 1 ? "un indice" : "des indices"})`;
+  };
+
+  const getEpisodeStarsDelta = () => {
+    const { total, unaidedCorrect } = getCompletionStats();
+    const allCorrectWithoutHelp = total > 0 && unaidedCorrect === total;
+    return unaidedCorrect * 2 + (allCorrectWithoutHelp ? 5 : 0);
   };
 
   const navigateAfterEpisodeComplete = () => {
@@ -686,10 +726,27 @@ export default function EpisodeScreen() {
   };
 
   const completeEpisode = async (mastered: boolean) => {
-    if (episodeId) {
-      try {
-        const unaidedCorrect = firstTryHistoryRef.current.filter((h) => h.correct && !h.aided).length;
-        await supabase.from('tutor_episodes').update({
+    if (!episodeId || episodeCompletionInFlightRef.current) return;
+
+    episodeCompletionInFlightRef.current = true;
+    try {
+      const { data: existingEpisode, error: readError } = await supabase
+        .from('tutor_episodes')
+        .select('status, completed_at, child_id')
+        .eq('id', episodeId)
+        .maybeSingle();
+
+      if (readError) {
+        throw readError;
+      }
+
+      const alreadyComplete =
+        existingEpisode?.status === 'complete' || !!existingEpisode?.completed_at;
+      const awardChildId = childId || existingEpisode?.child_id;
+      const { unaidedCorrect } = getCompletionStats();
+      const starsDelta = getEpisodeStarsDelta();
+
+      const { error: updateError } = await supabase.from('tutor_episodes').update({
           status: 'complete',
           completed_at: new Date().toISOString(),
           mastered,
@@ -698,39 +755,43 @@ export default function EpisodeScreen() {
           unaided_streak_max: Math.max(unaidedStreakMax, maxCorrectRun()),
         }).eq('id', episodeId);
 
-        console.log('[episode complete]', {
-          episodeId,
-          mastered,
-          items_attempted: firstTryHistoryRef.current.length,
-          first_try_correct: unaidedCorrect,
-          unaided_streak_max: Math.max(unaidedStreakMax, maxCorrectRun()),
-        });
-      } catch (err) {
-        console.error('[episode complete error]', err);
-        // Non-blocking
+      if (updateError) {
+        throw updateError;
       }
+
+      if (!alreadyComplete && awardChildId && starsDelta > 0) {
+        console.log('[episode] awarding stars:', { childId: awardChildId, starsDelta, unaidedCorrect });
+        await addStars(awardChildId, starsDelta);
+      }
+
+      console.log('[episode complete]', {
+        episodeId,
+        mastered,
+        items_attempted: firstTryHistoryRef.current.length,
+        first_try_correct: unaidedCorrect,
+        unaided_streak_max: Math.max(unaidedStreakMax, maxCorrectRun()),
+        stars_awarded: alreadyComplete ? 0 : starsDelta,
+      });
+    } catch (err) {
+      console.error('[episode complete error]', err);
+      // Non-blocking
+    } finally {
+      episodeCompletionInFlightRef.current = false;
     }
   };
 
   const advanceToNextItem = async () => {
     // Check if we've reached mastery or item cap
     const history = firstTryHistoryRef.current;
-    const unaidedHistory = history.filter((h) => !h.aided);
-    const recent = unaidedHistory.slice(-SKILL_SESSION.masteryWindow);
-    const correctInWindow = recent.filter((h) => h.correct).length;
-    const distinctInWindow = new Set(recent.map((h) => h.key)).size;
-    const mastered =
-      unaidedHistory.length >= SKILL_SESSION.masteryWindow &&
-      correctInWindow >= SKILL_SESSION.masteryFirstTryCorrect &&
-      distinctInWindow >= SKILL_SESSION.masteryMinDistinctItems;
+    const mastered = isMasteredFromHistory(history);
 
     if (mastered) {
       // MASTERY REACHED
       await completeEpisode(true);
-      const unaidedCorrect = unaidedHistory.filter((h) => h.correct).length;
+      const { correct, total, hinted } = getCompletionStats();
       Alert.alert(
         "Bravo ! 🎉",
-        `Tu as réussi ${unaidedCorrect} sur ${unaidedHistory.length} sans aide. Tu maîtrises bien ça ! 🎉`
+        `Tu as réussi ${correct} sur ${total}${formatHintSummary(hinted)} ! Tu maîtrises bien ça ! 🎉`
       );
       navigateAfterEpisodeComplete();
       return;
@@ -739,8 +800,8 @@ export default function EpisodeScreen() {
     if (history.length >= SKILL_SESSION.sessionCap) {
       // Item cap reached without mastery - honest, kind, non-celebratory
       await completeEpisode(false);
-      const unaidedCorrect = unaidedHistory.filter((h) => h.correct).length;
-      const message = `Beau travail ! Tu as réussi ${unaidedCorrect} sur ${unaidedHistory.length} sans aide. C'est encore un peu difficile — on va s'entraîner encore. 💪`;
+      const { correct, total, hinted } = getCompletionStats();
+      const message = `Beau travail ! Tu as réussi ${correct} sur ${total}${formatHintSummary(hinted)}. Tu peux être fier de tes efforts aujourd'hui.`;
       Alert.alert("À bientôt !", message);
       navigateAfterEpisodeComplete();
       return;

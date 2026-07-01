@@ -282,8 +282,12 @@ export default function ScanScreen() {
   const removeReviewSubSkill = (index: number) => {
     setReviewData((current) => {
       if (!current) return current;
-      const subSkills = (current.concept.sub_skills || []).filter((_, idx) => idx !== index);
-      return { ...current, concept: { ...current.concept, sub_skills: subSkills } };
+      const subSkills = [...(current.concept.sub_skills || [])];
+      if (index < 0 || index >= subSkills.length || subSkills.length <= 1) {
+        return current;
+      }
+      const nextSubSkills = subSkills.filter((_, idx) => idx !== index);
+      return { ...current, concept: { ...current.concept, sub_skills: nextSubSkills } };
     });
     setEditingSubSkillIndex(null);
     setReviewEdited(true);
@@ -716,6 +720,7 @@ export default function ScanScreen() {
               <View style={styles.subSkillChipContainer}>
                 {subSkills.map((skill, idx) => {
                   const isEditing = editingSubSkillIndex === idx;
+                  const canRemoveSubSkill = subSkills.length > 1;
                   return (
                     <View key={`${idx}-${skill.label}`} style={styles.subSkillChip}>
                       {isEditing ? (
@@ -739,10 +744,18 @@ export default function ScanScreen() {
                         </TouchableOpacity>
                       )}
                       <TouchableOpacity
-                        style={styles.subSkillRemoveButton}
+                        style={[
+                          styles.subSkillRemoveButton,
+                          !canRemoveSubSkill && styles.subSkillRemoveButtonDisabled,
+                        ]}
                         onPress={() => removeReviewSubSkill(idx)}
+                        disabled={!canRemoveSubSkill}
                       >
-                        <MaterialCommunityIcons name="close" size={16} color="#555" />
+                        <MaterialCommunityIcons
+                          name="close"
+                          size={16}
+                          color={canRemoveSubSkill ? "#555" : "#aaa"}
+                        />
                       </TouchableOpacity>
                     </View>
                   );
@@ -1360,6 +1373,9 @@ const styles = StyleSheet.create({
     height: 32,
     alignItems: "center",
     justifyContent: "center",
+  },
+  subSkillRemoveButtonDisabled: {
+    opacity: 0.45,
   },
   addSubSkillButton: {
     minHeight: 34,
