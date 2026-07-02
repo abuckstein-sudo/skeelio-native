@@ -1,6 +1,15 @@
 #!/usr/bin/env node
 
-import { LADDERS, GATE, startingTier, FACT_TIERS, Operation } from "../lib/tutorConfig";
+import {
+  GATE,
+  FACT_TIERS,
+  gradeExpectedTierId,
+  gradeExpectedTierIndex,
+  gradeExpectedTierStandard,
+  LADDERS,
+  Operation,
+  startingTier,
+} from "../lib/tutorConfig";
 import { coverageKeysForQuestion, generateQuestion, pickUncoveredFactKey, producibleCoverageKeysForTier } from "../lib/tutor/generate";
 import { factTierCoverageKeys, requiredCoverageKeys, tierStats, currentTierAndBand, Attempt } from "../lib/tutor/ability";
 import { pickNextStep } from "../lib/tutor/selector";
@@ -234,6 +243,13 @@ assert(strugglingAdvice.includes("Replay"), `Struggling advice should recommend 
 assert(strugglingAdvice.includes("Divide by 3s and 4s"), `Struggling advice should use the human tier label, got ${strugglingAdvice}`);
 assert(!strugglingAdvice.includes("D2"), `Struggling advice should not leak internal tier ids, got ${strugglingAdvice}`);
 console.log("  ✅ recommendation helper gives coverage and struggling advice");
+
+console.log("\nTest 1d: French grade year goals are nullable and sourced");
+assert(gradeExpectedTierId("multiplication", "CP") === null, "CP multiplication should not have a year goal");
+assert(gradeExpectedTierIndex("division", "CE1") === -1, "CE1 division should not have a year goal index");
+assert(gradeExpectedTierId("addition", "CE1") === "A6", "CE1 addition goal should be A6");
+assert(!!gradeExpectedTierStandard("CE2")?.citation.includes("Éduscol"), "CE2 standard should include the Eduscol citation");
+console.log("  ✅ nullable sourced grade goals are available");
 
 // Test 2: 5/8 at A3 → developing, not ready
 console.log("\nTest 2: 5/8 correct at A3 → developing, not ready");

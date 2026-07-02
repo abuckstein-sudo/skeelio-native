@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Modal,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -11,7 +12,13 @@ import { supabase } from "@/lib/supabase";
 import { Attempt, factTierCoverageGapAfterOtherGates, factTierCoverageKeys, isSolidTierStat, tierStats } from "@/lib/tutor/ability";
 import { getOperationStatus, OperationStatus } from "@/lib/tutor/status";
 import { computeUnlockState, SubjectUnlockState } from "@/lib/tutor/unlockGraph";
-import { LADDERS, Operation, tierIndex } from "@/lib/tutorConfig";
+import {
+  gradeExpectedTierId,
+  gradeExpectedTierStandard,
+  LADDERS,
+  Operation,
+  tierIndex,
+} from "@/lib/tutorConfig";
 import { listWorksheetSkillsForChild, worksheetSkillLabel, WorksheetSkill } from "@/lib/worksheetSkills";
 import { operationLabel, recommendationFor } from "@/lib/progressGlance";
 
@@ -65,8 +72,13 @@ type RecentWin = {
 };
 
 type Timeframe = "7d" | "30d" | "all";
+type ChecklistSelection = {
+  operation: Operation;
+  status?: OperationStatus;
+};
 
 const MATH_OPERATIONS: Operation[] = ["addition", "subtraction", "multiplication", "division"];
+const GRADE_ORDER = ["CP", "CE1", "CE2", "CM1"];
 const DAY_MS = 24 * 60 * 60 * 1000;
 const TIMEFRAME_OPTIONS: Array<{ id: Timeframe | "custom"; label: string }> = [
   { id: "7d", label: "Last 7 days" },
@@ -121,6 +133,14 @@ function isWithinTimeframe(date: Date | null, start: Date | null, now: Date): bo
   if (!date) return false;
   if (date > now) return false;
   return !start || date >= start;
+}
+
+function nextGradeForOperation(operation: Operation, gradeLevel: string | null | undefined): string | null {
+  const startIndex = gradeLevel ? Math.max(0, GRADE_ORDER.indexOf(gradeLevel) + 1) : 0;
+  for (let index = startIndex; index < GRADE_ORDER.length; index++) {
+    if (gradeExpectedTierId(operation, GRADE_ORDER[index])) return GRADE_ORDER[index];
+  }
+  return null;
 }
 
 function missingFactLabels(tierId: string, attempts: Attempt[]): string[] {
@@ -256,6 +276,7 @@ export default function ChildProgressGlance({ child }: { child: Child }) {
   const [worksheetSkills, setWorksheetSkills] = useState<WorksheetSkill[]>([]);
   const [spellingListCount, setSpellingListCount] = useState(0);
   const [stars, setStars] = useState(0);
+  const [checklistSelection, setChecklistSelection] = useState<ChecklistSelection | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -434,6 +455,8 @@ export default function ChildProgressGlance({ child }: { child: Child }) {
               operation={operation}
               status={status}
               unlockState={unlockState[operation]}
+              gradeLevel={child.grade_level}
+              onOpenChecklist={() => setChecklistSelection({ operation, status })}
             />
           );
         })}
@@ -490,6 +513,12 @@ export default function ChildProgressGlance({ child }: { child: Child }) {
           </View>
         )}
       </View>
+
+      <GradeGoalChecklistModal
+        selection={checklistSelection}
+        gradeLevel={child.grade_level}
+        onClose={() => setChecklistSelection(null)}
+      />
     </View>
   );
 }
@@ -535,25 +564,40 @@ function MathSkillRow({
   operation,
   status,
   unlockState,
+  gradeLevel,
+  onOpenChecklist,
 }: {
   operation: Operation;
   status?: OperationStatus;
   unlockState?: SubjectUnlockState;
+  gradeLevel?: string | null;
+  onOpenChecklist: () => void;
 }) {
   const locked = unlockState && !unlockState.unlocked;
   const ladder = LADDERS[operation];
   const highestIndex = tierIndex(operation, status?.highestSolidTierId);
   const currentIndex = tierIndex(operation, status?.workingTierId);
+  const targetTierId = gradeExpectedTierId(operation, gradeLevel);
+  const targetIndex = tierIndex(operation, targetTierId);
+  const targetTier = targetIndex >= 0 ? ladder[targetIndex] : null;
+  const startsInGrade = targetTierId ? null : nextGradeForOperation(operation, gradeLevel);
+  const beyondGrade = targetIndex >= 0 && highestIndex >= targetIndex;
   const statusText = locked
     ? `Unlocks after ${unlockState?.reasonOperation || "a prerequisite"} ${unlockState?.reasonTierId || ""}`
+    : !targetTier
+      ? startsInGrade
+        ? `Starts in ${startsInGrade}`
+        : "No year goal set for this grade"
+    : beyondGrade
+      ? `Working beyond ${gradeLevel || "this grade"} level`
     : status?.hasAttempts
       ? status.highestSolidTierLabel
-        ? `Solid through ${status.highestSolidTierLabel}`
-        : `Working on ${status.workingTierLabel}`
-      : `Ready to start at ${status?.workingTierLabel || ladder[0]?.label || "the first tier"}`;
+        ? `Solid through ${status.highestSolidTierLabel} • Year goal: ${targetTier.label}`
+        : `Working on ${status.workingTierLabel} • Year goal: ${targetTier.label}`
+      : `Year goal: ${targetTier.label}`;
 
   return (
-    <TouchableOpacity style={styles.skillRow} activeOpacity={0.78} onPress={() => {}}>
+    <TouchableOpacity style={styles.skillRow} activeOpacity={0.78} onPress={onOpenChecklist}>
       <View style={styles.skillRowHeader}>
         <View style={styles.skillLabelWrap}>
           <MaterialCommunityIcons name={locked ? "lock-outline" : "calculator-variant-outline"} size={18} color={locked ? "#94a3b8" : "#2563eb"} />
@@ -564,6 +608,7 @@ function MathSkillRow({
       <View style={styles.segmentRow}>
         {ladder.map((tier, index) => {
           const mastered = index <= highestIndex;
+          const target = index === targetIndex;
           const current = index === currentIndex && !mastered;
           const stuck = current && status?.band === "struggling";
           return (
@@ -573,6 +618,7 @@ function MathSkillRow({
                 styles.segment,
                 locked && styles.segmentLocked,
                 mastered && styles.segmentMastered,
+                target && !mastered && !current && styles.segmentTarget,
                 current && styles.segmentCurrent,
                 stuck && styles.segmentStuck,
               ]}
@@ -605,6 +651,70 @@ function SpellingSkillRow({ listCount, unlockState }: { listCount: number; unloc
         {locked ? "Locked for now" : listCount > 0 ? `${listCount} spelling ${listCount === 1 ? "list" : "lists"} ready` : "Ready to add words"}
       </Text>
     </TouchableOpacity>
+  );
+}
+
+function GradeGoalChecklistModal({
+  selection,
+  gradeLevel,
+  onClose,
+}: {
+  selection: ChecklistSelection | null;
+  gradeLevel?: string | null;
+  onClose: () => void;
+}) {
+  const operation = selection?.operation;
+  const standard = gradeExpectedTierStandard(gradeLevel);
+  const targetTierId = operation ? gradeExpectedTierId(operation, gradeLevel) : null;
+  const targetIndex = operation ? tierIndex(operation, targetTierId) : -1;
+  const tiers = operation && targetIndex >= 0 ? LADDERS[operation].slice(0, targetIndex + 1) : [];
+  const highestIndex = operation ? tierIndex(operation, selection?.status?.highestSolidTierId) : -1;
+  const startsInGrade = operation && !targetTierId ? nextGradeForOperation(operation, gradeLevel) : null;
+  const gradeLabel = gradeLevel || "this grade";
+  const subjectLabel = operation ? operationLabel(operation) : "";
+
+  return (
+    <Modal visible={!!selection} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.modalBackdrop}>
+        <View style={styles.checklistModal}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>{subjectLabel} — {gradeLabel} year goal</Text>
+            <TouchableOpacity style={styles.modalCloseButton} onPress={onClose}>
+              <MaterialCommunityIcons name="close" size={20} color="#475569" />
+            </TouchableOpacity>
+          </View>
+
+          {tiers.length === 0 ? (
+            <Text style={styles.modalEmpty}>
+              {startsInGrade ? `${subjectLabel} starts in ${startsInGrade}.` : "No year goal is set for this subject at this grade."}
+            </Text>
+          ) : (
+            <View style={styles.checklistRows}>
+              {tiers.map((tier, index) => {
+                const mastered = index <= highestIndex;
+                return (
+                  <View key={tier.id} style={styles.checklistRow}>
+                    <MaterialCommunityIcons
+                      name={mastered ? "check-circle" : "checkbox-blank-circle-outline"}
+                      size={20}
+                      color={mastered ? "#16a34a" : "#94a3b8"}
+                    />
+                    <View style={styles.checklistTextWrap}>
+                      <Text style={styles.checklistTier}>{tier.label}</Text>
+                      <Text style={styles.checklistState}>{mastered ? "Mastered" : "Not yet"}</Text>
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          )}
+
+          <Text style={styles.sourceText}>
+            Source: {standard?.citation || "Grade target source unavailable."}
+          </Text>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -866,6 +976,9 @@ const styles = StyleSheet.create({
   segmentCurrent: {
     backgroundColor: "#2563eb",
   },
+  segmentTarget: {
+    backgroundColor: "#93c5fd",
+  },
   segmentStuck: {
     backgroundColor: "#ef4444",
   },
@@ -974,5 +1087,84 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     color: "#64748b",
     backgroundColor: "#f8fafc",
+  },
+  modalBackdrop: {
+    flex: 1,
+    justifyContent: "center",
+    padding: 18,
+    backgroundColor: "rgba(15, 23, 42, 0.42)",
+  },
+  checklistModal: {
+    borderRadius: 8,
+    backgroundColor: "#fff",
+    padding: 16,
+    gap: 14,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  modalTitle: {
+    flex: 1,
+    fontSize: 18,
+    lineHeight: 23,
+    fontWeight: "800",
+    color: "#0f172a",
+    textTransform: "capitalize",
+  },
+  modalCloseButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#f1f5f9",
+  },
+  modalEmpty: {
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    backgroundColor: "#f8fafc",
+    padding: 12,
+    fontSize: 14,
+    lineHeight: 19,
+    color: "#475569",
+    fontWeight: "700",
+  },
+  checklistRows: {
+    gap: 10,
+  },
+  checklistRow: {
+    minHeight: 48,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    padding: 10,
+  },
+  checklistTextWrap: {
+    flex: 1,
+  },
+  checklistTier: {
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: "800",
+    color: "#0f172a",
+  },
+  checklistState: {
+    marginTop: 2,
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#64748b",
+  },
+  sourceText: {
+    fontSize: 11,
+    lineHeight: 15,
+    color: "#64748b",
+    fontWeight: "600",
   },
 });

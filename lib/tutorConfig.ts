@@ -169,14 +169,43 @@ export function startingTier(op: Operation, child: any): string {
 }
 
 // --- Grade-expected tier benchmark ------------------------------------------
-// The tier a child at a given grade should reach to be "on track."
-// STARTER VALUES — tune against real kids. Keyed by children.grade_level.
-export const GRADE_EXPECTED_TIER: Record<string, Record<Operation, string>> = {
-  CP:  { addition: "A2", subtraction: "S2", multiplication: "M1", division: "D1" },
-  CE1: { addition: "A4", subtraction: "S4", multiplication: "M3", division: "D1" },
-  CE2: { addition: "A5", subtraction: "S5", multiplication: "M4", division: "D2" },
-  CM1: { addition: "A6", subtraction: "S6", multiplication: "M6", division: "D5" },
-  CM2: { addition: "A7", subtraction: "S7", multiplication: "M7", division: "D7" },
+// Sourced French year-end math targets. CE1/CE2 are directly sourced; CP and
+// CM1 are pending verification against their specific Eduscol grade documents.
+export type GradeExpectedTierRow = Record<Operation, string | null>;
+export type GradeExpectedTierStandard = {
+  locale: "fr-FR";
+  citation: string;
+  tiers: GradeExpectedTierRow;
+};
+
+export const GRADE_EXPECTED_TIER: Record<string, GradeExpectedTierRow> = {
+  CP:  { addition: "A2", subtraction: "S1", multiplication: null, division: null },
+  CE1: { addition: "A6", subtraction: "S6", multiplication: "M2", division: null },
+  CE2: { addition: "A6", subtraction: "S6", multiplication: "M4", division: "D1" },
+  CM1: { addition: "A7", subtraction: "S7", multiplication: "M5", division: "D4" },
+};
+
+export const GRADE_EXPECTED_TIER_STANDARD: Record<string, GradeExpectedTierStandard> = {
+  CP: {
+    locale: "fr-FR",
+    citation: "Éduscol — Attendus de fin d'année, CP Mathématiques (Ministère de l'Éducation nationale)",
+    tiers: GRADE_EXPECTED_TIER.CP,
+  },
+  CE1: {
+    locale: "fr-FR",
+    citation: "Éduscol — Attendus de fin d'année, CE1 Mathématiques (Ministère de l'Éducation nationale)",
+    tiers: GRADE_EXPECTED_TIER.CE1,
+  },
+  CE2: {
+    locale: "fr-FR",
+    citation: "Éduscol — Attendus de fin d'année, CE2 Mathématiques (Ministère de l'Éducation nationale)",
+    tiers: GRADE_EXPECTED_TIER.CE2,
+  },
+  CM1: {
+    locale: "fr-FR",
+    citation: "Éduscol — Attendus de fin d'année, CM1 Mathématiques (Ministère de l'Éducation nationale)",
+    tiers: GRADE_EXPECTED_TIER.CM1,
+  },
 };
 
 export function tierIndex(operation: Operation, tierId: string | null | undefined): number {
@@ -188,8 +217,24 @@ export function gradeExpectedTierIndex(
   operation: Operation,
   gradeLevel: string | null | undefined
 ): number {
-  if (!gradeLevel) return -1;
+  const expectedTierId = gradeExpectedTierId(operation, gradeLevel);
+  if (!expectedTierId) return -1;
+  return tierIndex(operation, expectedTierId);
+}
+
+export function gradeExpectedTierId(
+  operation: Operation,
+  gradeLevel: string | null | undefined
+): string | null {
+  if (!gradeLevel) return null;
   const row = GRADE_EXPECTED_TIER[gradeLevel];
-  if (!row) return -1;
-  return tierIndex(operation, row[operation]);
+  if (!row) return null;
+  return row[operation];
+}
+
+export function gradeExpectedTierStandard(
+  gradeLevel: string | null | undefined
+): GradeExpectedTierStandard | null {
+  if (!gradeLevel) return null;
+  return GRADE_EXPECTED_TIER_STANDARD[gradeLevel] || null;
 }
