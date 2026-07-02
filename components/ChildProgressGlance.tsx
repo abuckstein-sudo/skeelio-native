@@ -340,17 +340,19 @@ export default function ChildProgressGlance({ child }: { child: Child }) {
         {recentWins.length === 0 ? (
           <Text style={styles.emptyMuted}>Wins will appear here after practice or worksheet sessions.</Text>
         ) : (
-          recentWins.map((win) => (
-            <View key={win.id} style={styles.winRow}>
-              <View style={styles.winIcon}>
-                <MaterialCommunityIcons name={win.icon} size={18} color="#0f766e" />
+          <View style={styles.winChipWrap}>
+            {recentWins.map((win) => (
+              <View key={win.id} style={styles.winChip}>
+                <View style={styles.winIcon}>
+                  <MaterialCommunityIcons name={win.icon} size={16} color="#0f766e" />
+                </View>
+                <View style={styles.winTextWrap}>
+                  <Text style={styles.winTitle} numberOfLines={2}>{win.title}</Text>
+                  <Text style={styles.winDetail}>{win.detail} • {formatShortDate(win.date)}</Text>
+                </View>
               </View>
-              <View style={styles.winTextWrap}>
-                <Text style={styles.winTitle}>{win.title}</Text>
-                <Text style={styles.winDetail}>{win.detail} • {formatShortDate(win.date)}</Text>
-              </View>
-            </View>
-          ))
+            ))}
+          </View>
         )}
       </View>
     </View>
@@ -718,19 +720,26 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     color: "#854d0e",
   },
-  winRow: {
+  winChipWrap: {
     flexDirection: "row",
-    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  winChip: {
+    width: "48%",
+    minHeight: 86,
+    flexDirection: "row",
+    alignItems: "flex-start",
     borderRadius: 8,
     borderWidth: 1,
     borderColor: "#ccfbf1",
     backgroundColor: "#f0fdfa",
-    padding: 12,
-    gap: 10,
+    padding: 10,
+    gap: 8,
   },
   winIcon: {
-    width: 34,
-    height: 34,
+    width: 28,
+    height: 28,
     borderRadius: 8,
     alignItems: "center",
     justifyContent: "center",
@@ -740,7 +749,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   winTitle: {
-    fontSize: 14,
+    fontSize: 13,
+    lineHeight: 16,
     fontWeight: "800",
     color: "#134e4a",
   },
@@ -761,4 +771,3 @@ const styles = StyleSheet.create({
     backgroundColor: "#f8fafc",
   },
 });
-
