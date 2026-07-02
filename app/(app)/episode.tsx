@@ -18,6 +18,7 @@ import { supabase } from "@/lib/supabase";
 import { addStars } from "@/lib/addStars";
 import { SKILL_SESSION } from "@/lib/masteryConfig";
 import { drawPlurals } from "@/lib/grammarBank";
+import { setSchoolHomeworkItemDone } from "@/lib/schoolHomework";
 
 interface SubSkill {
   label: string;
@@ -65,12 +66,15 @@ type Phase = "lesson" | "practice" | "feedback";
 export default function EpisodeScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
+  const routeEpisodeId = typeof params.episodeId === "string" ? params.episodeId : "";
 
   // Parse episode data from route params
   const [episodeData, setEpisodeData] = useState<EpisodeData | null>(null);
   const [episodeId, setEpisodeId] = useState<string | null>(null);
   const [parentId, setParentId] = useState<string | null>(null);
   const [childId, setChildId] = useState<string | null>(null);
+  const [episodeAlreadyComplete, setEpisodeAlreadyComplete] = useState(false);
+  const [episodeStatusChecked, setEpisodeStatusChecked] = useState(false);
   const [unaidedStreakMax, setUnaidedStreakMax] = useState(0);
   const [phase, setPhase] = useState<Phase>("lesson");
 
@@ -113,12 +117,6 @@ export default function EpisodeScreen() {
       try {
         const data = JSON.parse(params.data);
         setEpisodeData(data);
-        // Initialize practice queue exactly once. A second initial fetch was
-        // overwriting the item already on screen (question-changes-on-tap bug).
-        if (!initialFetchStartedRef.current) {
-          initialFetchStartedRef.current = true;
-          fetchPracticeItems(data);
-        }
       } catch (err) {
         console.error("[episode] failed to parse data:", err);
         setError("Failed to load episode data");
@@ -146,12 +144,20 @@ export default function EpisodeScreen() {
         // Fetch child_id from tutor_episodes
         const { data: epRow } = await supabase
           .from('tutor_episodes')
-          .select('child_id, status')
+          .select('child_id, status, completed_at')
           .eq('id', episodeId)
           .single();
 
         if (epRow?.child_id) {
           setChildId(epRow.child_id);
+        }
+
+        if (epRow?.status === 'complete' || !!epRow?.completed_at) {
+          setEpisodeAlreadyComplete(true);
+          setEpisodeStatusChecked(true);
+          setLoading(false);
+          console.log('[episode already complete]', { episodeId });
+          return;
         }
 
         // Update status from 'pending' to 'in_progress' if needed
@@ -168,15 +174,25 @@ export default function EpisodeScreen() {
           }
         }
 
+        setEpisodeStatusChecked(true);
         console.log('[episode initialized]', { episodeId, parentId: user?.id, childId: epRow?.child_id, status: epRow?.status });
       } catch (err) {
         console.error('[episode init error]', err);
+        setEpisodeStatusChecked(true);
         // Non-blocking - continue without logging if init fails
       }
     };
 
     initializeEpisodeLogging();
   }, [episodeId]);
+
+  useEffect(() => {
+    if (!episodeData || episodeAlreadyComplete || initialFetchStartedRef.current) return;
+    if (routeEpisodeId && !episodeStatusChecked) return;
+
+    initialFetchStartedRef.current = true;
+    fetchPracticeItems(episodeData);
+  }, [episodeData, episodeAlreadyComplete, episodeStatusChecked, routeEpisodeId]);
 
   // Resume: rebuild first-try history from saved attempts
   useEffect(() => {
@@ -508,6 +524,33 @@ export default function EpisodeScreen() {
     return unaidedCorrect * 2 + (allCorrectWithoutHelp ? 5 : 0);
   };
 
+  const markLinkedSchoolHomeworkDone = async () => {
+    if (!episodeId) return;
+
+    const { data: linkedItem, error: linkedItemError } = await supabase
+      .from("school_homework_items")
+      .select("id, status")
+      .contains("metadata", { linked_episode_id: episodeId })
+      .maybeSingle();
+
+    if (linkedItemError) {
+      console.error("[episode] linked homework item read error:", linkedItemError);
+      return;
+    }
+
+    if (!linkedItem?.id) return;
+
+    try {
+      await setSchoolHomeworkItemDone(
+        { id: linkedItem.id, status: (linkedItem.status as any) || "pending" },
+        true,
+        "child"
+      );
+    } catch (err) {
+      console.error("[episode] linked homework item completion error:", err);
+    }
+  };
+
   const navigateAfterEpisodeComplete = () => {
     if (childId) {
       router.replace({
@@ -759,6 +802,8 @@ export default function EpisodeScreen() {
         throw updateError;
       }
 
+      await markLinkedSchoolHomeworkDone();
+
       if (!alreadyComplete && awardChildId && starsDelta > 0) {
         console.log('[episode] awarding stars:', { childId: awardChildId, starsDelta, unaidedCorrect });
         await addStars(awardChildId, starsDelta);
@@ -854,6 +899,53 @@ export default function EpisodeScreen() {
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#2196f3" />
         </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (routeEpisodeId && !episodeStatusChecked) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={handleBack}>
+            <MaterialCommunityIcons name="arrow-left" size={24} color="#333" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>{episodeData.concept.label}</Text>
+          <View style={{ width: 24 }} />
+        </View>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#2196f3" />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (episodeAlreadyComplete) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={navigateAfterEpisodeComplete}>
+            <MaterialCommunityIcons name="arrow-left" size={24} color="#333" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>{episodeData.concept.label}</Text>
+          <View style={{ width: 24 }} />
+        </View>
+
+        <ScrollView style={styles.content} contentContainerStyle={styles.contentInner}>
+          <View style={styles.card}>
+            <View style={styles.lessonSection}>
+              <MaterialCommunityIcons name="check-circle" size={48} color="#4caf50" />
+              <Text style={styles.lessonTitle}>Tu as déjà terminé cet exercice</Text>
+              <Text style={styles.lessonDescription}>
+                Il est marqué comme fait dans ton agenda.
+              </Text>
+            </View>
+
+            <TouchableOpacity style={styles.primaryButton} onPress={navigateAfterEpisodeComplete}>
+              <Text style={styles.primaryButtonText}>Retour à l'accueil</Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
       </SafeAreaView>
     );
   }

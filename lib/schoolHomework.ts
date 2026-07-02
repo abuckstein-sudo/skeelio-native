@@ -900,6 +900,112 @@ export async function createSchoolHomeworkAssignmentItem(params: {
   if (itemError) throw itemError;
 }
 
+export async function createSchoolHomeworkWorksheetItem(params: {
+  childId: string;
+  homeworkDate: string;
+  episodeId: string;
+  taskText: string;
+  imagePath: string;
+  title?: string;
+  metadata?: Record<string, unknown>;
+}): Promise<void> {
+  const { data: authData, error: authError } = await supabase.auth.getUser();
+  if (authError || !authData?.user?.id) throw new Error("Not authenticated");
+
+  const parentId = authData.user.id;
+  const { data: existing } = await supabase
+    .from("school_homework_items")
+    .select("id")
+    .eq("child_id", params.childId)
+    .contains("metadata", { linked_episode_id: params.episodeId })
+    .maybeSingle();
+
+  if (existing?.id) return;
+
+  const { data: existingDay } = await supabase
+    .from("school_homework_days")
+    .select("*")
+    .eq("child_id", params.childId)
+    .eq("homework_date", params.homeworkDate)
+    .neq("status", "archived")
+    .maybeSingle();
+
+  const dayPayload: Record<string, unknown> = {
+    parent_id: parentId,
+    child_id: params.childId,
+    homework_date: params.homeworkDate,
+    source_type: (existingDay as any)?.source_type || "manual",
+    status: "active",
+    updated_at: new Date().toISOString(),
+  };
+
+  if (!existingDay) {
+    dayPayload.raw_input = params.taskText;
+  }
+
+  const { data: day, error: dayError } = await supabase
+    .from("school_homework_days")
+    .upsert(dayPayload, { onConflict: "child_id,homework_date" })
+    .select()
+    .single();
+
+  if (dayError) throw dayError;
+
+  const { count } = await supabase
+    .from("school_homework_items")
+    .select("id", { count: "exact", head: true })
+    .eq("homework_day_id", day.id);
+
+  const metadata = {
+    ...(params.metadata || {}),
+    linked_episode_id: params.episodeId,
+    linked_practice: "worksheet",
+    needs_material: false,
+  };
+
+  const { data: item, error: itemError } = await supabase
+    .from("school_homework_items")
+    .insert({
+      homework_day_id: day.id,
+      parent_id: parentId,
+      child_id: params.childId,
+      task_text: params.taskText,
+      task_kind: "worksheet",
+      status: "pending",
+      sort_order: count || 0,
+      metadata,
+      linked_assignment_id: null,
+      linked_spelling_list_id: null,
+    })
+    .select("*")
+    .single();
+
+  if (itemError) throw itemError;
+
+  const { error: materialError } = await supabase
+    .from("school_homework_materials")
+    .insert({
+      homework_item_id: item.id,
+      homework_day_id: day.id,
+      parent_id: parentId,
+      child_id: params.childId,
+      material_type: "image",
+      title: params.title || `Worksheet: ${params.taskText}`,
+      storage_bucket: "worksheets",
+      storage_path: params.imagePath,
+      text_content: null,
+      category: "worksheet",
+    });
+
+  if (materialError) {
+    await supabase
+      .from("school_homework_items")
+      .delete()
+      .eq("id", item.id);
+    throw materialError;
+  }
+}
+
 export async function signedSchoolHomeworkImageUrl(material: SchoolHomeworkMaterial): Promise<string | null> {
   if (material.material_type === "image" && material.text_content?.startsWith("data:image/")) {
     return material.text_content;

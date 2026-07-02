@@ -346,7 +346,6 @@ export default function ChildHomeScreen() {
   );
   const [attemptsByOperation, setAttemptsByOperation] = useState<Record<Operation, Attempt[]>>(emptyMathAttempts);
   const [pendingAssignments, setPendingAssignments] = useState<Assignment[]>([]);
-  const [pendingEpisodes, setPendingEpisodes] = useState<any[]>([]);
   const [schoolHomeworkWeekDays, setSchoolHomeworkWeekDays] = useState<(SchoolHomeworkDay | null)[]>([]);
   const [expandedHomeworkDate, setExpandedHomeworkDate] = useState(todayDateKey());
   const [homeworkLimit, setHomeworkLimit] = useState<ChildHomeworkLimit | null>(null);
@@ -392,29 +391,6 @@ export default function ChildHomeScreen() {
     const assignments = await listAssignmentsForChild(childId);
     const pending = assignments.filter((a) => a.status === "pending");
     setPendingAssignments(pending);
-
-  }, [childId]);
-
-  const fetchPendingEpisodes = useCallback(async () => {
-    if (!childId) return;
-    try {
-      const { data, error: dbError } = await supabase
-        .from("tutor_episodes")
-        .select("id, concept, lesson, domain, language, grade_band, created_at, status")
-        .eq("child_id", childId)
-        .in("status", ["pending", "in_progress"])
-        .order("created_at", { ascending: true });
-
-      if (dbError) {
-        console.error("[child-home] failed to fetch pending episodes:", dbError);
-        setPendingEpisodes([]);
-      } else {
-        setPendingEpisodes(data || []);
-      }
-    } catch (err) {
-      console.error("[child-home] failed to fetch pending episodes:", err);
-      setPendingEpisodes([]);
-    }
   }, [childId]);
 
   const fetchSchoolHomework = useCallback(async () => {
@@ -496,10 +472,9 @@ export default function ChildHomeScreen() {
   const refreshHomeworkFeed = useCallback(async () => {
     await Promise.all([
       fetchPendingAssignments(),
-      fetchPendingEpisodes(),
       fetchSchoolHomework(),
     ]);
-  }, [fetchPendingAssignments, fetchPendingEpisodes, fetchSchoolHomework]);
+  }, [fetchPendingAssignments, fetchSchoolHomework]);
 
   const maybeCelebrateUnlocks = useCallback(async (
     statuses: Record<Operation, OperationStatus>,
@@ -798,6 +773,26 @@ export default function ChildHomeScreen() {
   };
 
   const handleSchoolHomeworkItemPress = async (item: SchoolHomeworkItem) => {
+    const linkedEpisodeId = typeof (item.metadata as any)?.linked_episode_id === "string"
+      ? (item.metadata as any).linked_episode_id as string
+      : "";
+
+    if (linkedEpisodeId) {
+      const { data: episode, error: episodeError } = await supabase
+        .from("tutor_episodes")
+        .select("id, concept, lesson, domain, language, grade_band, created_at, status")
+        .eq("id", linkedEpisodeId)
+        .single();
+
+      if (episodeError || !episode) {
+        console.error("[child-home] linked worksheet episode load error:", episodeError);
+        return;
+      }
+
+      handleEpisodeTap(episode);
+      return;
+    }
+
     if (item.linked_spelling_list_id) {
       router.push({
         pathname: "/spelling/[listId]",
@@ -1086,11 +1081,7 @@ export default function ChildHomeScreen() {
   const visibleSchoolDateKeys = schoolWeekDateKeys.filter((dateKey) => {
     const day = schoolHomeworkByDate.get(dateKey) || null;
     const items = day?.school_homework_items || [];
-    const datedAssignments = pendingAssignments.filter((assignment) => {
-      if (!assignment.due_date) return false;
-      return assignment.due_date.slice(0, 10) === dateKey;
-    });
-    return items.length > 0 || datedAssignments.length > 0;
+    return items.length > 0;
   });
   const hasSchoolHomework = visibleSchoolDateKeys.length > 0;
   const todayHasHomework = visibleSchoolDateKeys.includes(todayDateKey());
@@ -1098,42 +1089,6 @@ export default function ChildHomeScreen() {
     (count, day) => count + (day?.school_homework_items || []).filter((item) => item.status !== "done").length,
     0
   );
-
-  // One unified "Homework" feed: worksheet practice sessions (episodes) +
-  // assigned work, ordered by when they were created/assigned.
-  const schoolLinkedAssignmentIds = new Set(
-    schoolHomeworkWeekDays
-      .flatMap((day) => day?.school_homework_items || [])
-      .map((item) => item.linked_assignment_id)
-      .filter(Boolean)
-  );
-
-  const homeworkFeed = [
-    ...pendingEpisodes.map((e) => ({
-      type: "episode" as const,
-      id: e.id as string,
-      createdAt: (e.created_at as string) || "",
-      title: e.concept?.label || "Practice",
-      subtitle: e.status === "in_progress" ? "Reprendre" : "À faire",
-      episode: e,
-    })),
-    ...pendingAssignments.filter((a) => !schoolLinkedAssignmentIds.has(a.id) && !a.due_date).map((a) => {
-      const isSpelling = a.subject === "spelling";
-      const base = (a.focus || a.subject || "Practice") as string;
-      const title = isSpelling
-        ? `Spelling: ${(a.custom_questions as any)?.title || "Spelling List"}`
-        : base.charAt(0).toUpperCase() + base.slice(1);
-      const count = a.question_count;
-      return {
-        type: "assignment" as const,
-        id: a.id as string,
-        createdAt: ((a as any).created_at as string) || "",
-        title,
-        subtitle: `${count} ${isSpelling ? "word" : "question"}${count !== 1 ? "s" : ""}`,
-        episode: null as any,
-      };
-    }),
-  ].sort((x, y) => (x.createdAt < y.createdAt ? -1 : x.createdAt > y.createdAt ? 1 : 0));
 
   const setupCopy = SETUP_COPY[getChildHomeLanguage(child)];
   const childLanguage = getChildHomeLanguage(child);
@@ -1143,7 +1098,7 @@ export default function ChildHomeScreen() {
     homeworkLimit?.unlocked_date !== todayDateKey() &&
     homeworkTimerSeconds >= limitMinutes * 60
   );
-  const hasRemainingHomework = homeworkFeed.length > 0 || remainingSchoolHomeworkCount > 0;
+  const hasRemainingHomework = remainingSchoolHomeworkCount > 0;
   const allMathStatusesLoaded = MATH_OPERATIONS.every((operation) => operationStatuses[operation]);
   const mathDataReady = !!child && allMathStatusesLoaded;
   const highestSolidTierByOperation = MATH_OPERATIONS.reduce((acc, operation) => {
@@ -1305,12 +1260,8 @@ export default function ChildHomeScreen() {
           {visibleSchoolDateKeys.map((dateKey) => {
             const day = schoolHomeworkByDate.get(dateKey) || null;
             const items = day?.school_homework_items || [];
-            const datedAssignments = pendingAssignments.filter((assignment) => {
-              if (!assignment.due_date || schoolLinkedAssignmentIds.has(assignment.id)) return false;
-              return assignment.due_date.slice(0, 10) === dateKey;
-            });
             const doneCount = items.filter((item) => item.status === "done").length;
-            const remainingCount = items.length + datedAssignments.length;
+            const remainingCount = items.length;
             const expanded = expandedHomeworkDate === dateKey;
             const canChildEditDate = childCanAddHomework;
             return (
@@ -1342,38 +1293,16 @@ export default function ChildHomeScreen() {
                   </View>
                 </TouchableOpacity>
                 {expanded && items.length === 0 && (
-                  datedAssignments.length === 0 &&
                   <Text style={styles.schoolHomeworkEmpty}>
                     {childLanguage === "fr" ? "Pas de devoirs enregistrés" : "No homework saved"}
                   </Text>
                 )}
-                {expanded && datedAssignments.map((assignment) => {
-                  const isSpelling = assignment.subject === "spelling";
-                  const base = (assignment.focus || assignment.subject || "Practice") as string;
-                  const title = isSpelling
-                    ? `Spelling: ${(assignment.custom_questions as any)?.title || "Spelling List"}`
-                    : base.charAt(0).toUpperCase() + base.slice(1);
-                  return (
-                    <TouchableOpacity
-                      key={assignment.id}
-                      style={styles.schoolHomeworkItem}
-                      activeOpacity={0.8}
-                      onPress={() => handleHomeworkTap(assignment.id)}
-                    >
-                      <MaterialCommunityIcons name="play-circle-outline" size={26} color="#2196f3" />
-                      <View style={styles.schoolHomeworkTextWrap}>
-                        <Text style={styles.schoolHomeworkText}>{title}</Text>
-                        <Text style={styles.schoolHomeworkMeta}>
-                          {assignment.question_count} {isSpelling ? "words" : "questions"} · {childLanguage === "fr" ? "appuie pour pratiquer" : "tap to practice"}
-                        </Text>
-                      </View>
-                      <MaterialCommunityIcons name="chevron-right" size={22} color="#90a4ae" />
-                    </TouchableOpacity>
-                  );
-                })}
                 {expanded && items.map((item) => {
             const done = item.status === "done";
-            const linked = !!item.linked_assignment_id || !!item.linked_spelling_list_id;
+            const linkedEpisodeId = typeof (item.metadata as any)?.linked_episode_id === "string"
+              ? (item.metadata as any).linked_episode_id as string
+              : "";
+            const linked = !!item.linked_assignment_id || !!item.linked_spelling_list_id || !!linkedEpisodeId;
             const hasMaterial = (item.school_homework_materials || []).length > 0;
             const needsMaterial = Boolean((item.metadata as any)?.needs_material) && !hasMaterial;
             const canOpen = linked || hasMaterial;
@@ -1600,30 +1529,6 @@ export default function ChildHomeScreen() {
           </KeyboardAvoidingView>
         </View>
       </Modal>
-
-      {/* Homework Section (worksheet practice + assigned work, one feed) */}
-      {homeworkFeed.length > 0 && (
-        <View style={styles.homeworkSection}>
-          <Text style={styles.homeworkSectionTitle}>📋 {setupCopy.homework}</Text>
-          {homeworkFeed.map((item) => (
-            <TouchableOpacity
-              key={`${item.type}-${item.id}`}
-              style={styles.homeworkCard}
-              onPress={() =>
-                item.type === "episode"
-                  ? handleEpisodeTap(item.episode)
-                  : handleHomeworkTap(item.id)
-              }
-            >
-              <View style={styles.homeworkInfo}>
-                <Text style={styles.homeworkCardTopic} numberOfLines={2}>{item.title}</Text>
-                <Text style={styles.homeworkCardCount}>{item.subtitle}</Text>
-              </View>
-              <Text style={styles.playButton}>▶</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      )}
 
       {nextUpTiles.length > 0 && (
         <View style={styles.nextUpSection}>
@@ -2352,72 +2257,11 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "800",
   },
-  homeworkSection: {
-    backgroundColor: "#fef3e0",
-    borderLeftWidth: 4,
-    borderLeftColor: "#ff9800",
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 24,
-  },
-  completedHomeworkSection: {
-    backgroundColor: "#e8f5e9",
-    borderLeftWidth: 4,
-    borderLeftColor: "#4caf50",
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 24,
-  },
   homeworkSectionTitle: {
     fontSize: 16,
     fontWeight: "700",
     color: "#1a1a1a",
     marginBottom: 12,
-  },
-  homeworkCard: {
-    backgroundColor: "#fff",
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 8,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#ffe0b2",
-  },
-  completedHomeworkCard: {
-    backgroundColor: "#fff",
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 8,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#c8e6c9",
-  },
-  homeworkInfo: {
-    flex: 1,
-  },
-  homeworkCardTopic: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#1a1a1a",
-    marginBottom: 4,
-  },
-  homeworkCardCount: {
-    fontSize: 12,
-    color: "#666",
-  },
-  playButton: {
-    fontSize: 20,
-    marginLeft: 12,
-  },
-  completedCheck: {
-    fontSize: 22,
-    fontWeight: "800",
-    color: "#4caf50",
-    marginLeft: 12,
   },
   episodesSection: {
     backgroundColor: "#e8f5e9",

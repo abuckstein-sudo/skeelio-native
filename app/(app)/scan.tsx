@@ -21,10 +21,15 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { supabase } from "@/lib/supabase";
 import { decode } from "base64-arraybuffer";
 import CameraCaptureModal from "@/components/CameraCaptureModal";
+import DatePickerModal from "@/components/DatePickerModal";
 import { createSpellingAssignment } from "@/lib/assignments";
 import {
+  createSchoolHomeworkAssignmentItem,
+  createSchoolHomeworkWorksheetItem,
   ExistingWorksheetImage,
   listExistingWorksheetImagesForChild,
+  schoolHomeworkDateLabel,
+  todayDateKey,
 } from "@/lib/schoolHomework";
 import {
   createSpellingItems,
@@ -147,6 +152,8 @@ export default function ScanScreen() {
   const [reviewEdited, setReviewEdited] = useState(false);
   const [regeneratingPractice, setRegeneratingPractice] = useState(false);
   const [editingSubSkillIndex, setEditingSubSkillIndex] = useState<number | null>(null);
+  const [dueDate, setDueDate] = useState(todayDateKey());
+  const [datePickerVisible, setDatePickerVisible] = useState(false);
   const [assigning, setAssigning] = useState(false);
 
   const [showConfirmation, setShowConfirmation] = useState(false);
@@ -500,6 +507,7 @@ export default function ScanScreen() {
       setAssigning(true);
 
       if (isSpellingListReview(reviewData)) {
+        const assignmentDate = dueDate || todayDateKey();
         const language = toSpellingLanguage(reviewData.language);
         const words = uniqueWords(reviewData.spelling_words);
         if (words.length === 0) {
@@ -510,7 +518,20 @@ export default function ScanScreen() {
         const listTitle = `${language === "French" ? "Liste photo" : "Photo list"} · ${today}`;
         const list = await createSpellingList(childId, listTitle, language, "photo");
         await createSpellingItems(list.id, childId, words, language);
-        await createSpellingAssignment(childId, list.id, listTitle, words.length, "practice");
+        const assignment = await createSpellingAssignment(childId, list.id, listTitle, words.length, "practice", assignmentDate);
+        await createSchoolHomeworkAssignmentItem({
+          childId,
+          homeworkDate: assignmentDate,
+          assignmentId: assignment.id,
+          taskText: `Spelling: ${listTitle}`,
+          taskKind: "spelling",
+          metadata: {
+            linked_practice: "spelling",
+            assignment_subject: assignment.subject,
+            assignment_mode: assignment.mode,
+            source: "scan",
+          },
+        });
         const countLabel = language === "French"
           ? `${words.length} ${words.length === 1 ? "mot" : "mots"}`
           : `${words.length} ${words.length === 1 ? "word" : "words"}`;
@@ -537,6 +558,7 @@ export default function ScanScreen() {
       // Default missing fields
       const grade_band = reviewData.grade_band || "";
       const lesson = reviewData.lesson || "";
+      const assignmentDate = dueDate || todayDateKey();
 
       // Upload photo to storage
       let image_path = null;
@@ -552,6 +574,10 @@ export default function ScanScreen() {
         }
       } catch (e) {
         upErr = e;
+      }
+
+      if (!image_path) {
+        throw new Error("Failed to upload worksheet image");
       }
 
       console.log("[scan precheck]", JSON.stringify({
@@ -577,6 +603,7 @@ export default function ScanScreen() {
           grade_band: grade_band,
           concept: reviewData.concept,
           lesson: lesson,
+          due_date: assignmentDate,
           status: "pending",
         })
         .select("id")
@@ -594,6 +621,19 @@ export default function ScanScreen() {
         throw new Error("Failed to create episode");
       }
 
+      await createSchoolHomeworkWorksheetItem({
+        childId,
+        homeworkDate: assignmentDate,
+        episodeId: ep.id,
+        taskText: reviewData.concept.label,
+        imagePath: image_path,
+        title: reviewData.concept.label,
+        metadata: {
+          concept_label: reviewData.concept.label,
+          domain: domainNorm,
+        },
+      });
+
       // Show confirmation screen
       setConfirmationData({
         conceptLabel: reviewData.concept.label,
@@ -606,6 +646,7 @@ export default function ScanScreen() {
       setBase64Raw(null);
       setJpegBase64(null);
       setImageUri(null);
+      setDueDate(todayDateKey());
       setAssigning(false);
     } catch (err) {
       console.error("[scan] assignment error:", err);
@@ -692,6 +733,22 @@ export default function ScanScreen() {
           {imageUri && (
             <View style={styles.reviewThumbnailContainer}>
               <Image source={{ uri: imageUri }} style={styles.reviewThumbnail} />
+            </View>
+          )}
+
+          {!isSpellingList && (
+            <View style={styles.reviewSection}>
+              <Text style={styles.formLabel}>Jour des devoirs</Text>
+              <TouchableOpacity
+                style={styles.dateInput}
+                onPress={() => setDatePickerVisible(true)}
+                disabled={assigning}
+              >
+                <MaterialCommunityIcons name="calendar-month-outline" size={18} color="#1565c0" />
+                <Text style={styles.dateInputText}>
+                  {schoolHomeworkDateLabel(dueDate || todayDateKey(), "fr")}
+                </Text>
+              </TouchableOpacity>
             </View>
           )}
 
@@ -876,6 +933,13 @@ export default function ScanScreen() {
             )}
           </TouchableOpacity>
         </View>
+
+        <DatePickerModal
+          visible={datePickerVisible}
+          selectedDate={dueDate || todayDateKey()}
+          onSelect={setDueDate}
+          onClose={() => setDatePickerVisible(false)}
+        />
       </SafeAreaView>
     );
   }
@@ -1280,6 +1344,32 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#333",
     marginBottom: 8,
+  },
+  formLabel: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#333",
+    marginBottom: 8,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  dateInput: {
+    minHeight: 44,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    borderWidth: 1,
+    borderColor: "#ddd",
+    borderRadius: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    backgroundColor: "#fff",
+  },
+  dateInputText: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#333",
   },
   reviewConceptLabel: {
     fontSize: 16,
