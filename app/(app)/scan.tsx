@@ -24,6 +24,7 @@ import CameraCaptureModal from "@/components/CameraCaptureModal";
 import DatePickerModal from "@/components/DatePickerModal";
 import { createSpellingAssignment } from "@/lib/assignments";
 import {
+  createSchoolHomeworkAssignmentItem,
   createSchoolHomeworkWorksheetItem,
   ExistingWorksheetImage,
   listExistingWorksheetImagesForChild,
@@ -506,6 +507,7 @@ export default function ScanScreen() {
       setAssigning(true);
 
       if (isSpellingListReview(reviewData)) {
+        const assignmentDate = dueDate || todayDateKey();
         const language = toSpellingLanguage(reviewData.language);
         const words = uniqueWords(reviewData.spelling_words);
         if (words.length === 0) {
@@ -516,7 +518,20 @@ export default function ScanScreen() {
         const listTitle = `${language === "French" ? "Liste photo" : "Photo list"} · ${today}`;
         const list = await createSpellingList(childId, listTitle, language, "photo");
         await createSpellingItems(list.id, childId, words, language);
-        await createSpellingAssignment(childId, list.id, listTitle, words.length, "practice");
+        const assignment = await createSpellingAssignment(childId, list.id, listTitle, words.length, "practice", assignmentDate);
+        await createSchoolHomeworkAssignmentItem({
+          childId,
+          homeworkDate: assignmentDate,
+          assignmentId: assignment.id,
+          taskText: `Spelling: ${listTitle}`,
+          taskKind: "spelling",
+          metadata: {
+            linked_practice: "spelling",
+            assignment_subject: assignment.subject,
+            assignment_mode: assignment.mode,
+            source: "scan",
+          },
+        });
         const countLabel = language === "French"
           ? `${words.length} ${words.length === 1 ? "mot" : "mots"}`
           : `${words.length} ${words.length === 1 ? "word" : "words"}`;

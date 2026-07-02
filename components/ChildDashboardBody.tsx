@@ -42,6 +42,7 @@ import {
   type SpellingLanguage,
 } from "@/lib/spelling";
 import { getWordsForLevel } from "@/lib/wordBank";
+import { createSchoolHomeworkAssignmentItem, todayDateKey } from "@/lib/schoolHomework";
 
 const KNOWN_SUBJECTS = [
   "multiplication",
@@ -87,7 +88,7 @@ export default function ChildDashboardBody({ childId }: { childId: string }) {
   const [selectedTopic, setSelectedTopic] = useState<Operation | "word_problems">("addition");
   const [selectedWordProblemOp, setSelectedWordProblemOp] = useState<Operation | "mixed">("mixed");
   const [questionCount, setQuestionCount] = useState(8);
-  const [dueDate, setDueDate] = useState("");
+  const [dueDate, setDueDate] = useState(todayDateKey());
   const [assignmentMode, setAssignmentMode] = useState<"practice" | "quiz">("practice");
   const [isCreatingAssignment, setIsCreatingAssignment] = useState(false);
   const [showCompletedAssignments, setShowCompletedAssignments] = useState(true);
@@ -224,20 +225,46 @@ export default function ChildDashboardBody({ childId }: { childId: string }) {
     }
   };
 
+  const agendaDate = () => dueDate || todayDateKey();
+
+  const addAssignmentToAgenda = async (
+    assignment: Assignment,
+    practiceType: string,
+    taskText: string
+  ) => {
+    await createSchoolHomeworkAssignmentItem({
+      childId: id,
+      homeworkDate: agendaDate(),
+      assignmentId: assignment.id,
+      taskText,
+      taskKind: practiceType === "spelling" ? "spelling" : practiceType === "division" ? "division" : practiceType === "multiplication" ? "multiplication" : "generic",
+      metadata: {
+        linked_practice: practiceType,
+        assignment_subject: assignment.subject,
+        assignment_mode: assignment.mode,
+      },
+    });
+  };
+
   const handleCreateAssignment = async () => {
     if (!id || !session?.user?.id) return;
 
     if (assignmentSubject === "math") {
       setIsCreatingAssignment(true);
       try {
-        await createMathAssignment({
+        const assignment = await createMathAssignment({
           childId: id,
           topic: selectedTopic,
           count: questionCount,
-          dueDate: dueDate || undefined,
+          dueDate: agendaDate(),
           mode: assignmentMode,
           wordProblemOp: selectedTopic === "word_problems" ? selectedWordProblemOp : undefined,
         });
+        await addAssignmentToAgenda(
+          assignment,
+          selectedTopic,
+          `${selectedTopic.replace("_", " ")} · ${questionCount} questions`
+        );
 
         // Refresh assignments
         await fetchAssignments();
@@ -246,7 +273,7 @@ export default function ChildDashboardBody({ childId }: { childId: string }) {
         setShowAssignmentForm(false);
         setSelectedTopic("addition");
         setQuestionCount(8);
-        setDueDate("");
+        setDueDate(todayDateKey());
         setAssignmentMode("practice");
       } catch (err) {
         console.error("[assignments] error creating math assignment:", err);
@@ -272,13 +299,18 @@ export default function ChildDashboardBody({ childId }: { childId: string }) {
         console.log("[handleCreateAssignment] creating spelling assignment for list:", selectedSpellingList.id, selectedSpellingList.title);
 
         // createSpellingAssignment will fetch items fresh and validate the count
-        await createSpellingAssignment(
+        const assignment = await createSpellingAssignment(
           id,
           selectedSpellingList.id,
           selectedSpellingList.title,
           0, // Ignored; createSpellingAssignment fetches fresh items
           "practice", // Default to practice mode for spelling
-          dueDate || undefined
+          agendaDate()
+        );
+        await addAssignmentToAgenda(
+          assignment,
+          "spelling",
+          `Spelling: ${selectedSpellingList.title}`
         );
 
         // Refresh assignments
@@ -287,7 +319,7 @@ export default function ChildDashboardBody({ childId }: { childId: string }) {
         // Reset form
         setShowAssignmentForm(false);
         setSelectedSpellingList(null);
-        setDueDate("");
+        setDueDate(todayDateKey());
         setAssignmentSubject("math");
       } catch (err) {
         console.error("[assignments] error creating spelling assignment:", err);
@@ -304,13 +336,18 @@ export default function ChildDashboardBody({ childId }: { childId: string }) {
       setIsCreatingAssignment(true);
       try {
         const { createConjugationAssignment } = await import("@/lib/assignments");
-        await createConjugationAssignment(
+        const assignment = await createConjugationAssignment(
           id,
           conjugationLanguage,
           conjugationVerbGroups,
           conjugationTenses,
           questionCount,
-          dueDate || undefined
+          agendaDate()
+        );
+        await addAssignmentToAgenda(
+          assignment,
+          "conjugation",
+          `Conjugation: ${assignment.focus}`
         );
 
         // Refresh assignments
@@ -323,7 +360,7 @@ export default function ChildDashboardBody({ childId }: { childId: string }) {
         setConjugationVerbGroups([]);
         setConjugationTenses([]);
         setQuestionCount(8);
-        setDueDate("");
+        setDueDate(todayDateKey());
       } catch (err) {
         console.error("[assignments] error creating conjugation assignment:", err);
         Alert.alert("Error", "Failed to create conjugation assignment");
@@ -374,13 +411,18 @@ export default function ChildDashboardBody({ childId }: { childId: string }) {
       await createSpellingItems(newList.id, id, words, generateLanguage);
 
       // Create assignment for the list
-      await createSpellingAssignment(
+      const assignment = await createSpellingAssignment(
         id,
         newList.id,
         listTitle,
         words.length,
         "practice",
-        dueDate || undefined
+        agendaDate()
+      );
+      await addAssignmentToAgenda(
+        assignment,
+        "spelling",
+        `Spelling: ${listTitle}`
       );
 
       // Refresh data
@@ -391,7 +433,7 @@ export default function ChildDashboardBody({ childId }: { childId: string }) {
       setShowAssignmentForm(false);
       setAssignmentSubject("math");
       setSelectedSpellingList(null);
-      setDueDate("");
+      setDueDate(todayDateKey());
       setGenerateWordCount("10");
       setGenerateLanguage("English");
       setIsGeneratingNewList(false);
@@ -1498,7 +1540,7 @@ export default function ChildDashboardBody({ childId }: { childId: string }) {
                         setAssignmentSubject("math");
                         setSelectedTopic("addition");
                         setQuestionCount(8);
-                        setDueDate("");
+                        setDueDate(todayDateKey());
                         setAssignmentMode("practice");
                         setSelectedSpellingList(null);
                       }
