@@ -434,11 +434,11 @@ export default function ChildProgressGlance({ child }: { child: Child }) {
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Where {child.name}'s stuck</Text>
+        <Text style={styles.sectionTitle}>{`Where ${child.name}'s stuck`}</Text>
         {stuckCards.length === 0 ? (
           <View style={styles.emptyGood}>
             <MaterialCommunityIcons name="check-circle-outline" size={26} color="#16a34a" />
-            <Text style={styles.emptyGoodText}>{child.name}'s on track — nothing stuck right now.</Text>
+            <Text style={styles.emptyGoodText}>{`${child.name}'s on track — nothing stuck right now.`}</Text>
           </View>
         ) : (
           stuckCards.map((card) => <StuckCardView key={card.id} card={card} />)

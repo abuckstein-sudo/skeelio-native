@@ -942,7 +942,7 @@ export default function EpisodeScreen() {
             </View>
 
             <TouchableOpacity style={styles.primaryButton} onPress={navigateAfterEpisodeComplete}>
-              <Text style={styles.primaryButtonText}>Retour à l'accueil</Text>
+              <Text style={styles.primaryButtonText}>{"Retour à l'accueil"}</Text>
             </TouchableOpacity>
           </View>
         </ScrollView>
