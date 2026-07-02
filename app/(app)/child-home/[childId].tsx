@@ -798,6 +798,26 @@ export default function ChildHomeScreen() {
   };
 
   const handleSchoolHomeworkItemPress = async (item: SchoolHomeworkItem) => {
+    const linkedEpisodeId = typeof (item.metadata as any)?.linked_episode_id === "string"
+      ? (item.metadata as any).linked_episode_id as string
+      : "";
+
+    if (linkedEpisodeId) {
+      const { data: episode, error: episodeError } = await supabase
+        .from("tutor_episodes")
+        .select("id, concept, lesson, domain, language, grade_band, created_at, status")
+        .eq("id", linkedEpisodeId)
+        .single();
+
+      if (episodeError || !episode) {
+        console.error("[child-home] linked worksheet episode load error:", episodeError);
+        return;
+      }
+
+      handleEpisodeTap(episode);
+      return;
+    }
+
     if (item.linked_spelling_list_id) {
       router.push({
         pathname: "/spelling/[listId]",
@@ -1373,7 +1393,10 @@ export default function ChildHomeScreen() {
                 })}
                 {expanded && items.map((item) => {
             const done = item.status === "done";
-            const linked = !!item.linked_assignment_id || !!item.linked_spelling_list_id;
+            const linkedEpisodeId = typeof (item.metadata as any)?.linked_episode_id === "string"
+              ? (item.metadata as any).linked_episode_id as string
+              : "";
+            const linked = !!item.linked_assignment_id || !!item.linked_spelling_list_id || !!linkedEpisodeId;
             const hasMaterial = (item.school_homework_materials || []).length > 0;
             const needsMaterial = Boolean((item.metadata as any)?.needs_material) && !hasMaterial;
             const canOpen = linked || hasMaterial;

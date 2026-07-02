@@ -24,6 +24,7 @@ import CameraCaptureModal from "@/components/CameraCaptureModal";
 import DatePickerModal from "@/components/DatePickerModal";
 import { createSpellingAssignment } from "@/lib/assignments";
 import {
+  createSchoolHomeworkWorksheetItem,
   ExistingWorksheetImage,
   listExistingWorksheetImagesForChild,
   schoolHomeworkDateLabel,
@@ -542,6 +543,7 @@ export default function ScanScreen() {
       // Default missing fields
       const grade_band = reviewData.grade_band || "";
       const lesson = reviewData.lesson || "";
+      const assignmentDate = dueDate || todayDateKey();
 
       // Upload photo to storage
       let image_path = null;
@@ -557,6 +559,10 @@ export default function ScanScreen() {
         }
       } catch (e) {
         upErr = e;
+      }
+
+      if (!image_path) {
+        throw new Error("Failed to upload worksheet image");
       }
 
       console.log("[scan precheck]", JSON.stringify({
@@ -582,6 +588,7 @@ export default function ScanScreen() {
           grade_band: grade_band,
           concept: reviewData.concept,
           lesson: lesson,
+          due_date: assignmentDate,
           status: "pending",
         })
         .select("id")
@@ -599,6 +606,19 @@ export default function ScanScreen() {
         throw new Error("Failed to create episode");
       }
 
+      await createSchoolHomeworkWorksheetItem({
+        childId,
+        homeworkDate: assignmentDate,
+        episodeId: ep.id,
+        taskText: reviewData.concept.label,
+        imagePath: image_path,
+        title: reviewData.concept.label,
+        metadata: {
+          concept_label: reviewData.concept.label,
+          domain: domainNorm,
+        },
+      });
+
       // Show confirmation screen
       setConfirmationData({
         conceptLabel: reviewData.concept.label,
@@ -611,6 +631,7 @@ export default function ScanScreen() {
       setBase64Raw(null);
       setJpegBase64(null);
       setImageUri(null);
+      setDueDate(todayDateKey());
       setAssigning(false);
     } catch (err) {
       console.error("[scan] assignment error:", err);
