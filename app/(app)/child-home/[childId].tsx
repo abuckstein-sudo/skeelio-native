@@ -25,8 +25,6 @@ import {
   schoolHomeworkWeekDateKeys,
   replaceSchoolHomeworkDay,
   extractSchoolHomeworkFromImage,
-  createSchoolHomeworkAssignmentItem,
-  createSchoolHomeworkWorksheetItem,
 } from "@/lib/schoolHomework";
 import { addHomeworkActiveSeconds, ChildHomeworkLimit, getChildHomeworkLimit } from "@/lib/homeworkTime";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -348,7 +346,6 @@ export default function ChildHomeScreen() {
   );
   const [attemptsByOperation, setAttemptsByOperation] = useState<Record<Operation, Attempt[]>>(emptyMathAttempts);
   const [pendingAssignments, setPendingAssignments] = useState<Assignment[]>([]);
-  const [pendingEpisodes, setPendingEpisodes] = useState<any[]>([]);
   const [schoolHomeworkWeekDays, setSchoolHomeworkWeekDays] = useState<(SchoolHomeworkDay | null)[]>([]);
   const [expandedHomeworkDate, setExpandedHomeworkDate] = useState(todayDateKey());
   const [homeworkLimit, setHomeworkLimit] = useState<ChildHomeworkLimit | null>(null);
@@ -390,41 +387,14 @@ export default function ChildHomeScreen() {
   }, [childId]);
 
   const fetchPendingAssignments = useCallback(async () => {
-    if (!childId) return [];
+    if (!childId) return;
     const assignments = await listAssignmentsForChild(childId);
     const pending = assignments.filter((a) => a.status === "pending");
     setPendingAssignments(pending);
-    return pending;
-  }, [childId]);
-
-  const fetchPendingEpisodes = useCallback(async () => {
-    if (!childId) return [];
-    try {
-      const { data, error: dbError } = await supabase
-        .from("tutor_episodes")
-        .select("id, concept, lesson, domain, language, grade_band, created_at, status, image_path, due_date")
-        .eq("child_id", childId)
-        .in("status", ["pending", "in_progress"])
-        .order("created_at", { ascending: true });
-
-      if (dbError) {
-        console.error("[child-home] failed to fetch pending episodes:", dbError);
-        setPendingEpisodes([]);
-        return [];
-      } else {
-        const pending = data || [];
-        setPendingEpisodes(pending);
-        return pending;
-      }
-    } catch (err) {
-      console.error("[child-home] failed to fetch pending episodes:", err);
-      setPendingEpisodes([]);
-      return [];
-    }
   }, [childId]);
 
   const fetchSchoolHomework = useCallback(async () => {
-    if (!childId) return [];
+    if (!childId) return;
     const [days, limit] = await Promise.all([
       listSchoolHomeworkWeek(childId),
       getChildHomeworkLimit(childId),
@@ -433,7 +403,6 @@ export default function ChildHomeScreen() {
     setHomeworkLimit(limit);
     const today = days.find((day) => day?.homework_date === todayDateKey());
     setHomeworkTimerSeconds(today?.total_active_seconds || 0);
-    return days;
   }, [childId]);
 
   useFocusEffect(
@@ -500,109 +469,12 @@ export default function ChildHomeScreen() {
     };
   }, [schoolHomeworkWeekDays, homeworkLimit, homeworkTimerSeconds, limitWarningShown, router, isChildHomeFocused]);
 
-  const assignmentAgendaTitle = (assignment: Assignment) => {
-    if (assignment.subject === "spelling") {
-      return `Spelling: ${(assignment.custom_questions as any)?.title || "Spelling List"}`;
-    }
-    if (assignment.subject === "conjugation") {
-      return `Conjugation: ${assignment.focus || "Practice"}`;
-    }
-    const base = (assignment.focus || assignment.subject || "Practice") as string;
-    return base.charAt(0).toUpperCase() + base.slice(1);
-  };
-
-  const assignmentAgendaKind = (assignment: Assignment) => {
-    const focus = assignment.focus || assignment.subject;
-    if (assignment.subject === "spelling") return "spelling";
-    if (focus === "division") return "division";
-    if (focus === "multiplication") return "multiplication";
-    return "generic";
-  };
-
-  const backfillLegacyAgendaItems = useCallback(async (
-    assignments: Assignment[],
-    episodes: any[],
-    days: (SchoolHomeworkDay | null)[]
-  ) => {
-    if (!childId) return false;
-
-    const items = days.flatMap((day) => day?.school_homework_items || []);
-    const linkedAssignmentIds = new Set(items.map((item) => item.linked_assignment_id).filter(Boolean));
-    const linkedEpisodeIds = new Set(
-      items
-        .map((item) => (item.metadata as any)?.linked_episode_id)
-        .filter((id): id is string => typeof id === "string" && id.length > 0)
-    );
-    let changed = false;
-
-    for (const assignment of assignments) {
-      if (linkedAssignmentIds.has(assignment.id)) continue;
-      const homeworkDate = assignment.due_date?.slice(0, 10) || todayDateKey();
-      try {
-        await createSchoolHomeworkAssignmentItem({
-          childId,
-          homeworkDate,
-          assignmentId: assignment.id,
-          taskText: assignmentAgendaTitle(assignment),
-          taskKind: assignmentAgendaKind(assignment) as any,
-          metadata: {
-            linked_practice: assignment.focus || assignment.subject,
-            assignment_subject: assignment.subject,
-            assignment_mode: assignment.mode,
-            legacy_backfill: !assignment.due_date,
-          },
-        });
-        changed = true;
-      } catch (err) {
-        console.error("[child-home] failed to backfill assignment agenda item:", err);
-      }
-    }
-
-    for (const episode of episodes) {
-      if (linkedEpisodeIds.has(episode.id)) continue;
-      if (!episode.image_path) {
-        console.warn("[child-home] cannot backfill worksheet episode without image_path:", episode.id);
-        continue;
-      }
-
-      const homeworkDate = typeof episode.due_date === "string" && episode.due_date
-        ? episode.due_date.slice(0, 10)
-        : todayDateKey();
-      const title = episode.concept?.label || "Worksheet";
-      try {
-        await createSchoolHomeworkWorksheetItem({
-          childId,
-          homeworkDate,
-          episodeId: episode.id,
-          taskText: title,
-          imagePath: episode.image_path,
-          title,
-          metadata: {
-            concept_label: title,
-            domain: episode.domain,
-            legacy_backfill: !episode.due_date,
-          },
-        });
-        changed = true;
-      } catch (err) {
-        console.error("[child-home] failed to backfill worksheet agenda item:", err);
-      }
-    }
-
-    return changed;
-  }, [childId]);
-
   const refreshHomeworkFeed = useCallback(async () => {
-    const [assignments, episodes, days] = await Promise.all([
+    await Promise.all([
       fetchPendingAssignments(),
-      fetchPendingEpisodes(),
       fetchSchoolHomework(),
     ]);
-    const changed = await backfillLegacyAgendaItems(assignments, episodes, days);
-    if (changed) {
-      await fetchSchoolHomework();
-    }
-  }, [backfillLegacyAgendaItems, fetchPendingAssignments, fetchPendingEpisodes, fetchSchoolHomework]);
+  }, [fetchPendingAssignments, fetchSchoolHomework]);
 
   const maybeCelebrateUnlocks = useCallback(async (
     statuses: Record<Operation, OperationStatus>,
