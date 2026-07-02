@@ -6,6 +6,7 @@ import { factTierCoverageKeys, requiredCoverageKeys, tierStats, currentTierAndBa
 import { pickNextStep } from "../lib/tutor/selector";
 import { computeUnlockState } from "../lib/tutor/unlockGraph";
 import { TIER_GATE } from "../lib/masteryConfig";
+import { recommendationFor } from "../lib/progressGlance";
 
 function assert(condition: boolean, message: string) {
   if (!condition) {
@@ -224,6 +225,13 @@ const assignedBand = currentTierAndBand(assignedOnlyA1, "addition", {});
 assert(assignedBand.tierId === "A2", `Assigned-only mastery should advance to A2, got ${assignedBand.tierId}`);
 assert(assignedBand.band === "needs-teach", `Assigned-only next tier should be needs-teach, got ${assignedBand.band}`);
 console.log(`  ✅ assigned-only A1 mastery advances to ${assignedBand.tierId}`);
+
+console.log("\nTest 1c: progress-glance recommendations stay plain and targeted");
+const coverageAdvice = recommendationFor("addition", "A1", "developing", { missingFacts: ["7", "8"] });
+assert(coverageAdvice.includes("7, 8"), `Coverage advice should name missing facts, got ${coverageAdvice}`);
+const strugglingAdvice = recommendationFor("division", "D2", "struggling", null);
+assert(strugglingAdvice.includes("Replay"), `Struggling advice should recommend replaying lesson, got ${strugglingAdvice}`);
+console.log("  ✅ recommendation helper gives coverage and struggling advice");
 
 // Test 2: 5/8 at A3 → developing, not ready
 console.log("\nTest 2: 5/8 correct at A3 → developing, not ready");
