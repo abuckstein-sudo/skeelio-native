@@ -5,7 +5,7 @@ import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
 import * as ImageManipulator from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
 import { supabase } from "@/lib/supabase";
-import { getOperationStatus, OperationStatus, getWordProblemsStatus, WordProblemsStatus } from "@/lib/tutor/status";
+import { getOperationStatus, OperationStatus } from "@/lib/tutor/status";
 import { LADDERS, Operation } from "@/lib/tutorConfig";
 import { Attempt, factTierCoverageGapAfterOtherGates } from "@/lib/tutor/ability";
 import { computeUnlockState, SubjectId, SubjectUnlockState } from "@/lib/tutor/unlockGraph";
@@ -77,6 +77,20 @@ const SUBJECTS: SubjectTile[] = [
   { topic: "conjugation", label: "Conjugation", description: "Learn French verb forms", isActive: true },
   { topic: "reading", label: "Reading", description: "Read and understand", isActive: false },
 ];
+
+const CURRICULUM_ORDER: Record<string, number> = {
+  addition: 0,
+  subtraction: 1,
+  multiplication: 2,
+  division: 3,
+  word_problems: 4,
+  spelling: 5,
+  conjugation: 6,
+  reading: 7,
+};
+
+const curriculumOrderFor = (topic: string) =>
+  CURRICULUM_ORDER[topic] ?? Number.MAX_SAFE_INTEGER;
 
 const SUBJECT_COPY: Record<ChildHomeLanguage, Record<string, { label: string; description: string }>> = {
   en: Object.fromEntries(SUBJECTS.map((subject) => [subject.topic, { label: subject.label, description: subject.description }])),
@@ -172,9 +186,8 @@ const SETUP_COPY = {
     greetingHomework: "let's do your homework!",
     greetingChoice: "What would you like to work on today?",
     greetingTimeUp: "you have worked hard today. Ask your adult for more time if you need it.",
-    freePlay: "Free play",
-    freePlayBody: "Choose practice tiles",
     nextMathKicker: "Next up",
+    nextMathBody: "Choose guided practice when homework is done",
     nextMathActionTeach: "Learn",
     nextMathActionPractice: "Practice",
     almostThereFacts: (covered: number, required: number) => `Almost there — ${covered} of ${required} facts`,
@@ -215,8 +228,8 @@ const SETUP_COPY = {
       {
         key: "work",
         icon: "clipboard-check",
-        title: "Do homework or free play",
-        body: "If an assignment is waiting, start there. If not, choose any practice tile.",
+        title: "Homework, then next up",
+        body: "If an assignment is waiting, start there. After that, choose guided practice in Next up.",
       },
       {
         key: "stars",
@@ -246,9 +259,8 @@ const SETUP_COPY = {
     greetingHomework: "on fait tes devoirs !",
     greetingChoice: "Que veux-tu travailler aujourd'hui ?",
     greetingTimeUp: "tu as bien travaillé aujourd'hui. Demande plus de temps à ton adulte si besoin.",
-    freePlay: "Jeu libre",
-    freePlayBody: "Choisis une activité",
     nextMathKicker: "Et maintenant",
+    nextMathBody: "Choisis un entraînement guidé quand tes devoirs sont finis",
     nextMathActionTeach: "Découvrir",
     nextMathActionPractice: "S'entraîner",
     almostThereFacts: (covered: number, required: number) => `Tu y es presque — ${covered} faits sur ${required}`,
@@ -289,8 +301,8 @@ const SETUP_COPY = {
       {
         key: "work",
         icon: "clipboard-check",
-        title: "Devoirs ou jeu libre",
-        body: "S'il y a un devoir, commence par là. Sinon, choisis une activité.",
+        title: "Devoirs, puis Et maintenant",
+        body: "S'il y a un devoir, commence par là. Ensuite, choisis un entraînement guidé dans Et maintenant.",
       },
       {
         key: "stars",
@@ -333,7 +345,6 @@ export default function ChildHomeScreen() {
     {} as Record<Operation, OperationStatus>
   );
   const [attemptsByOperation, setAttemptsByOperation] = useState<Record<Operation, Attempt[]>>(emptyMathAttempts);
-  const [wordProblemsStatus, setWordProblemsStatus] = useState<WordProblemsStatus | null>(null);
   const [pendingAssignments, setPendingAssignments] = useState<Assignment[]>([]);
   const [pendingEpisodes, setPendingEpisodes] = useState<any[]>([]);
   const [schoolHomeworkWeekDays, setSchoolHomeworkWeekDays] = useState<(SchoolHomeworkDay | null)[]>([]);
@@ -622,10 +633,6 @@ export default function ChildHomeScreen() {
     setStars(rewardsData?.stars ?? 0);
 
     await refreshMathProgress(data as Child, false);
-
-    // Fetch word problems status
-    const wpStatus = await getWordProblemsStatus(childId, data || {});
-    setWordProblemsStatus(wpStatus);
 
     setIsLoading(false);
   };
@@ -1157,6 +1164,11 @@ export default function ChildHomeScreen() {
           subject,
           unlockState: unlockState[subject.topic as SubjectId],
         }))
+        .sort((a, b) => {
+          const aLocked = a.unlockState?.unlocked ? 0 : 1;
+          const bLocked = b.unlockState?.unlocked ? 0 : 1;
+          return aLocked - bLocked || curriculumOrderFor(a.subject.topic) - curriculumOrderFor(b.subject.topic);
+        })
     : [];
   const subjectLabel = (topic: string) => SUBJECT_COPY[childLanguage][topic]?.label || topic;
   const subjectDescription = (topic: string) => SUBJECT_COPY[childLanguage][topic]?.description || "";
@@ -1664,31 +1676,6 @@ export default function ChildHomeScreen() {
         </View>
       )}
 
-      <View style={styles.subjectsContainer}>
-        <Text style={styles.homeworkSectionTitle}>{setupCopy.freePlay}</Text>
-        {SUBJECTS.map((subject) => {
-          const isMathSubject = ["addition", "subtraction", "multiplication", "division"].includes(subject.topic);
-          const isWordProblems = subject.topic === "word_problems";
-          const operationStatus = isMathSubject ? operationStatuses[subject.topic as Operation] : null;
-          const statusText = isWordProblems ? wordProblemsStatus?.childHomeText : operationStatus?.childHomeText;
-
-          return (
-            <TouchableOpacity
-              key={subject.topic}
-              style={[styles.subjectTile, !subject.isActive && styles.subjectTileInactive]}
-              onPress={() => subject.isActive && handleSubjectTap(subject.topic)}
-              disabled={!subject.isActive}
-            >
-              <Text style={styles.subjectLabel}>{SUBJECT_COPY[childLanguage][subject.topic].label}</Text>
-              <Text style={styles.subjectDescription}>{SUBJECT_COPY[childLanguage][subject.topic].description}</Text>
-              {statusText && (
-                <Text style={styles.statusText}>{statusText}</Text>
-              )}
-              {!subject.isActive && <Text style={styles.comingSoonLabel}>Coming soon</Text>}
-            </TouchableOpacity>
-          );
-        })}
-      </View>
       </ScrollView>
 
       <Modal
@@ -1800,8 +1787,8 @@ export default function ChildHomeScreen() {
                   <Text style={styles.introMiniText}>{setupCopy.homeworkBody}</Text>
                 </View>
                 <View style={styles.introMiniCard}>
-                  <Text style={styles.introMiniTitle}>{setupCopy.freePlay}</Text>
-                  <Text style={styles.introMiniText}>{setupCopy.freePlayBody}</Text>
+                  <Text style={styles.introMiniTitle}>{setupCopy.nextMathKicker}</Text>
+                  <Text style={styles.introMiniText}>{setupCopy.nextMathBody}</Text>
                 </View>
               </View>
             )}
@@ -1940,52 +1927,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "700",
     color: "#ffc107",
-  },
-  subjectsContainer: {
-    display: "flex",
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "space-between",
-  },
-  subjectTile: {
-    width: "48%",
-    backgroundColor: "#f5f5f5",
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    alignItems: "center",
-    borderWidth: 2,
-    borderColor: "transparent",
-  },
-  subjectTileInactive: {
-    opacity: 0.7,
-  },
-  subjectLabel: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#1a1a1a",
-    marginBottom: 6,
-    textAlign: "center",
-  },
-  subjectDescription: {
-    fontSize: 12,
-    color: "#666",
-    textAlign: "center",
-    lineHeight: 16,
-  },
-  comingSoonLabel: {
-    fontSize: 11,
-    color: "#999",
-    fontStyle: "italic",
-    marginTop: 8,
-  },
-  statusText: {
-    fontSize: 11,
-    color: "#2196f3",
-    fontStyle: "italic",
-    marginTop: 8,
-    textAlign: "center",
-    lineHeight: 14,
   },
   nextUpSection: {
     marginBottom: 18,
