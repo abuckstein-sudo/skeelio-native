@@ -1127,9 +1127,15 @@ export default function ChildHomeScreen() {
       .map((item) => item.linked_assignment_id)
       .filter(Boolean)
   );
+  const schoolLinkedEpisodeIds = new Set(
+    schoolHomeworkWeekDays
+      .flatMap((day) => day?.school_homework_items || [])
+      .map((item) => (item.metadata as any)?.linked_episode_id)
+      .filter((id): id is string => typeof id === "string" && id.length > 0)
+  );
 
   const homeworkFeed = [
-    ...pendingEpisodes.map((e) => ({
+    ...pendingEpisodes.filter((e) => !schoolLinkedEpisodeIds.has(e.id)).map((e) => ({
       type: "episode" as const,
       id: e.id as string,
       createdAt: (e.created_at as string) || "",
