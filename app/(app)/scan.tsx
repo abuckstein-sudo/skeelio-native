@@ -21,10 +21,13 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { supabase } from "@/lib/supabase";
 import { decode } from "base64-arraybuffer";
 import CameraCaptureModal from "@/components/CameraCaptureModal";
+import DatePickerModal from "@/components/DatePickerModal";
 import { createSpellingAssignment } from "@/lib/assignments";
 import {
   ExistingWorksheetImage,
   listExistingWorksheetImagesForChild,
+  schoolHomeworkDateLabel,
+  todayDateKey,
 } from "@/lib/schoolHomework";
 import {
   createSpellingItems,
@@ -147,6 +150,8 @@ export default function ScanScreen() {
   const [reviewEdited, setReviewEdited] = useState(false);
   const [regeneratingPractice, setRegeneratingPractice] = useState(false);
   const [editingSubSkillIndex, setEditingSubSkillIndex] = useState<number | null>(null);
+  const [dueDate, setDueDate] = useState(todayDateKey());
+  const [datePickerVisible, setDatePickerVisible] = useState(false);
   const [assigning, setAssigning] = useState(false);
 
   const [showConfirmation, setShowConfirmation] = useState(false);
@@ -695,6 +700,22 @@ export default function ScanScreen() {
             </View>
           )}
 
+          {!isSpellingList && (
+            <View style={styles.reviewSection}>
+              <Text style={styles.formLabel}>Jour des devoirs</Text>
+              <TouchableOpacity
+                style={styles.dateInput}
+                onPress={() => setDatePickerVisible(true)}
+                disabled={assigning}
+              >
+                <MaterialCommunityIcons name="calendar-month-outline" size={18} color="#1565c0" />
+                <Text style={styles.dateInputText}>
+                  {schoolHomeworkDateLabel(dueDate || todayDateKey(), "fr")}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
           {/* Ce que Skeelio va travailler */}
           <View style={styles.reviewSection}>
             <Text style={styles.reviewSectionTitle}>Ce que Skeelio va travailler</Text>
@@ -876,6 +897,13 @@ export default function ScanScreen() {
             )}
           </TouchableOpacity>
         </View>
+
+        <DatePickerModal
+          visible={datePickerVisible}
+          selectedDate={dueDate || todayDateKey()}
+          onSelect={setDueDate}
+          onClose={() => setDatePickerVisible(false)}
+        />
       </SafeAreaView>
     );
   }
@@ -1280,6 +1308,32 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#333",
     marginBottom: 8,
+  },
+  formLabel: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#333",
+    marginBottom: 8,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  dateInput: {
+    minHeight: 44,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    borderWidth: 1,
+    borderColor: "#ddd",
+    borderRadius: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    backgroundColor: "#fff",
+  },
+  dateInputText: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#333",
   },
   reviewConceptLabel: {
     fontSize: 16,
