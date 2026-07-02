@@ -14,8 +14,7 @@ import { useRouter, useFocusEffect } from "expo-router";
 import { useAuth } from "@/app/_layout";
 import { supabase } from "@/lib/supabase";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import ChildSnapshot from "@/components/ChildSnapshot";
-import ParentProofSection from "@/components/ParentProofSection";
+import ChildProgressGlance from "@/components/ChildProgressGlance";
 import RewardsManager from "@/components/RewardsManager";
 import SchoolHomeworkManager from "@/components/SchoolHomeworkManager";
 import ChildDocumentsSection from "@/components/ChildDocumentsSection";
@@ -29,6 +28,10 @@ interface Child {
   selected_avatar?: string;
   intro_seen?: boolean;
   created_at?: string;
+  max_addition_number?: number | null;
+  math_subtraction_level?: string | null;
+  max_times_table?: number | null;
+  math_division_level?: string | null;
 }
 
 type ParentTab = "today" | "progress" | "rewards" | "documents";
@@ -112,7 +115,7 @@ export default function ParentScreen() {
 
     const { data, error: dbError } = await supabase
       .from("children")
-      .select("id, name, grade_level, school_system, selected_avatar, intro_seen, created_at")
+      .select("id, name, grade_level, school_system, selected_avatar, intro_seen, created_at, max_addition_number, math_subtraction_level, max_times_table, math_division_level")
       .order("created_at", { ascending: true });
 
     if (dbError) {
@@ -327,15 +330,7 @@ export default function ParentScreen() {
               )}
 
               {activeTab === "progress" && (
-                <>
-                  <ChildSnapshot
-                    childId={selectedChild.id}
-                    childName={selectedChild.name}
-                    grade={selectedChild.grade_level || ""}
-                    avatar={selectedChild.selected_avatar || "fox"}
-                  />
-                  <ParentProofSection childId={selectedChild.id} />
-                </>
+                <ChildProgressGlance child={selectedChild} />
               )}
 
               {activeTab === "rewards" && (
