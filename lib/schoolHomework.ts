@@ -930,20 +930,22 @@ export async function createSchoolHomeworkWorksheetItem(params: {
     .neq("status", "archived")
     .maybeSingle();
 
-  const rawInput = [((existingDay as any)?.raw_input || "").trim(), params.taskText]
-    .filter(Boolean)
-    .join("\n");
+  const dayPayload: Record<string, unknown> = {
+    parent_id: parentId,
+    child_id: params.childId,
+    homework_date: params.homeworkDate,
+    source_type: (existingDay as any)?.source_type || "manual",
+    status: "active",
+    updated_at: new Date().toISOString(),
+  };
+
+  if (!existingDay) {
+    dayPayload.raw_input = params.taskText;
+  }
+
   const { data: day, error: dayError } = await supabase
     .from("school_homework_days")
-    .upsert({
-      parent_id: parentId,
-      child_id: params.childId,
-      homework_date: params.homeworkDate,
-      source_type: (existingDay as any)?.source_type || "manual",
-      raw_input: rawInput,
-      status: "active",
-      updated_at: new Date().toISOString(),
-    }, { onConflict: "child_id,homework_date" })
+    .upsert(dayPayload, { onConflict: "child_id,homework_date" })
     .select()
     .single();
 
@@ -995,7 +997,13 @@ export async function createSchoolHomeworkWorksheetItem(params: {
       category: "worksheet",
     });
 
-  if (materialError) throw materialError;
+  if (materialError) {
+    await supabase
+      .from("school_homework_items")
+      .delete()
+      .eq("id", item.id);
+    throw materialError;
+  }
 }
 
 export async function signedSchoolHomeworkImageUrl(material: SchoolHomeworkMaterial): Promise<string | null> {
