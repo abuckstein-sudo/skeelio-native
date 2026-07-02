@@ -19,7 +19,7 @@ export function operationLabel(operation: Operation): string {
 
 export function recommendationFor(
   operation: Operation,
-  tierId: string,
+  tierLabel: string,
   band: ProgressBand,
   coverageGap?: CoverageGapSummary | null
 ): string {
@@ -29,7 +29,7 @@ export function recommendationFor(
   }
 
   if (band === "struggling") {
-    return `Replay the ${operationLabel(operation)} lesson for ${tierId}, then do a short practice set.`;
+    return `Replay the ${operationLabel(operation)} lesson for ${tierLabel}, then do a short practice set.`;
   }
 
   if (band === "developing") {
@@ -42,4 +42,3 @@ export function recommendationFor(
 
   return `Keep going — this skill looks steady right now.`;
 }
-

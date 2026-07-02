@@ -153,7 +153,7 @@ function buildStuckCards(statuses: OperationStatus[], rows: LearningAttemptRow[]
       tierLabel: status.workingTierLabel,
       attemptCount: stat?.attempts || 0,
       accuracy: stat ? stat.masteryRate * 100 : 0,
-      recommendation: recommendationFor(status.operation, status.workingTierId, "struggling", null),
+      recommendation: recommendationFor(status.operation, status.workingTierLabel, "struggling", null),
     });
   }
 
@@ -174,7 +174,7 @@ function buildStuckCards(statuses: OperationStatus[], rows: LearningAttemptRow[]
         tierId: tier.id,
         tierLabel: tier.label,
         missingFacts,
-        recommendation: recommendationFor(operation, tier.id, "developing", { missingFacts }),
+        recommendation: recommendationFor(operation, tier.label, "developing", { missingFacts }),
       });
     }
   }

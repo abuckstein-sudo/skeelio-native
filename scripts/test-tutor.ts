@@ -227,10 +227,12 @@ assert(assignedBand.band === "needs-teach", `Assigned-only next tier should be n
 console.log(`  ✅ assigned-only A1 mastery advances to ${assignedBand.tierId}`);
 
 console.log("\nTest 1c: progress-glance recommendations stay plain and targeted");
-const coverageAdvice = recommendationFor("addition", "A1", "developing", { missingFacts: ["7", "8"] });
+const coverageAdvice = recommendationFor("addition", "Sums within 10", "developing", { missingFacts: ["7", "8"] });
 assert(coverageAdvice.includes("7, 8"), `Coverage advice should name missing facts, got ${coverageAdvice}`);
-const strugglingAdvice = recommendationFor("division", "D2", "struggling", null);
+const strugglingAdvice = recommendationFor("division", "Divide by 3s and 4s", "struggling", null);
 assert(strugglingAdvice.includes("Replay"), `Struggling advice should recommend replaying lesson, got ${strugglingAdvice}`);
+assert(strugglingAdvice.includes("Divide by 3s and 4s"), `Struggling advice should use the human tier label, got ${strugglingAdvice}`);
+assert(!strugglingAdvice.includes("D2"), `Struggling advice should not leak internal tier ids, got ${strugglingAdvice}`);
 console.log("  ✅ recommendation helper gives coverage and struggling advice");
 
 // Test 2: 5/8 at A3 → developing, not ready
