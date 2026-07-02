@@ -5,6 +5,7 @@ import { coverageKeysForQuestion, generateQuestion, pickUncoveredFactKey, produc
 import { factTierCoverageKeys, requiredCoverageKeys, tierStats, currentTierAndBand, Attempt } from "../lib/tutor/ability";
 import { pickNextStep } from "../lib/tutor/selector";
 import { computeUnlockState } from "../lib/tutor/unlockGraph";
+import { TIER_GATE } from "../lib/masteryConfig";
 
 function assert(condition: boolean, message: string) {
   if (!condition) {
@@ -122,6 +123,17 @@ function questionToAttempt(question: ReturnType<typeof generateQuestion>): Attem
   };
 }
 
+function assignedA1MasteryAttempts(): Attempt[] {
+  const coverageSums = [2, 3, 4, 5, 6, 7, 8, 9, 10, 2, 3, 4];
+  return coverageSums.map((sum) => ({
+    tierId: "A1",
+    correct: true,
+    hintUsed: false,
+    questionText: `${sum - 1} + 1`,
+    evidenceSource: "assigned_homework",
+  }));
+}
+
 console.log("\n====== TIER CONSTRAINT TESTS ======\n");
 
 for (const [op, tiers] of Object.entries(LADDERS)) {
@@ -196,6 +208,22 @@ assert(band1.tierId === "A2", `Working tier should be A2, got ${band1.tierId}`);
 assert(band1.band === "needs-teach", `Band should be needs-teach, got ${band1.band}`);
 assert(band1.advanceReady === false, `Should not be ready to advance at A2 yet`);
 console.log(`  ✅ ${band1.tierId} band=${band1.band} advanceReady=${band1.advanceReady}`);
+
+// Test 1b: assigned ladder practice is first-class unaided mastery evidence
+console.log("\nTest 1b: assigned-only A1 ladder practice can master A1");
+assert(TIER_GATE.evidenceWeights.assigned_homework === 1, "assigned_homework should have full evidence weight");
+const assignedOnlyA1 = assignedA1MasteryAttempts();
+const assignedStats = tierStats(assignedOnlyA1).A1;
+assert(assignedStats.masteryEvidence === 12, `Assigned mastery evidence should be 12, got ${assignedStats.masteryEvidence}`);
+assert(
+  assignedStats.adaptive_unaided_attempts === 12,
+  `Assigned unaided attempts should satisfy adaptive floor, got ${assignedStats.adaptive_unaided_attempts}`
+);
+assert(assignedStats.coverageMet, "Assigned-only A1 attempts should meet coverage");
+const assignedBand = currentTierAndBand(assignedOnlyA1, "addition", {});
+assert(assignedBand.tierId === "A2", `Assigned-only mastery should advance to A2, got ${assignedBand.tierId}`);
+assert(assignedBand.band === "needs-teach", `Assigned-only next tier should be needs-teach, got ${assignedBand.band}`);
+console.log(`  ✅ assigned-only A1 mastery advances to ${assignedBand.tierId}`);
 
 // Test 2: 5/8 at A3 → developing, not ready
 console.log("\nTest 2: 5/8 correct at A3 → developing, not ready");

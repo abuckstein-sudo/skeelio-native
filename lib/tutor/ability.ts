@@ -16,7 +16,7 @@ export interface TierStats {
   correct: number;
   unaided_attempts: number; // attempts without hints (gate denominator)
   unaided_correct: number; // correct AND NOT hinted
-  adaptive_unaided_attempts: number; // non-homework evidence required before advancement
+  adaptive_unaided_attempts: number; // unaided evidence required before advancement
   masteryEvidence: number; // weighted unaided attempts
   masteryCorrectEvidence: number; // weighted unaided correct attempts
   masteryRate: number; // masteryCorrectEvidence / masteryEvidence
@@ -164,9 +164,7 @@ export function tierStats(attempts: Attempt[]): Record<string, TierStats> {
     const unaidedAttempts = tierAttempts.filter((a) => !a.hintUsed);
     const unaided_attempts = unaidedAttempts.length;
     const unaided_correct = unaidedAttempts.filter((a) => a.correct).length;
-    const adaptive_unaided_attempts = unaidedAttempts.filter(
-      (a) => (a.evidenceSource || "unknown") !== "assigned_homework"
-    ).length;
+    const adaptive_unaided_attempts = unaidedAttempts.length;
     const masteryEvidence = unaidedAttempts.reduce((sum, a) => sum + evidenceWeight(a.evidenceSource), 0);
     const masteryCorrectEvidence = unaidedAttempts.reduce(
       (sum, a) => sum + (a.correct ? evidenceWeight(a.evidenceSource) : 0),

@@ -16,7 +16,7 @@ export const TIER_GATE = {
   minUnaidedRate: 0.85,
   evidenceWeights: {
     adaptive_practice: 1,
-    assigned_homework: 0.5,
+    assigned_homework: 1,
     word_problem: 1,
     unknown: 1,
   },
