@@ -21,6 +21,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as ImageManipulator from "expo-image-manipulator";
 import ParentProofSection from "./ParentProofSection";
 import CameraCaptureModal from "./CameraCaptureModal";
+import DatePickerModal from "./DatePickerModal";
 import { getOperationStatus, OperationStatus } from "@/lib/tutor/status";
 import { Operation } from "@/lib/tutorConfig";
 import {
@@ -42,7 +43,7 @@ import {
   type SpellingLanguage,
 } from "@/lib/spelling";
 import { getWordsForLevel } from "@/lib/wordBank";
-import { createSchoolHomeworkAssignmentItem, todayDateKey } from "@/lib/schoolHomework";
+import { createSchoolHomeworkAssignmentItem, schoolHomeworkDateLabel, todayDateKey } from "@/lib/schoolHomework";
 
 const KNOWN_SUBJECTS = [
   "multiplication",
@@ -89,6 +90,7 @@ export default function ChildDashboardBody({ childId }: { childId: string }) {
   const [selectedWordProblemOp, setSelectedWordProblemOp] = useState<Operation | "mixed">("mixed");
   const [questionCount, setQuestionCount] = useState(8);
   const [dueDate, setDueDate] = useState(todayDateKey());
+  const [datePickerVisible, setDatePickerVisible] = useState(false);
   const [assignmentMode, setAssignmentMode] = useState<"practice" | "quiz">("practice");
   const [isCreatingAssignment, setIsCreatingAssignment] = useState(false);
   const [showCompletedAssignments, setShowCompletedAssignments] = useState(true);
@@ -810,6 +812,20 @@ export default function ChildDashboardBody({ childId }: { childId: string }) {
     router.push("/children");
   };
 
+  const renderAssignmentDateButton = () => (
+    <>
+      <Text style={styles.formLabel}>Due Date</Text>
+      <TouchableOpacity
+        style={styles.dateInput}
+        onPress={() => setDatePickerVisible(true)}
+        disabled={isCreatingAssignment}
+      >
+        <MaterialCommunityIcons name="calendar-month-outline" size={18} color="#1565c0" />
+        <Text style={styles.dateInputText}>{schoolHomeworkDateLabel(dueDate || todayDateKey())}</Text>
+      </TouchableOpacity>
+    </>
+  );
+
   const handleScanWorksheet = () => {
     if (child) {
       router.push({
@@ -1296,15 +1312,7 @@ export default function ChildDashboardBody({ childId }: { childId: string }) {
                   </TouchableOpacity>
                 </View>
 
-                {/* Due Date (optional) */}
-                <Text style={styles.formLabel}>Due Date (optional)</Text>
-                <TextInput
-                  style={styles.dateInput}
-                  placeholder="YYYY-MM-DD"
-                  value={dueDate}
-                  onChangeText={setDueDate}
-                  editable={!isCreatingAssignment}
-                />
+                {renderAssignmentDateButton()}
                   </>
                 )}
 
@@ -1400,15 +1408,7 @@ export default function ChildDashboardBody({ childId }: { childId: string }) {
                       </>
                     )}
 
-                    {/* Due Date */}
-                    <Text style={styles.formLabel}>Due Date (optional)</Text>
-                    <TextInput
-                      style={styles.dateInput}
-                      placeholder="YYYY-MM-DD"
-                      value={dueDate}
-                      onChangeText={setDueDate}
-                      editable={!isCreatingAssignment}
-                    />
+                    {renderAssignmentDateButton()}
                   </>
                 )}
 
@@ -1516,14 +1516,7 @@ export default function ChildDashboardBody({ childId }: { childId: string }) {
                       editable={!isCreatingAssignment}
                     />
 
-                    <Text style={styles.formLabel}>Due Date (optional)</Text>
-                    <TextInput
-                      style={styles.dateInput}
-                      placeholder="YYYY-MM-DD"
-                      value={dueDate}
-                      onChangeText={setDueDate}
-                      editable={!isCreatingAssignment}
-                    />
+                    {renderAssignmentDateButton()}
                   </>
                 )}
 
@@ -1794,6 +1787,12 @@ export default function ChildDashboardBody({ childId }: { childId: string }) {
         visible={cameraVisible}
         onCaptured={(uri) => processCapturedImage(uri)}
         onClose={() => setCameraVisible(false)}
+      />
+      <DatePickerModal
+        visible={datePickerVisible}
+        selectedDate={dueDate || todayDateKey()}
+        onSelect={setDueDate}
+        onClose={() => setDatePickerVisible(false)}
       />
     </View>
   );
@@ -2349,13 +2348,22 @@ const styles = StyleSheet.create({
     color: "#2196f3",
   },
   dateInput: {
+    minHeight: 44,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
     borderWidth: 1,
     borderColor: "#ddd",
     borderRadius: 6,
     paddingVertical: 10,
     paddingHorizontal: 12,
-    fontSize: 14,
     marginBottom: 20,
+    backgroundColor: "#fff",
+  },
+  dateInputText: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: "700",
     color: "#333",
   },
   numberInput: {
