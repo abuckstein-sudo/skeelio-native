@@ -64,8 +64,16 @@ type RecentWin = {
   icon: keyof typeof MaterialCommunityIcons.glyphMap;
 };
 
+type Timeframe = "7d" | "30d" | "all";
+
 const MATH_OPERATIONS: Operation[] = ["addition", "subtraction", "multiplication", "division"];
-const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const TIMEFRAME_OPTIONS: Array<{ id: Timeframe | "custom"; label: string }> = [
+  { id: "7d", label: "Last 7 days" },
+  { id: "30d", label: "Last 30 days" },
+  { id: "all", label: "All time" },
+  { id: "custom", label: "Custom" },
+];
 
 function toAttempt(row: LearningAttemptRow): Attempt | null {
   if (!row.tier) return null;
@@ -84,6 +92,35 @@ function percent(value: number): string {
 
 function formatShortDate(date: Date): string {
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+function timeframeLabel(timeframe: Timeframe): string {
+  if (timeframe === "7d") return "last 7 days";
+  if (timeframe === "30d") return "last 30 days";
+  return "all time";
+}
+
+function dateFromString(value: string | null | undefined): Date | null {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function dateForWorksheetSkill(skill: WorksheetSkill): Date | null {
+  return dateFromString(skill.completed_at || skill.created_at);
+}
+
+function timeframeStart(timeframe: Timeframe, now: Date, dates: Date[]): Date | null {
+  if (timeframe === "7d") return new Date(now.getTime() - 6 * DAY_MS);
+  if (timeframe === "30d") return new Date(now.getTime() - 29 * DAY_MS);
+  if (dates.length === 0) return null;
+  return new Date(Math.min(...dates.map((date) => date.getTime())));
+}
+
+function isWithinTimeframe(date: Date | null, start: Date | null, now: Date): boolean {
+  if (!date) return false;
+  if (date > now) return false;
+  return !start || date >= start;
 }
 
 function missingFactLabels(tierId: string, attempts: Attempt[]): string[] {
@@ -126,12 +163,41 @@ function masteryEvents(rows: LearningAttemptRow[]): RecentWin[] {
   return wins;
 }
 
-function trendBuckets(events: RecentWin[], now: Date) {
-  return Array.from({ length: 4 }).map((_, index) => {
-    const start = new Date(now.getTime() - (3 - index) * WEEK_MS);
-    const end = new Date(start.getTime() + WEEK_MS);
+function trendBuckets(events: RecentWin[], timeframe: Timeframe, now: Date, rangeStart: Date | null) {
+  if (timeframe === "7d") {
+    return Array.from({ length: 7 }).map((_, index) => {
+      const start = new Date(now.getTime() - (6 - index) * DAY_MS);
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(start.getTime() + DAY_MS);
+      const count = events.filter((event) => event.date >= start && event.date < end).length;
+      return { label: start.toLocaleDateString("en-US", { weekday: "short" }), count };
+    });
+  }
+
+  if (timeframe === "30d") {
+    const startBase = rangeStart || new Date(now.getTime() - 29 * DAY_MS);
+    return Array.from({ length: 5 }).map((_, index) => {
+      const start = new Date(startBase.getTime() + index * 6 * DAY_MS);
+      const end = index === 4 ? new Date(now.getTime() + DAY_MS) : new Date(start.getTime() + 6 * DAY_MS);
+      const count = events.filter((event) => event.date >= start && event.date < end).length;
+      return { label: formatShortDate(start), count };
+    });
+  }
+
+  const start = rangeStart || now;
+  const firstMonth = new Date(start.getFullYear(), start.getMonth(), 1);
+  const lastMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const monthCount = Math.max(
+    1,
+    (lastMonth.getFullYear() - firstMonth.getFullYear()) * 12 + lastMonth.getMonth() - firstMonth.getMonth() + 1
+  );
+  const visibleMonthCount = Math.min(monthCount, 12);
+  return Array.from({ length: visibleMonthCount }).map((_, index) => {
+    const monthOffset = monthCount - visibleMonthCount + index;
+    const start = new Date(firstMonth.getFullYear(), firstMonth.getMonth() + monthOffset, 1);
+    const end = new Date(start.getFullYear(), start.getMonth() + 1, 1);
     const count = events.filter((event) => event.date >= start && event.date < end).length;
-    return { label: `W${index + 1}`, count };
+    return { label: start.toLocaleDateString("en-US", { month: "short" }), count };
   });
 }
 
@@ -184,6 +250,7 @@ function buildStuckCards(statuses: OperationStatus[], rows: LearningAttemptRow[]
 
 export default function ChildProgressGlance({ child }: { child: Child }) {
   const [loading, setLoading] = useState(true);
+  const [timeframe, setTimeframe] = useState<Timeframe>("30d");
   const [statuses, setStatuses] = useState<OperationStatus[]>([]);
   const [attemptRows, setAttemptRows] = useState<LearningAttemptRow[]>([]);
   const [worksheetSkills, setWorksheetSkills] = useState<WorksheetSkill[]>([]);
@@ -236,14 +303,25 @@ export default function ChildProgressGlance({ child }: { child: Child }) {
 
   const now = useMemo(() => new Date(), [attemptRows.length]);
   const mathMasteryEvents = useMemo(() => masteryEvents(attemptRows), [attemptRows]);
-  const weekCutoff = new Date(now.getTime() - WEEK_MS);
-  const weekRows = attemptRows.filter((row) => row.created_at && new Date(row.created_at) >= weekCutoff);
-  const correctThisWeek = weekRows.filter((row) => row.was_correct).length;
-  const correctRate = weekRows.length > 0 ? (correctThisWeek / weekRows.length) * 100 : 0;
-  const masteredThisWeek = mathMasteryEvents.filter((event) => event.date >= weekCutoff).length;
-  const trends = trendBuckets(mathMasteryEvents, now);
+  const allActivityDates = [
+    ...attemptRows.map((row) => dateFromString(row.created_at)).filter(Boolean),
+    ...worksheetSkills.map(dateForWorksheetSkill).filter(Boolean),
+    ...mathMasteryEvents.map((event) => event.date),
+  ] as Date[];
+  const selectedStart = timeframeStart(timeframe, now, allActivityDates);
+  const selectedAttemptRows = attemptRows.filter((row) => isWithinTimeframe(dateFromString(row.created_at), selectedStart, now));
+  const correctInWindow = selectedAttemptRows.filter((row) => row.was_correct).length;
+  const correctRate = selectedAttemptRows.length > 0 ? (correctInWindow / selectedAttemptRows.length) * 100 : 0;
+  const masteredInWindow = mathMasteryEvents.filter((event) => isWithinTimeframe(event.date, selectedStart, now)).length;
+  const trends = trendBuckets(mathMasteryEvents, timeframe, now, selectedStart);
   const maxTrend = Math.max(1, ...trends.map((trend) => trend.count));
   const stuckCards = buildStuckCards(statuses, attemptRows);
+  const windowLabel = timeframeLabel(timeframe);
+  const worksheetActivity = worksheetSkills.filter((skill) => {
+    if (skill.status !== "complete") return false;
+    return isWithinTimeframe(dateForWorksheetSkill(skill), selectedStart, now);
+  });
+  const worksheetSkillLabels = Array.from(new Set(worksheetActivity.map(worksheetSkillLabel))).slice(0, 8);
 
   const highestSolidTierByOperation = MATH_OPERATIONS.reduce((acc, operation) => {
     const status = statuses.find((item) => item.operation === operation);
@@ -278,15 +356,48 @@ export default function ChildProgressGlance({ child }: { child: Child }) {
 
   return (
     <View style={styles.container}>
+      <View style={styles.timeframeSelector}>
+        {TIMEFRAME_OPTIONS.map((option) => {
+          const selected = option.id === timeframe;
+          const disabled = option.id === "custom";
+          return (
+            <TouchableOpacity
+              key={option.id}
+              style={[
+                styles.timeframeChip,
+                selected && styles.timeframeChipActive,
+                disabled && styles.timeframeChipDisabled,
+              ]}
+              onPress={() => {
+                // TODO: Wire Custom to DatePickerModal when custom range selection is in scope.
+                if (option.id === "custom") return;
+                setTimeframe(option.id);
+              }}
+              disabled={disabled}
+            >
+              <Text
+                style={[
+                  styles.timeframeChipText,
+                  selected && styles.timeframeChipTextActive,
+                  disabled && styles.timeframeChipTextDisabled,
+                ]}
+              >
+                {option.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
       <View style={styles.momentumStrip}>
-        <MetricTile label="Tiers mastered" value={String(masteredThisWeek)} tone="green" />
-        <MetricTile label="Practices done" value={String(weekRows.length)} tone="blue" />
-        <MetricTile label="Correct this week" value={percent(correctRate)} tone="violet" />
+        <MetricTile label={`Tiers — ${windowLabel}`} value={String(masteredInWindow)} tone="green" />
+        <MetricTile label={`Practices — ${windowLabel}`} value={String(selectedAttemptRows.length)} tone="blue" />
+        <MetricTile label={`Correct — ${windowLabel}`} value={percent(correctRate)} tone="violet" />
       </View>
 
       <View style={styles.trendPanel}>
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>4-week mastery trend</Text>
+          <Text style={styles.sectionTitle}>Mastery trend</Text>
           <Text style={styles.sectionMeta}>new tiers</Text>
         </View>
         <View style={styles.trendBars}>
@@ -327,6 +438,30 @@ export default function ChildProgressGlance({ child }: { child: Child }) {
           );
         })}
         <SpellingSkillRow listCount={spellingListCount} unlockState={unlockState.spelling} />
+      </View>
+
+      <View style={styles.section}>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Worksheet activity</Text>
+          <Text style={styles.sectionMeta}>{windowLabel}</Text>
+        </View>
+        <View style={styles.worksheetPanel}>
+          <Text style={styles.worksheetCount}>{worksheetActivity.length}</Text>
+          <Text style={styles.worksheetSummary}>
+            {worksheetActivity.length === 1 ? "worksheet completed" : "worksheets completed"}
+          </Text>
+          {worksheetSkillLabels.length === 0 ? (
+            <Text style={styles.emptyMuted}>No completed worksheet activity in this window.</Text>
+          ) : (
+            <View style={styles.worksheetChipWrap}>
+              {worksheetSkillLabels.map((label) => (
+                <View key={label} style={styles.worksheetChip}>
+                  <Text style={styles.worksheetChipText} numberOfLines={1}>{label}</Text>
+                </View>
+              ))}
+            </View>
+          )}
+        </View>
       </View>
 
       <View style={styles.section}>
@@ -486,6 +621,40 @@ const styles = StyleSheet.create({
   momentumStrip: {
     flexDirection: "row",
     gap: 8,
+  },
+  timeframeSelector: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  timeframeChip: {
+    minHeight: 36,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#cbd5e1",
+    backgroundColor: "#fff",
+    paddingHorizontal: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  timeframeChipActive: {
+    borderColor: "#2563eb",
+    backgroundColor: "#eff6ff",
+  },
+  timeframeChipDisabled: {
+    backgroundColor: "#f8fafc",
+    borderColor: "#e2e8f0",
+  },
+  timeframeChipText: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#475569",
+  },
+  timeframeChipTextActive: {
+    color: "#1d4ed8",
+  },
+  timeframeChipTextDisabled: {
+    color: "#94a3b8",
   },
   metricTile: {
     flex: 1,
@@ -705,6 +874,42 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     color: "#64748b",
     fontWeight: "700",
+  },
+  worksheetPanel: {
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    backgroundColor: "#fff",
+    padding: 14,
+    gap: 8,
+  },
+  worksheetCount: {
+    fontSize: 26,
+    fontWeight: "800",
+    color: "#0f172a",
+  },
+  worksheetSummary: {
+    marginTop: -4,
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#475569",
+  },
+  worksheetChipWrap: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  worksheetChip: {
+    maxWidth: "48%",
+    borderRadius: 8,
+    backgroundColor: "#f1f5f9",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  worksheetChipText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#334155",
   },
   starsPill: {
     flexDirection: "row",
