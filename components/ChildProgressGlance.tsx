@@ -8,6 +8,7 @@ import {
   View,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 import { supabase } from "@/lib/supabase";
 import { Attempt, factTierCoverageGapAfterOtherGates, factTierCoverageKeys, isSolidTierStat, tierStats } from "@/lib/tutor/ability";
 import { getOperationStatus, OperationStatus } from "@/lib/tutor/status";
@@ -21,6 +22,7 @@ import {
 } from "@/lib/tutorConfig";
 import { listWorksheetSkillsForChild, worksheetSkillLabel, WorksheetSkill } from "@/lib/worksheetSkills";
 import { operationLabel, recommendationFor } from "@/lib/progressGlance";
+import { todayDateKey } from "@/lib/schoolHomework";
 
 type Child = {
   id: string;
@@ -269,6 +271,7 @@ function buildStuckCards(statuses: OperationStatus[], rows: LearningAttemptRow[]
 }
 
 export default function ChildProgressGlance({ child }: { child: Child }) {
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [timeframe, setTimeframe] = useState<Timeframe>("30d");
   const [statuses, setStatuses] = useState<OperationStatus[]>([]);
@@ -343,6 +346,31 @@ export default function ChildProgressGlance({ child }: { child: Child }) {
     return isWithinTimeframe(dateForWorksheetSkill(skill), selectedStart, now);
   });
   const worksheetSkillLabels = Array.from(new Set(worksheetActivity.map(worksheetSkillLabel))).slice(0, 8);
+
+  const openAssignFlow = (operation: Operation, tierId: string) => {
+    router.push({
+      pathname: "/(app)/assign",
+      params: {
+        childId: child.id,
+        childName: child.name,
+        topic: operation,
+        tierId,
+        homeworkDate: todayDateKey(),
+        openAssignment: "1",
+      },
+    });
+  };
+
+  const openSubjectDetail = (operation: Operation) => {
+    router.push({
+      pathname: "/(app)/progress-subject/[childId]",
+      params: {
+        childId: child.id,
+        childName: child.name,
+        operation,
+      },
+    });
+  };
 
   const highestSolidTierByOperation = MATH_OPERATIONS.reduce((acc, operation) => {
     const status = statuses.find((item) => item.operation === operation);
@@ -441,7 +469,7 @@ export default function ChildProgressGlance({ child }: { child: Child }) {
             <Text style={styles.emptyGoodText}>{`${child.name}'s on track — nothing stuck right now.`}</Text>
           </View>
         ) : (
-          stuckCards.map((card) => <StuckCardView key={card.id} card={card} />)
+          stuckCards.map((card) => <StuckCardView key={card.id} card={card} onAssign={openAssignFlow} />)
         )}
       </View>
 
@@ -457,6 +485,7 @@ export default function ChildProgressGlance({ child }: { child: Child }) {
               unlockState={unlockState[operation]}
               gradeLevel={child.grade_level}
               onOpenChecklist={() => setChecklistSelection({ operation, status })}
+              onOpenDetail={() => openSubjectDetail(operation)}
             />
           );
         })}
@@ -533,7 +562,7 @@ function MetricTile({ label, value, tone }: { label: string; value: string; tone
   );
 }
 
-function StuckCardView({ card }: { card: StuckCard }) {
+function StuckCardView({ card, onAssign }: { card: StuckCard; onAssign: (operation: Operation, tierId: string) => void }) {
   const danger = card.kind === "struggling";
   return (
     <View style={[styles.stuckCard, danger ? styles.stuckDanger : styles.stuckWarning]}>
@@ -550,7 +579,7 @@ function StuckCardView({ card }: { card: StuckCard }) {
         <Text style={styles.stuckMeta}>Missing facts: {card.missingFacts.join(", ")}</Text>
       )}
       <Text style={styles.recommendation}>{card.recommendation}</Text>
-      <TouchableOpacity style={styles.assignButton} onPress={() => {}}>
+      <TouchableOpacity style={styles.assignButton} onPress={() => onAssign(card.operation, card.tierId)}>
         <MaterialCommunityIcons name="playlist-plus" size={16} color="#1d4ed8" />
         <Text style={styles.assignButtonText}>
           {card.kind === "coverage" ? "Assign these facts" : "Assign practice"}
@@ -566,12 +595,14 @@ function MathSkillRow({
   unlockState,
   gradeLevel,
   onOpenChecklist,
+  onOpenDetail,
 }: {
   operation: Operation;
   status?: OperationStatus;
   unlockState?: SubjectUnlockState;
   gradeLevel?: string | null;
   onOpenChecklist: () => void;
+  onOpenDetail: () => void;
 }) {
   const locked = unlockState && !unlockState.unlocked;
   const ladder = LADDERS[operation];
@@ -597,13 +628,18 @@ function MathSkillRow({
       : `Year goal: ${targetTier.label}`;
 
   return (
-    <TouchableOpacity style={styles.skillRow} activeOpacity={0.78} onPress={onOpenChecklist}>
+    <TouchableOpacity style={styles.skillRow} activeOpacity={0.78} onPress={onOpenDetail}>
       <View style={styles.skillRowHeader}>
         <View style={styles.skillLabelWrap}>
           <MaterialCommunityIcons name={locked ? "lock-outline" : "calculator-variant-outline"} size={18} color={locked ? "#94a3b8" : "#2563eb"} />
           <Text style={styles.skillTitle}>{operationLabel(operation)}</Text>
         </View>
-        <MaterialCommunityIcons name="chevron-right" size={20} color="#94a3b8" />
+        <View style={styles.skillRowActions}>
+          <TouchableOpacity style={styles.checklistIconButton} onPress={onOpenChecklist}>
+            <MaterialCommunityIcons name="clipboard-check-outline" size={18} color="#64748b" />
+          </TouchableOpacity>
+          <MaterialCommunityIcons name="chevron-right" size={20} color="#94a3b8" />
+        </View>
       </View>
       <View style={styles.segmentRow}>
         {ladder.map((tier, index) => {
@@ -951,6 +987,19 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
+  },
+  skillRowActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  checklistIconButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#f1f5f9",
   },
   skillTitle: {
     fontSize: 15,

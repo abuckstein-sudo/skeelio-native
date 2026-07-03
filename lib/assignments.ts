@@ -1,7 +1,7 @@
 import { supabase } from "./supabase";
 import { generateQuestion, Question } from "./tutor/generate";
 import { currentTierAndBand } from "./tutor/ability";
-import { Operation } from "./tutorConfig";
+import { LADDERS, Operation } from "./tutorConfig";
 import { generateWordProblem } from "./tutor/wordProblems";
 import { getListItems } from "./spelling";
 
@@ -118,8 +118,9 @@ export async function createMathAssignment(params: {
   wordProblemOp?: Operation | "mixed";
   multiplicationTables?: number[];
   operationTables?: number[];
+  tierId?: string | null;
 }): Promise<Assignment> {
-  const { childId, topic, count, dueDate, mode = "practice", wordProblemOp, multiplicationTables, operationTables } = params;
+  const { childId, topic, count, dueDate, mode = "practice", wordProblemOp, multiplicationTables, operationTables, tierId } = params;
 
   // Get the current authenticated user to ensure parent_id is set correctly
   const { data: authData, error: authError } = await supabase.auth.getUser();
@@ -194,17 +195,20 @@ export async function createMathAssignment(params: {
     const tables = Array.isArray(operationTables || multiplicationTables)
       ? (operationTables || multiplicationTables || []).filter((table) => Number.isInteger(table) && table >= 0 && table <= 12)
       : [];
-    const { tierId } = currentTierAndBand(attempts, topic as Operation, childData || {});
+    const operation = topic as Operation;
+    const tierOverride = tierId && LADDERS[operation].some((tier) => tier.id === tierId) ? tierId : null;
+    const { tierId: currentTierId } = currentTierAndBand(attempts, operation, childData || {});
+    const assignmentTierId = tierOverride || currentTierId;
     const tableQuestionPool = (topic === "multiplication" || topic === "division") && tables.length > 0
-      ? buildTableQuestionPool(topic as "multiplication" | "division", tables, tierId)
+      ? buildTableQuestionPool(topic as "multiplication" | "division", tables, assignmentTierId)
       : [];
 
     for (let i = 0; i < count; i++) {
       const genQ =
         tableQuestionPool.length > 0
           ? tableQuestionPool[i % tableQuestionPool.length]
-          : generateQuestion(topic as Operation, tierId, childData?.max_times_table);
-      customQuestions.push(questionToCustom(genQ, topic as Operation));
+          : generateQuestion(operation, assignmentTierId, childData?.max_times_table);
+      customQuestions.push(questionToCustom(genQ, operation));
     }
   }
 

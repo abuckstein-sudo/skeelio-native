@@ -58,12 +58,18 @@ export default function AssignScreen() {
     schoolHomeworkItemId?: string;
     schoolHomeworkItemText?: string;
     homeworkDate?: string;
+    topic?: string;
+    tierId?: string;
+    openAssignment?: string;
   }>();
   const id = String(params.childId || "");
   const paramName = params.childName ? String(params.childName) : "";
   const linkedSchoolHomeworkItemId = params.schoolHomeworkItemId ? String(params.schoolHomeworkItemId) : "";
   const linkedSchoolHomeworkItemText = params.schoolHomeworkItemText ? String(params.schoolHomeworkItemText) : "";
   const linkedHomeworkDate = params.homeworkDate ? String(params.homeworkDate) : "";
+  const prefillTopic = params.topic ? String(params.topic) : "";
+  const prefillTierId = params.tierId ? String(params.tierId) : "";
+  const shouldOpenAssignment = params.openAssignment === "1";
 
   const [child, setChild] = useState<Child | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -92,6 +98,7 @@ export default function AssignScreen() {
   const [isGeneratingNewList, setIsGeneratingNewList] = useState(false);
   const [generateLanguage, setGenerateLanguage] = useState<SpellingLanguage>("English");
   const [generateWordCount, setGenerateWordCount] = useState("10");
+  const [prefilledTierId, setPrefilledTierId] = useState(prefillTierId);
 
   // Spelling list state
   const [spellingLists, setSpellingLists] = useState<SpellingList[]>([]);
@@ -216,6 +223,7 @@ export default function AssignScreen() {
           count: questionCount,
           dueDate: dueDate || undefined,
           mode: assignmentMode,
+          tierId: prefilledTierId || undefined,
           wordProblemOp: selectedTopic === "word_problems" ? selectedWordProblemOp : undefined,
           multiplicationTables:
             selectedTopic === "multiplication" ? selectedMultiplicationTables : undefined,
@@ -232,6 +240,7 @@ export default function AssignScreen() {
         setShowAssignmentForm(false);
         setSelectedTopic("addition");
         setSelectedMultiplicationTables([]);
+        setPrefilledTierId("");
         setQuestionCount(8);
         setDueDate(todayDateKey());
         setAssignmentMode("practice");
@@ -674,6 +683,25 @@ export default function AssignScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
+  useEffect(() => {
+    const mathTopics = new Set(["addition", "subtraction", "multiplication", "division", "word_problems"]);
+    if (!mathTopics.has(prefillTopic)) return;
+
+    const topic = prefillTopic as Operation | "word_problems";
+    setAssignmentSubject("math");
+    setSelectedTopic(topic);
+    setPrefilledTierId(prefillTierId);
+    setDueDate(linkedHomeworkDate || todayDateKey());
+    if (topic !== "multiplication") {
+      setSelectedMultiplicationTables([]);
+    }
+    if (shouldOpenAssignment) {
+      setShowAssignmentForm(true);
+      loadConjugationLanguages();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefillTopic, prefillTierId, linkedHomeworkDate, shouldOpenAssignment]);
+
   useFocusEffect(
     useCallback(() => {
       fetchAssignments();
@@ -980,6 +1008,7 @@ export default function AssignScreen() {
                           style={[styles.topicButton, selectedTopic === topic && styles.topicButtonActive]}
                           onPress={() => {
                             setSelectedTopic(topic as Operation | "word_problems");
+                            setPrefilledTierId("");
                             if (topic !== "multiplication") {
                               setSelectedMultiplicationTables([]);
                             }
@@ -1010,6 +1039,13 @@ export default function AssignScreen() {
                         </View>
                       </>
                     )}
+
+                    {prefilledTierId && selectedTopic !== "word_problems" ? (
+                      <View style={styles.prefillNotice}>
+                        <MaterialCommunityIcons name="target" size={16} color="#1565c0" />
+                        <Text style={styles.prefillNoticeText}>Prefilled for tier {prefilledTierId}</Text>
+                      </View>
+                    ) : null}
 
                     {selectedTopic === "multiplication" && (
                       <>
@@ -1289,6 +1325,7 @@ export default function AssignScreen() {
                         setAssignmentSubject("math");
                         setSelectedTopic("addition");
                         setSelectedMultiplicationTables([]);
+                        setPrefilledTierId("");
                         setQuestionCount(8);
                         setDueDate(todayDateKey());
                         setAssignmentMode("practice");
@@ -1908,6 +1945,24 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#999",
     marginBottom: 16,
+  },
+  prefillNotice: {
+    minHeight: 38,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#bfdbfe",
+    backgroundColor: "#eff6ff",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 12,
+    marginBottom: 16,
+  },
+  prefillNoticeText: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#1e40af",
   },
   modalButtonsRow: {
     flexDirection: "row",
