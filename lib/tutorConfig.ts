@@ -128,7 +128,7 @@ export const TEACH_NOTES_FR: Record<string, string> = {
   M4: "Appuie-toi sur les tables que tu connais, par exemple 6x7 = 5x7 + 7.",
   M5: "x11 avec un chiffre ecrit ce chiffre deux fois (11x7 = 77) ; x12 = x10 puis ajoute deux fois le nombre.",
   M6: "Multiplie les unites, puis les dizaines, et additionne les morceaux.",
-  M7: "Multiplie par les unites, puis par les dizaines, puis additionne les deux resultats.",
+  M7: "Multiplie par les unites, puis les dizaines, puis additionne les deux resultats.",
   D1: "La division defait la multiplication : demande-toi combien de fois le diviseur rentre dedans.",
   D2: "Utilise la table : combien de 3, ou de 4, font ce nombre ?",
   D3: "Utilise la multiplication correspondante que tu connais pour trouver combien rentrent.",
@@ -169,8 +169,10 @@ export function startingTier(op: Operation, child: any): string {
 }
 
 // --- Grade-expected tier benchmark ------------------------------------------
-// Sourced French year-end math targets. CE1/CE2 are directly sourced; CP and
-// CM1 are pending verification against their specific Eduscol grade documents.
+// Values map Eduscol end-of-year attendus to the nearest ladder tier. CM1's
+// new content (decimals, posed multi-digit multiplication, euclidean division)
+// sits at/above the top of the fact ladders, so A7/S7/M5/D4 represent the
+// whole-number/fact ceiling.
 export type GradeExpectedTierRow = Record<Operation, string | null>;
 export type GradeExpectedTierStandard = {
   locale: "fr-FR";
@@ -179,7 +181,7 @@ export type GradeExpectedTierStandard = {
 };
 
 export const GRADE_EXPECTED_TIER: Record<string, GradeExpectedTierRow> = {
-  CP:  { addition: "A2", subtraction: "S1", multiplication: null, division: null },
+  CP:  { addition: "A4", subtraction: "S2", multiplication: null, division: null },
   CE1: { addition: "A6", subtraction: "S6", multiplication: "M2", division: null },
   CE2: { addition: "A6", subtraction: "S6", multiplication: "M4", division: "D1" },
   CM1: { addition: "A7", subtraction: "S7", multiplication: "M5", division: "D4" },
