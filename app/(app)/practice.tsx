@@ -75,6 +75,7 @@ const COPY = {
     hintShown: "Hint shown",
     placeholder: "Enter your answer",
     submit: "Submit",
+    skip: "I don't know",
     next: "Next",
     correctFeedback: "✓ Correct!",
     saveError: "Error saving attempt",
@@ -96,6 +97,7 @@ const COPY = {
     hintShown: "Indice affiché",
     placeholder: "Écris ta réponse",
     submit: "Valider",
+    skip: "Je ne sais pas",
     next: "Suivant",
     correctFeedback: "✓ Correct !",
     saveError: "Erreur pendant l'enregistrement",
@@ -413,14 +415,13 @@ export default function PracticeScreen() {
     }
   };
 
-  const handleSubmit = async () => {
-    if (!userAnswer.trim() || !session?.user?.id || !childId || !topic || !tierId) {
+  const recordPracticeAnswer = async (answerText: string, isCorrect: boolean, hintUsed: boolean) => {
+    if (!session?.user?.id || !childId || !topic || !tierId) {
       return;
     }
 
     setIsSubmitting(true);
     const question = questions[currentQuestionIndex];
-    const isCorrect = userAnswer.trim() === String(question.answer);
 
     try {
       // Insert into learning_attempts with tier
@@ -443,9 +444,9 @@ export default function PracticeScreen() {
               } ${question.b}`
             : "",
           correct_answer: String(question.answer),
-          user_answer: userAnswer.trim(),
+          user_answer: answerText,
           was_correct: isCorrect,
-          ai_hint_used: hintUsedPerQuestion[currentQuestionIndex],
+          ai_hint_used: hintUsed,
           evidence_source: "adaptive_practice",
         },
       ]);
@@ -466,7 +467,7 @@ export default function PracticeScreen() {
 
         const newAnswer: Answer = {
           questionIndex: currentQuestionIndex,
-          userAnswer: userAnswer.trim(),
+          userAnswer: answerText,
           isCorrect,
         };
         setAnswers([...answers, newAnswer]);
@@ -480,6 +481,25 @@ export default function PracticeScreen() {
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleSubmit = async () => {
+    if (!userAnswer.trim()) {
+      return;
+    }
+
+    const question = questions[currentQuestionIndex];
+    const answerText = userAnswer.trim();
+    await recordPracticeAnswer(
+      answerText,
+      answerText === String(question.answer),
+      hintUsedPerQuestion[currentQuestionIndex]
+    );
+  };
+
+  const handleSkip = async () => {
+    if (feedback || isSubmitting) return;
+    await recordPracticeAnswer(COPY[appLanguage].skip, false, false);
   };
 
   const handleTeachAcknowledged = () => {
@@ -754,6 +774,16 @@ export default function PracticeScreen() {
           >
             <Text style={styles.buttonText}>{copy.submit}</Text>
           </TouchableOpacity>
+
+          {!showingFeedback && (
+            <TouchableOpacity
+              style={[styles.skipButton, isSubmitting && styles.buttonDisabled]}
+              onPress={handleSkip}
+              disabled={isSubmitting}
+            >
+              <Text style={styles.skipButtonText}>{copy.skip}</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -875,6 +905,16 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 16,
     fontWeight: "bold",
+  },
+  skipButton: {
+    paddingVertical: 12,
+    alignItems: "center",
+    marginTop: 8,
+  },
+  skipButtonText: {
+    color: "#555",
+    fontSize: 15,
+    fontWeight: "700",
   },
   introBox: {
     backgroundColor: "#f0f8ff",

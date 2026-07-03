@@ -785,6 +785,40 @@ export default function EpisodeScreen() {
     }
   };
 
+  const handleSkipAnswer = () => {
+    if (!currentItem || loading) return;
+
+    const skippedAnswer = "Je ne sais pas";
+    setUserAnswer(skippedAnswer);
+    setExplanation("");
+    setFeedbackUserAnswer(skippedAnswer);
+    setTotalAttempts(totalAttempts + 1);
+    setIsCorrect(false);
+
+    if (isFirstAttempt) {
+      const subSkill = currentItem.sub_skill || "unknown";
+      const currentWrongCount = (wrongCountPerSubSkill[subSkill] || 0) + 1;
+      setWrongCountPerSubSkill({
+        ...wrongCountPerSubSkill,
+        [subSkill]: currentWrongCount,
+      });
+      logAttempt(currentItem, skippedAnswer, false, false);
+      firstTryHistoryRef.current.push({ correct: false, key: currentItem.question, aided: false });
+      setUnairedStreak(0);
+      setFirstTryWrong((w) => w + 1);
+      setIsFirstAttempt(false);
+    }
+
+    const expectedAnswer =
+      currentItem.kind === "math" && currentItem.answer_type === "yesno"
+        ? currentItem.answer === true || String(currentItem.answer).toLowerCase() === "oui"
+          ? "Oui"
+          : "Non"
+        : formatAnswerDisplay(currentItem);
+    setFeedbackMessage(`La réponse attendue : ${expectedAnswer}`);
+    setPhase("feedback");
+  };
+
   const completeEpisode = async (mastered: boolean) => {
     if (!episodeId || episodeCompletionInFlightRef.current) return;
 
@@ -1108,25 +1142,41 @@ export default function EpisodeScreen() {
                   >
                     <Text style={styles.submitButtonText}>Valider</Text>
                   </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.skipAnswerButton, loading && styles.submitButtonDisabled]}
+                    onPress={handleSkipAnswer}
+                    disabled={loading}
+                  >
+                    <Text style={styles.skipAnswerButtonText}>Je ne sais pas</Text>
+                  </TouchableOpacity>
                 </View>
               )}
 
               {/* Math Yes/No Buttons */}
               {currentItem.kind === "math" && currentItem.answer_type === "yesno" && (
-                <View style={styles.yesNoContainer}>
+                <View style={styles.inputSection}>
+                  <View style={styles.yesNoContainer}>
+                    <TouchableOpacity
+                      style={[styles.yesNoButton, styles.yesButton]}
+                      onPress={() => handleYesNoChoice("Oui")}
+                      disabled={loading}
+                    >
+                      <Text style={styles.yesNoButtonText}>Oui</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.yesNoButton, styles.noButton]}
+                      onPress={() => handleYesNoChoice("Non")}
+                      disabled={loading}
+                    >
+                      <Text style={styles.yesNoButtonText}>Non</Text>
+                    </TouchableOpacity>
+                  </View>
                   <TouchableOpacity
-                    style={[styles.yesNoButton, styles.yesButton]}
-                    onPress={() => handleYesNoChoice("Oui")}
+                    style={[styles.skipAnswerButton, loading && styles.submitButtonDisabled]}
+                    onPress={handleSkipAnswer}
                     disabled={loading}
                   >
-                    <Text style={styles.yesNoButtonText}>Oui</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.yesNoButton, styles.noButton]}
-                    onPress={() => handleYesNoChoice("Non")}
-                    disabled={loading}
-                  >
-                    <Text style={styles.yesNoButtonText}>Non</Text>
+                    <Text style={styles.skipAnswerButtonText}>Je ne sais pas</Text>
                   </TouchableOpacity>
                 </View>
               )}
@@ -1158,6 +1208,13 @@ export default function EpisodeScreen() {
                     disabled={loading}
                   >
                     <Text style={styles.submitButtonText}>Valider</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.skipAnswerButton, loading && styles.submitButtonDisabled]}
+                    onPress={handleSkipAnswer}
+                    disabled={loading}
+                  >
+                    <Text style={styles.skipAnswerButtonText}>Je ne sais pas</Text>
                   </TouchableOpacity>
                 </View>
               )}
@@ -1515,6 +1572,16 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "600",
     color: "#fff",
+  },
+  skipAnswerButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    alignItems: "center",
+  },
+  skipAnswerButtonText: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#555",
   },
   yesNoContainer: {
     flexDirection: "row",
