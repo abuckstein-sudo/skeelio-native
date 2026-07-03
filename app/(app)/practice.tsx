@@ -151,6 +151,10 @@ export default function PracticeScreen() {
   const [teachLoading, setTeachLoading] = useState(false);
   const [teachAcknowledged, setTeachAcknowledged] = useState(false);
 
+  const focusAnswerInput = () => {
+    setTimeout(() => inputRef.current?.focus(), 80);
+  };
+
   useEffect(() => {
     if (!topic || !childId || !session?.user?.id) {
       console.log("[practice] missing params or session");
@@ -319,6 +323,11 @@ export default function PracticeScreen() {
     initializePractice();
   }, [topic, childId, session]);
 
+  useEffect(() => {
+    if (isLoading || feedback || sessionComplete || questions.length === 0) return;
+    focusAnswerInput();
+  }, [currentQuestionIndex, feedback, isLoading, questions.length, sessionComplete]);
+
   const handleRequestHint = async () => {
     const question = questions[currentQuestionIndex];
     if (!question.a || !question.b || !topic || !tierId) {
@@ -453,7 +462,7 @@ export default function PracticeScreen() {
           isCorrect,
           message: isCorrect ? COPY[appLanguage].correctFeedback : COPY[appLanguage].wrongFeedback(question.answer),
         });
-        setTimeout(() => inputRef.current?.focus(), 50);
+        focusAnswerInput();
 
         const newAnswer: Answer = {
           questionIndex: currentQuestionIndex,
@@ -485,7 +494,7 @@ export default function PracticeScreen() {
     setMulStrategy(null);
     if (currentQuestionIndex < questions.length - 1) {
       setCurrentQuestionIndex(currentQuestionIndex + 1);
-      setTimeout(() => inputRef.current?.focus(), 50);
+      focusAnswerInput();
     }
   };
 

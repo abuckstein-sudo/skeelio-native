@@ -102,6 +102,8 @@ export default function EpisodeScreen() {
   const initialFetchStartedRef = useRef(false);
   const episodeCompletionInFlightRef = useRef(false);
   const shownQuestionKeysRef = useRef<Set<string>>(new Set());
+  const numberInputRef = useRef<TextInput>(null);
+  const textInputRef = useRef<TextInput>(null);
 
   // Track wrong attempts per sub-skill for adaptive teaching
   const [wrongCountPerSubSkill, setWrongCountPerSubSkill] = useState<Record<string, number>>({});
@@ -245,6 +247,21 @@ export default function EpisodeScreen() {
       );
     }
   }, [currentItem, phase]);
+
+  const focusCurrentAnswerInput = useCallback(() => {
+    setTimeout(() => {
+      if (currentItem?.kind === "math" && currentItem.answer_type === "number") {
+        numberInputRef.current?.focus();
+      } else if (currentItem?.kind === "reference") {
+        textInputRef.current?.focus();
+      }
+    }, 80);
+  }, [currentItem]);
+
+  useEffect(() => {
+    if (phase !== "practice" || !currentItem || loading) return;
+    focusCurrentAnswerInput();
+  }, [currentItem, focusCurrentAnswerInput, loading, phase]);
 
   const isPluriel = (c: any) =>
     JSON.stringify(c ?? "").toLowerCase().includes("pluriel");
@@ -1067,6 +1084,7 @@ export default function EpisodeScreen() {
                 <View style={styles.inputSection}>
                   <View style={styles.numberInputContainer}>
                     <TextInput
+                      ref={numberInputRef}
                       style={styles.numberInput}
                       placeholder="Entrez un nombre"
                       placeholderTextColor="#999"
@@ -1074,6 +1092,8 @@ export default function EpisodeScreen() {
                       value={userAnswer}
                       onChangeText={setUserAnswer}
                       editable={!loading}
+                      autoFocus
+                      showSoftInputOnFocus
                     />
                     {currentItem.unit === "€" && (
                       <View style={styles.unitSuffix}>
@@ -1115,12 +1135,15 @@ export default function EpisodeScreen() {
               {currentItem.kind === "reference" && (
                 <View style={styles.inputSection}>
                   <TextInput
+                    ref={textInputRef}
                     style={styles.textInput}
                     placeholder="Entrez votre réponse"
                     placeholderTextColor="#999"
                     value={userAnswer}
                     onChangeText={setUserAnswer}
                     editable={!loading}
+                    autoFocus
+                    showSoftInputOnFocus
                     autoCorrect={false}
                     autoCapitalize="none"
                     autoComplete="off"
