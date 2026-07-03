@@ -128,7 +128,7 @@ export const TEACH_NOTES_FR: Record<string, string> = {
   M4: "Appuie-toi sur les tables que tu connais, par exemple 6x7 = 5x7 + 7.",
   M5: "x11 avec un chiffre ecrit ce chiffre deux fois (11x7 = 77) ; x12 = x10 puis ajoute deux fois le nombre.",
   M6: "Multiplie les unites, puis les dizaines, et additionne les morceaux.",
-  M7: "Multiplie par les unites, puis les dizaines, puis additionne les deux resultats.",
+  M7: "Multiplie par les unites, puis par les dizaines, puis additionne les deux resultats.",
   D1: "La division defait la multiplication : demande-toi combien de fois le diviseur rentre dedans.",
   D2: "Utilise la table : combien de 3, ou de 4, font ce nombre ?",
   D3: "Utilise la multiplication correspondante que tu connais pour trouver combien rentrent.",
