@@ -40,13 +40,15 @@ Canvas: ${Math.round(Number(width) || 0)} x ${Math.round(Number(height) || 0)}.
 Language: ${language === "fr" ? "French" : "English"}.
 Question context: ${String(questionText || "").slice(0, 300)}
 
-Return STRICT JSON only: {"text":"recognized answer"}
+Return STRICT JSON only: {"text":"recognized answer","confidence":0.0}
 
 Rules:
 - The answer is short: usually 1 word to a few words, or a simple number.
+- confidence is a number from 0 to 1 for how sure you are that the text is correct.
+- Use confidence below 0.75 when the strokes are ambiguous enough that a child should try again.
 - Preserve French accents only when they are clear or strongly implied.
 - Do not explain.
-- If unreadable, return {"text":""}.
+- If unreadable, return {"text":"","confidence":0}.
 
 Strokes:
 ${JSON.stringify(compactStrokes)}`;
@@ -70,7 +72,10 @@ ${JSON.stringify(compactStrokes)}`;
     const data = await openaiRes.json();
     const raw = data.choices?.[0]?.message?.content ?? "";
     const parsed = parseJson(raw);
-    return json({ text: String(parsed?.text || "").trim() }, 200);
+    const text = String(parsed?.text || "").trim();
+    const rawConfidence = Number(parsed?.confidence);
+    const confidence = Math.max(0, Math.min(1, Number.isFinite(rawConfidence) ? rawConfidence : (text ? 1 : 0)));
+    return json({ text, confidence }, 200);
   } catch (error) {
     console.error("[recognize-handwriting-answer] unexpected error", error);
     return json({ error: String(error) }, 500);
@@ -91,7 +96,7 @@ function parseJson(raw: string): any {
   try {
     return JSON.parse(cleanJson);
   } catch {
-    return { text: "" };
+    return { text: "", confidence: 0 };
   }
 }
 

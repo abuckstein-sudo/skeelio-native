@@ -19,6 +19,7 @@ import { addStars } from "@/lib/addStars";
 import { SKILL_SESSION } from "@/lib/masteryConfig";
 import { drawPlurals } from "@/lib/grammarBank";
 import { setSchoolHomeworkItemDone } from "@/lib/schoolHomework";
+import HandwritingAnswerPad, { HandwritingRecognitionResult } from "@/components/HandwritingAnswerPad";
 
 interface SubSkill {
   label: string;
@@ -64,6 +65,7 @@ interface EpisodeData {
 }
 
 type Phase = "lesson" | "practice" | "feedback";
+const HANDWRITING_CONFIDENCE_MIN = 0.75;
 
 export default function EpisodeScreen() {
   const router = useRouter();
@@ -87,6 +89,8 @@ export default function EpisodeScreen() {
 
   // User input
   const [userAnswer, setUserAnswer] = useState<string>("");
+  const [answerInputMode, setAnswerInputMode] = useState<"type" | "write">("type");
+  const [handwritingMessage, setHandwritingMessage] = useState("");
 
   // Feedback
   const [isCorrect, setIsCorrect] = useState<boolean | null>(null);
@@ -680,6 +684,18 @@ export default function EpisodeScreen() {
     setHintLevel((level) => Math.min(level + 1, 2));
   };
 
+  const handleHandwritingRecognized = (text: string, result?: HandwritingRecognitionResult) => {
+    const confidence = result?.confidence ?? 1;
+    if (confidence < HANDWRITING_CONFIDENCE_MIN) {
+      setUserAnswer("");
+      setHandwritingMessage("Je n'arrive pas à lire clairement. Réessaie.");
+      focusCurrentAnswerInput();
+      return;
+    }
+    setUserAnswer(text);
+    setHandwritingMessage(`Lu : ${text}`);
+  };
+
   const handleSubmitAnswer = () => {
     if (!userAnswer.trim()) {
       Alert.alert("Erreur", "Veuillez entrer une réponse");
@@ -961,6 +977,7 @@ export default function EpisodeScreen() {
       setPracticeQueue(remainingQueue);
       setCurrentItem(nextItem);
       setUserAnswer("");
+      setHandwritingMessage("");
       setPhase("practice");
       setIsCorrect(null);
       setFeedbackMessage("");
@@ -1175,10 +1192,13 @@ export default function EpisodeScreen() {
                       placeholderTextColor="#999"
                       keyboardType="decimal-pad"
                       value={userAnswer}
-                      onChangeText={setUserAnswer}
+                      onChangeText={(text) => {
+                        setUserAnswer(text);
+                        setHandwritingMessage("");
+                      }}
                       editable={!loading}
                       autoFocus
-                      showSoftInputOnFocus
+                      showSoftInputOnFocus={answerInputMode === "type"}
                     />
                     {currentItem.unit === "€" && (
                       <View style={styles.unitSuffix}>
@@ -1186,6 +1206,46 @@ export default function EpisodeScreen() {
                       </View>
                     )}
                   </View>
+                  <View style={styles.inputModeRow}>
+                    <Text style={styles.inputModeLabel}>Répondre avec</Text>
+                    <TouchableOpacity
+                      style={[styles.inputModeButton, answerInputMode === "type" && styles.inputModeButtonActive]}
+                      onPress={() => {
+                        setAnswerInputMode("type");
+                        setHandwritingMessage("");
+                        focusCurrentAnswerInput();
+                      }}
+                      disabled={loading}
+                    >
+                      <Text style={[styles.inputModeButtonText, answerInputMode === "type" && styles.inputModeButtonTextActive]}>
+                        Clavier
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.inputModeButton, answerInputMode === "write" && styles.inputModeButtonActive]}
+                      onPress={() => {
+                        setAnswerInputMode("write");
+                        setHandwritingMessage("");
+                      }}
+                      disabled={loading}
+                    >
+                      <Text style={[styles.inputModeButtonText, answerInputMode === "write" && styles.inputModeButtonTextActive]}>
+                        Écriture
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                  {answerInputMode === "write" && (
+                    <View style={styles.handwritingBox}>
+                      <HandwritingAnswerPad
+                        language="fr"
+                        questionText={currentItem.question}
+                        onRecognized={handleHandwritingRecognized}
+                      />
+                      {handwritingMessage ? (
+                        <Text style={styles.handwritingMessage}>{handwritingMessage}</Text>
+                      ) : null}
+                    </View>
+                  )}
                   <TouchableOpacity
                     style={[styles.submitButton, loading && styles.submitButtonDisabled]}
                     onPress={handleSubmitAnswer}
@@ -1241,10 +1301,12 @@ export default function EpisodeScreen() {
                     placeholder="Entrez votre réponse"
                     placeholderTextColor="#999"
                     value={userAnswer}
-                    onChangeText={setUserAnswer}
+                    onChangeText={(text) => {
+                      setUserAnswer(text);
+                      setHandwritingMessage("");
+                    }}
                     editable={!loading}
                     autoFocus
-                    showSoftInputOnFocus
                     autoCorrect={false}
                     autoCapitalize="none"
                     autoComplete="off"
@@ -1252,7 +1314,48 @@ export default function EpisodeScreen() {
                     textContentType="none"
                     importantForAutofill="no"
                     keyboardType="default"
+                    showSoftInputOnFocus={answerInputMode === "type"}
                   />
+                  <View style={styles.inputModeRow}>
+                    <Text style={styles.inputModeLabel}>Répondre avec</Text>
+                    <TouchableOpacity
+                      style={[styles.inputModeButton, answerInputMode === "type" && styles.inputModeButtonActive]}
+                      onPress={() => {
+                        setAnswerInputMode("type");
+                        setHandwritingMessage("");
+                        focusCurrentAnswerInput();
+                      }}
+                      disabled={loading}
+                    >
+                      <Text style={[styles.inputModeButtonText, answerInputMode === "type" && styles.inputModeButtonTextActive]}>
+                        Clavier
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.inputModeButton, answerInputMode === "write" && styles.inputModeButtonActive]}
+                      onPress={() => {
+                        setAnswerInputMode("write");
+                        setHandwritingMessage("");
+                      }}
+                      disabled={loading}
+                    >
+                      <Text style={[styles.inputModeButtonText, answerInputMode === "write" && styles.inputModeButtonTextActive]}>
+                        Écriture
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                  {answerInputMode === "write" && (
+                    <View style={styles.handwritingBox}>
+                      <HandwritingAnswerPad
+                        language="fr"
+                        questionText={currentItem.question}
+                        onRecognized={handleHandwritingRecognized}
+                      />
+                      {handwritingMessage ? (
+                        <Text style={styles.handwritingMessage}>{handwritingMessage}</Text>
+                      ) : null}
+                    </View>
+                  )}
                   <TouchableOpacity
                     style={[styles.submitButton, loading && styles.submitButtonDisabled]}
                     onPress={handleSubmitAnswer}
@@ -1608,6 +1711,47 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: "#333",
     backgroundColor: "#fafafa",
+  },
+  inputModeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  inputModeLabel: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#64748b",
+  },
+  inputModeButton: {
+    flex: 1,
+    minHeight: 36,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#cbd5e1",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#f8fafc",
+  },
+  inputModeButtonActive: {
+    borderColor: "#2196f3",
+    backgroundColor: "#e3f2fd",
+  },
+  inputModeButtonText: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#475569",
+  },
+  inputModeButtonTextActive: {
+    color: "#1565c0",
+  },
+  handwritingBox: {
+    gap: 6,
+  },
+  handwritingMessage: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#64748b",
+    textAlign: "center",
   },
   submitButton: {
     paddingVertical: 12,

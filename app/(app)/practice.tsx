@@ -38,6 +38,7 @@ import {
 } from "@/lib/tutor/visuals";
 import { useAuth } from "../_layout";
 import QuitButton from "@/components/QuitButton";
+import HandwritingAnswerPad, { HandwritingRecognitionResult } from "@/components/HandwritingAnswerPad";
 import { appLanguageForChild, AppLanguage } from "@/lib/appLanguage";
 
 interface Answer {
@@ -62,6 +63,8 @@ interface TeachData {
   encouragement: string;
 }
 
+const HANDWRITING_CONFIDENCE_MIN = 0.75;
+
 const COPY = {
   en: {
     sessionComplete: "Session Complete!",
@@ -74,6 +77,11 @@ const COPY = {
     hintMore: "More help",
     hintShown: "Hint shown",
     placeholder: "Enter your answer",
+    inputType: "Answer with",
+    numberPad: "Number pad",
+    handwriting: "Handwriting",
+    lowConfidence: "I couldn't read that clearly. Please try again.",
+    recognized: (text: string) => `Read as: ${text}`,
     submit: "Submit",
     skip: "I don't know",
     next: "Next",
@@ -96,6 +104,11 @@ const COPY = {
     hintMore: "Encore de l'aide",
     hintShown: "Indice affiché",
     placeholder: "Écris ta réponse",
+    inputType: "Répondre avec",
+    numberPad: "Clavier",
+    handwriting: "Écriture",
+    lowConfidence: "Je n'arrive pas à lire clairement. Réessaie.",
+    recognized: (text: string) => `Lu : ${text}`,
     submit: "Valider",
     skip: "Je ne sais pas",
     next: "Suivant",
@@ -125,6 +138,8 @@ export default function PracticeScreen() {
   const [feedback, setFeedback] = useState<{ isCorrect: boolean; message: string } | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [answerInputMode, setAnswerInputMode] = useState<"type" | "write">("type");
+  const [handwritingMessage, setHandwritingMessage] = useState("");
 
   // Hint state (all operations)
   const [currentHintLevel, setCurrentHintLevel] = useState(0);
@@ -502,12 +517,25 @@ export default function PracticeScreen() {
     await recordPracticeAnswer(COPY[appLanguage].skip, false, false);
   };
 
+  const handleHandwritingRecognized = (text: string, result?: HandwritingRecognitionResult) => {
+    const confidence = result?.confidence ?? 1;
+    if (confidence < HANDWRITING_CONFIDENCE_MIN) {
+      setUserAnswer("");
+      setHandwritingMessage(COPY[appLanguage].lowConfidence);
+      focusAnswerInput();
+      return;
+    }
+    setUserAnswer(text);
+    setHandwritingMessage(COPY[appLanguage].recognized(text));
+  };
+
   const handleTeachAcknowledged = () => {
     setTeachAcknowledged(true);
   };
 
   const handleNext = () => {
     setUserAnswer("");
+    setHandwritingMessage("");
     setFeedback(null);
     setCurrentHintLevel(0);
     setCurrentHint("");
@@ -741,14 +769,58 @@ export default function PracticeScreen() {
             placeholder={copy.placeholder}
             keyboardType="number-pad"
             value={userAnswer}
-            onChangeText={setUserAnswer}
+            onChangeText={(text) => {
+              setUserAnswer(text);
+              setHandwritingMessage("");
+            }}
             editable={!isSubmitting}
             maxLength={10}
             ref={inputRef}
             autoFocus={true}
-            showSoftInputOnFocus={true}
+            showSoftInputOnFocus={answerInputMode === "type"}
             blurOnSubmit={false}
           />
+          <View style={styles.inputModeRow}>
+            <Text style={styles.inputModeLabel}>{copy.inputType}</Text>
+            <TouchableOpacity
+              style={[styles.inputModeButton, answerInputMode === "type" && styles.inputModeButtonActive]}
+              onPress={() => {
+                setAnswerInputMode("type");
+                setHandwritingMessage("");
+                focusAnswerInput();
+              }}
+              disabled={isSubmitting || showingFeedback}
+            >
+              <Text style={[styles.inputModeButtonText, answerInputMode === "type" && styles.inputModeButtonTextActive]}>
+                {copy.numberPad}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.inputModeButton, answerInputMode === "write" && styles.inputModeButtonActive]}
+              onPress={() => {
+                setAnswerInputMode("write");
+                setHandwritingMessage("");
+                Keyboard.dismiss();
+              }}
+              disabled={isSubmitting || showingFeedback}
+            >
+              <Text style={[styles.inputModeButtonText, answerInputMode === "write" && styles.inputModeButtonTextActive]}>
+                {copy.handwriting}
+              </Text>
+            </TouchableOpacity>
+          </View>
+          {answerInputMode === "write" && !showingFeedback && (
+            <View style={styles.handwritingBox}>
+              <HandwritingAnswerPad
+                language={appLanguage}
+                questionText={`${question.a} ${question.operation} ${question.b}`}
+                onRecognized={handleHandwritingRecognized}
+              />
+              {handwritingMessage ? (
+                <Text style={styles.handwritingMessage}>{handwritingMessage}</Text>
+              ) : null}
+            </View>
+          )}
 
           {showingFeedback && (
             <View
@@ -857,6 +929,49 @@ const styles = StyleSheet.create({
     padding: 16,
     fontSize: 18,
     marginBottom: 12,
+    textAlign: "center",
+  },
+  inputModeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 12,
+  },
+  inputModeLabel: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#64748b",
+  },
+  inputModeButton: {
+    flex: 1,
+    minHeight: 36,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#cbd5e1",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#f8fafc",
+  },
+  inputModeButtonActive: {
+    borderColor: "#2196f3",
+    backgroundColor: "#e3f2fd",
+  },
+  inputModeButtonText: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#475569",
+  },
+  inputModeButtonTextActive: {
+    color: "#1565c0",
+  },
+  handwritingBox: {
+    marginBottom: 12,
+  },
+  handwritingMessage: {
+    marginTop: 6,
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#64748b",
     textAlign: "center",
   },
   feedbackBox: {

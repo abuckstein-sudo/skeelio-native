@@ -7,11 +7,15 @@ import { runOnJS } from "react-native-reanimated";
 import { supabase } from "@/lib/supabase";
 
 export type HandwritingStroke = { points: { x: number; y: number }[] };
+export type HandwritingRecognitionResult = {
+  text: string;
+  confidence: number;
+};
 
 type Props = {
   language?: "en" | "fr";
   questionText?: string;
-  onRecognized: (text: string) => void;
+  onRecognized: (text: string, result?: HandwritingRecognitionResult) => void;
   onDrawingChange?: (isDrawing: boolean) => void;
 };
 
@@ -79,7 +83,9 @@ export default function HandwritingAnswerPad({ language = "en", questionText, on
       });
       if (error) throw error;
       const text = String((data as any)?.text || "").trim();
-      if (text) onRecognized(text);
+      const rawConfidence = Number((data as any)?.confidence);
+      const confidence = Number.isFinite(rawConfidence) ? rawConfidence : (text ? 1 : 0);
+      if (text) onRecognized(text, { text, confidence });
     } catch (err) {
       console.error("[handwriting] recognition failed:", err);
     } finally {
