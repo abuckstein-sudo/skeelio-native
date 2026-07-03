@@ -760,6 +760,9 @@ export default function ChildHomeScreen() {
       grade_band: episode.grade_band || "",
       language: episode.language,
       domain: episode.domain,
+      practice: Array.isArray((episode.concept as any)?.review_practice)
+        ? (episode.concept as any).review_practice
+        : undefined,
     });
 
     router.push({

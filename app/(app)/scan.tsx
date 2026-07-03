@@ -559,6 +559,11 @@ export default function ScanScreen() {
       const grade_band = reviewData.grade_band || "";
       const lesson = reviewData.lesson || "";
       const assignmentDate = dueDate || todayDateKey();
+      const reviewedPractice = Array.isArray(reviewData.practice) ? reviewData.practice : [];
+      const conceptForEpisode = {
+        ...reviewData.concept,
+        review_practice: reviewedPractice,
+      };
 
       // Upload photo to storage
       let image_path = null;
@@ -601,7 +606,7 @@ export default function ScanScreen() {
           domain: domainNorm,
           language: reviewData.language,
           grade_band: grade_band,
-          concept: reviewData.concept,
+          concept: conceptForEpisode,
           lesson: lesson,
           due_date: assignmentDate,
           status: "pending",

@@ -29,6 +29,7 @@ interface Concept {
   label: string;
   description: string;
   sub_skills: SubSkill[];
+  review_practice?: PracticeItem[];
 }
 
 interface PracticeItem {
@@ -59,6 +60,7 @@ interface EpisodeData {
   grade_band: string;
   language: string;
   domain: "math" | "language";
+  practice?: PracticeItem[];
 }
 
 type Phase = "lesson" | "practice" | "feedback";
@@ -288,6 +290,55 @@ export default function EpisodeScreen() {
           setPracticeQueue(bankItems.slice(1));
         } else if (bankItems.length > 0) {
           setPracticeQueue((prev) => [...prev, ...bankItems]);
+        }
+        setLoading(false);
+        return;
+      }
+
+      const reviewedPractice = Array.isArray(data.practice)
+        ? data.practice
+        : Array.isArray(data.concept?.review_practice)
+        ? data.concept.review_practice
+        : [];
+
+      if (reviewedPractice.length > 0) {
+        const items = reviewedPractice.filter((item) => {
+          const key = normalizeQuestionKey(item.question);
+          if (shownQuestionKeysRef.current.has(key)) return false;
+          shownQuestionKeysRef.current.add(key);
+          return true;
+        });
+
+        if (items.length === 0 && currentItem !== null) {
+          const supplyMastered = isMasteredFromHistory(firstTryHistoryRef.current);
+          const { correct, total, hinted } = getCompletionStats();
+          await completeEpisode(supplyMastered);
+          Alert.alert(
+            supplyMastered ? "Bravo ! 🎉" : "À bientôt !",
+            supplyMastered
+              ? `Tu as réussi ${correct} sur ${total}${formatHintSummary(hinted)} ! Tu maîtrises bien ça ! 🎉`
+              : `Beau travail ! Tu as réussi ${correct} sur ${total}${formatHintSummary(hinted)}. Tu peux être fier de tes efforts aujourd'hui.`
+          );
+          navigateAfterEpisodeComplete();
+          setLoading(false);
+          return;
+        }
+
+        console.log(
+          "[review-practice] using saved items:",
+          items.map((item) => ({
+            question: item.question,
+            expected_answer: (item as any).expected_answer || item.answer,
+            sub_skill: item.sub_skill,
+            kind: item.kind,
+          }))
+        );
+
+        if (currentItem === null && items.length > 0) {
+          setCurrentItem(items[0]);
+          setPracticeQueue(items.slice(1));
+        } else if (items.length > 0) {
+          setPracticeQueue((prev) => [...prev, ...items]);
         }
         setLoading(false);
         return;
