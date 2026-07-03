@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Alert, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
+import * as FileSystem from "expo-file-system/legacy";
 import { supabase } from "@/lib/supabase";
+import { signedSchoolHomeworkImageUrl } from "@/lib/schoolHomework";
 
 type MaterialRow = {
   id: string;
@@ -9,6 +12,9 @@ type MaterialRow = {
   category?: "agenda" | "worksheet" | "quiz" | null;
   title: string | null;
   created_at: string;
+  storage_bucket?: string | null;
+  storage_path?: string | null;
+  text_content?: string | null;
   school_homework_items?: {
     task_text?: string | null;
     task_kind?: string | null;
@@ -37,8 +43,10 @@ function categoryFor(material: MaterialRow): typeof CATEGORIES[number]["id"] {
 }
 
 export default function ChildDocumentsSection({ childId }: { childId: string }) {
+  const router = useRouter();
   const [materials, setMaterials] = useState<MaterialRow[]>([]);
   const [loading, setLoading] = useState(false);
+  const [openingId, setOpeningId] = useState<string | null>(null);
 
   const fetchMaterials = useCallback(async () => {
     if (!childId) return;
@@ -46,7 +54,7 @@ export default function ChildDocumentsSection({ childId }: { childId: string }) 
     try {
       const { data, error } = await supabase
         .from("school_homework_materials")
-        .select("id, material_type, title, category, created_at, school_homework_items(task_text, task_kind), school_homework_days(homework_date, source_type)")
+        .select("id, material_type, title, category, created_at, storage_bucket, storage_path, text_content, school_homework_items(task_text, task_kind), school_homework_days(homework_date, source_type)")
         .eq("child_id", childId)
         .order("created_at", { ascending: false });
 
@@ -63,6 +71,49 @@ export default function ChildDocumentsSection({ childId }: { childId: string }) 
   useEffect(() => {
     void fetchMaterials();
   }, [fetchMaterials]);
+
+  const openImageForReassignment = useCallback(async (material: MaterialRow) => {
+    if (material.material_type !== "image" || openingId) return;
+
+    setOpeningId(material.id);
+    try {
+      const cacheDirectory = FileSystem.cacheDirectory;
+      if (!cacheDirectory) throw new Error("Cache directory is unavailable");
+
+      const signedUrl = await signedSchoolHomeworkImageUrl(material as any);
+      if (!signedUrl) throw new Error("Could not open this image");
+
+      const extension = material.storage_path?.split(".").pop()?.split("?")[0] || "jpg";
+      const localUri = `${cacheDirectory}document-reassign-${Date.now()}-${Math.random()
+        .toString(36)
+        .slice(2)}.${extension}`;
+
+      let imageUri = localUri;
+      if (signedUrl.startsWith("data:image/")) {
+        const base64 = signedUrl.split(",")[1] || "";
+        await FileSystem.writeAsStringAsync(localUri, base64, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+      } else {
+        const downloaded = await FileSystem.downloadAsync(signedUrl, localUri);
+        imageUri = downloaded.uri;
+      }
+
+      router.push({
+        pathname: "/(app)/scan",
+        params: {
+          childId,
+          imageUri,
+          source: "documents",
+        },
+      });
+    } catch (err) {
+      console.error("[documents] reassign image error:", err);
+      Alert.alert("Error", "Could not open this image for reassignment.");
+    } finally {
+      setOpeningId(null);
+    }
+  }, [childId, openingId, router]);
 
   return (
     <View style={styles.container}>
@@ -84,7 +135,13 @@ export default function ChildDocumentsSection({ childId }: { childId: string }) 
               <Text style={styles.empty}>Nothing saved here yet.</Text>
             ) : (
               grouped.slice(0, 8).map((material) => (
-                <TouchableOpacity key={material.id} style={styles.row} activeOpacity={0.7}>
+                <TouchableOpacity
+                  key={material.id}
+                  style={styles.row}
+                  activeOpacity={0.7}
+                  onPress={material.material_type === "image" ? () => openImageForReassignment(material) : undefined}
+                  disabled={material.material_type !== "image" || openingId === material.id}
+                >
                   <MaterialCommunityIcons
                     name={material.material_type === "image" ? "image-outline" : material.material_type === "document" ? "file-outline" : "text-box-outline"}
                     size={18}
@@ -98,6 +155,11 @@ export default function ChildDocumentsSection({ childId }: { childId: string }) 
                       {material.school_homework_days?.homework_date || "No date"} · {material.material_type}
                     </Text>
                   </View>
+                  {openingId === material.id ? (
+                    <ActivityIndicator size="small" color="#1565c0" />
+                  ) : material.material_type === "image" ? (
+                    <MaterialCommunityIcons name="arrow-right" size={18} color="#94a3b8" />
+                  ) : null}
                 </TouchableOpacity>
               ))
             )}

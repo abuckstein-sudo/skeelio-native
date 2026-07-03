@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -128,6 +128,7 @@ export default function ScanScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
   const routeChildId = (params.childId as string) || null;
+  const routeImageUri = (params.imageUri as string) || null;
 
   const [userId, setUserId] = useState<string | null>(null);
   const [childId, setChildId] = useState<string | null>(routeChildId);
@@ -158,6 +159,7 @@ export default function ScanScreen() {
 
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [confirmationData, setConfirmationData] = useState<{ conceptLabel: string; childName: string; kind?: "worksheet" | "spelling" } | null>(null);
+  const processedRouteImageUri = useRef<string | null>(null);
 
   // Initialize auth and fetch children if needed
   useEffect(() => {
@@ -184,6 +186,12 @@ export default function ScanScreen() {
 
     init();
   }, [routeChildId]);
+
+  useEffect(() => {
+    if (!routeImageUri || !childId || showChildPicker || processedRouteImageUri.current === routeImageUri) return;
+    processedRouteImageUri.current = routeImageUri;
+    void processImage(routeImageUri);
+  }, [childId, routeImageUri, showChildPicker]);
 
   const fetchChildren = async (uid: string) => {
     try {
