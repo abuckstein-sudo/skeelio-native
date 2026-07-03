@@ -1,4 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+// @ts-ignore: Supabase Edge runtime requires .ts extension for relative imports.
+import { callOpenAIChat, resetOpenAIChatBudget } from "../_shared/openai.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
@@ -802,6 +804,7 @@ function parseJsonResponse(raw: string): Record<string, unknown>[] | null {
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  resetOpenAIChatBudget();
 
   try {
     if (!OPENAI_API_KEY) return json({ error: "OPENAI_API_KEY not configured" }, 500);
@@ -878,7 +881,7 @@ async function generateMathPractice(
   }
 
   // Initial generation
-  const genRes = await fetch("https://api.openai.com/v1/chat/completions", {
+  const genRes = await callOpenAIChat(OPENAI_API_KEY, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
     body: JSON.stringify({
@@ -959,7 +962,7 @@ async function generateMathPractice(
   let missingSubSkills = getMissingSubSkills(allSubSkills, verifiedMathItems);
 
   for (const missingSkill of missingSubSkills) {
-    const topupRes = await fetch("https://api.openai.com/v1/chat/completions", {
+    const topupRes = await callOpenAIChat(OPENAI_API_KEY, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
       body: JSON.stringify({
@@ -1080,7 +1083,7 @@ async function generateLanguagePractice(
   let totalGenerated = 0;
 
   // Initial generation
-  const genRes = await fetch("https://api.openai.com/v1/chat/completions", {
+  const genRes = await callOpenAIChat(OPENAI_API_KEY, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
     body: JSON.stringify({
@@ -1116,7 +1119,7 @@ async function generateLanguagePractice(
   // Verify via blind re-solve
   const questions = candidateItems.map((c) => c.question as string);
 
-  const verifyRes = await fetch("https://api.openai.com/v1/chat/completions", {
+  const verifyRes = await callOpenAIChat(OPENAI_API_KEY, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
     body: JSON.stringify({
@@ -1173,7 +1176,7 @@ async function generateLanguagePractice(
   let missingSubSkills = getMissingSubSkills(allSubSkills, verifiedItems);
 
   for (const missingSkill of missingSubSkills) {
-    const topupRes = await fetch("https://api.openai.com/v1/chat/completions", {
+    const topupRes = await callOpenAIChat(OPENAI_API_KEY, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
       body: JSON.stringify({
@@ -1190,7 +1193,7 @@ async function generateLanguagePractice(
 
       const topupQuestions = topupCandidates.map((c) => c.question as string);
 
-      const topupVerifyRes = await fetch("https://api.openai.com/v1/chat/completions", {
+      const topupVerifyRes = await callOpenAIChat(OPENAI_API_KEY, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
         body: JSON.stringify({

@@ -1,4 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+// @ts-ignore: Supabase Edge runtime requires .ts extension for relative imports.
+import { callOpenAIChat, resetOpenAIChatBudget } from "../_shared/openai.ts";
 
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
 const corsHeaders = {
@@ -15,6 +17,7 @@ function json(body: unknown, status: number) {
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  resetOpenAIChatBudget();
 
   try {
     if (!OPENAI_API_KEY) return json({ error: "OPENAI_API_KEY not configured" }, 500);
@@ -111,7 +114,7 @@ Create a teaching introduction and walkthrough:
 Return STRICT JSON only with keys: intro, example_walkthrough (array of strings), encouragement.
 All text in ${language}.`;
 
-    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    const res = await callOpenAIChat(OPENAI_API_KEY, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

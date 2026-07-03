@@ -1,4 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+// @ts-ignore: Supabase Edge runtime requires .ts extension for relative imports.
+import { callOpenAIChat, resetOpenAIChatBudget } from "../_shared/openai.ts";
 
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
 
@@ -159,6 +161,7 @@ Return ONLY this JSON (no explanation):
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  resetOpenAIChatBudget();
 
   try {
     if (!OPENAI_API_KEY) return json({ error: "OPENAI_API_KEY not configured" }, 500);
@@ -187,7 +190,7 @@ Deno.serve(async (req) => {
     if (!image) return json({ error: "image (data URL) is required" }, 400);
 
     // Initial call to generate concept + adaptive practice items
-    const openaiRes = await fetch("https://api.openai.com/v1/chat/completions", {
+    const openaiRes = await callOpenAIChat(OPENAI_API_KEY, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
       body: JSON.stringify({
@@ -346,7 +349,7 @@ async function generateWorksheetPractice(worksheet: Record<string, unknown>, ima
     const subSkillsStr = allSubSkills.join(", ");
     const language = worksheet.language as string;
 
-    const retryRes = await fetch("https://api.openai.com/v1/chat/completions", {
+    const retryRes = await callOpenAIChat(OPENAI_API_KEY, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
       body: JSON.stringify({
@@ -436,7 +439,7 @@ async function generateWorksheetPractice(worksheet: Record<string, unknown>, ima
   for (const missingSkill of missingSubSkills) {
     console.log("[absorb-worksheet] generating math top-up for missing sub-skill:", missingSkill);
 
-    const topupRes = await fetch("https://api.openai.com/v1/chat/completions", {
+    const topupRes = await callOpenAIChat(OPENAI_API_KEY, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
       body: JSON.stringify({
@@ -530,7 +533,7 @@ async function generateWorksheetPractice(worksheet: Record<string, unknown>, ima
     if (verifiedMathItems.length >= targetPracticeCount) break;
     console.log("[absorb-worksheet] generating math backfill for target count:", skill, "verified:", verifiedMathItems.length, "target:", targetPracticeCount);
 
-    const topupRes = await fetch("https://api.openai.com/v1/chat/completions", {
+    const topupRes = await callOpenAIChat(OPENAI_API_KEY, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
       body: JSON.stringify({
@@ -769,7 +772,7 @@ Rules:
 - The page language appears to be ${language || "unknown"}.`;
 
   try {
-    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    const res = await callOpenAIChat(OPENAI_API_KEY, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
       body: JSON.stringify({
@@ -1121,7 +1124,7 @@ async function handleLanguagePractice(worksheet: Record<string, unknown>, langua
   const targetPracticeCount = getTargetPracticeCount(allSubSkills);
 
   // Generate adaptive candidate language items
-  const genRes = await fetch("https://api.openai.com/v1/chat/completions", {
+  const genRes = await callOpenAIChat(OPENAI_API_KEY, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${Deno.env.get("OPENAI_API_KEY")}` },
     body: JSON.stringify({
@@ -1177,7 +1180,7 @@ async function handleLanguagePractice(worksheet: Record<string, unknown>, langua
   const questions = candidateItems.map((item) => item.question as string);
 
   // Verify by re-solving: ask model to answer the questions
-  const verifyRes = await fetch("https://api.openai.com/v1/chat/completions", {
+  const verifyRes = await callOpenAIChat(OPENAI_API_KEY, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${Deno.env.get("OPENAI_API_KEY")}` },
     body: JSON.stringify({
@@ -1259,7 +1262,7 @@ async function handleLanguagePractice(worksheet: Record<string, unknown>, langua
   for (const missingSkill of missingSubSkills) {
     console.log("[absorb-worksheet] generating top-up for missing sub-skill:", missingSkill);
 
-    const topupRes = await fetch("https://api.openai.com/v1/chat/completions", {
+    const topupRes = await callOpenAIChat(OPENAI_API_KEY, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${Deno.env.get("OPENAI_API_KEY")}` },
       body: JSON.stringify({
@@ -1291,7 +1294,7 @@ async function handleLanguagePractice(worksheet: Record<string, unknown>, langua
     }
 
     // Verify top-up items
-    const topupVerifyRes = await fetch("https://api.openai.com/v1/chat/completions", {
+    const topupVerifyRes = await callOpenAIChat(OPENAI_API_KEY, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${Deno.env.get("OPENAI_API_KEY")}` },
       body: JSON.stringify({
@@ -1359,7 +1362,7 @@ async function handleLanguagePractice(worksheet: Record<string, unknown>, langua
     if (verifiedItems.length >= targetPracticeCount) break;
     console.log("[absorb-worksheet] generating language backfill for target count:", skill, "verified:", verifiedItems.length, "target:", targetPracticeCount);
 
-    const topupRes = await fetch("https://api.openai.com/v1/chat/completions", {
+    const topupRes = await callOpenAIChat(OPENAI_API_KEY, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
       body: JSON.stringify({
@@ -1390,7 +1393,7 @@ async function handleLanguagePractice(worksheet: Record<string, unknown>, langua
       continue;
     }
 
-    const topupVerifyRes = await fetch("https://api.openai.com/v1/chat/completions", {
+    const topupVerifyRes = await callOpenAIChat(OPENAI_API_KEY, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
       body: JSON.stringify({

@@ -1,4 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+// @ts-ignore: Supabase Edge runtime requires .ts extension for relative imports.
+import { callOpenAIChat, resetOpenAIChatBudget } from "../_shared/openai.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
@@ -16,6 +18,7 @@ interface ParentInsightResponse {
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  resetOpenAIChatBudget();
 
   try {
     const input = await req.json();
@@ -158,7 +161,7 @@ Return ONLY valid JSON (no markdown fences):
   "tips": ["<2–3 short, fun, low-prep activities a parent can do at home to reinforce this focus>"]
 }`;
 
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    const response = await callOpenAIChat(OPENAI_API_KEY, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
