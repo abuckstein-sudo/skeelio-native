@@ -1,7 +1,7 @@
 -- Skeelio schema baseline snapshot.
 --
 -- This migration is intentionally idempotent: CREATE TABLE IF NOT EXISTS,
--- ADD COLUMN IF NOT EXISTS, conditional policy replacement, and no data writes.
+-- ADD COLUMN IF NOT EXISTS, guarded policy creation, and no data writes.
 -- It is safe to run against the current live database as a no-op/reconciliation
 -- baseline after review.
 --
@@ -84,6 +84,28 @@ $$;
 revoke execute on function public.handle_new_parent_profile() from public, anon, authenticated;
 revoke execute on function public.ensure_current_parent_profile(text) from public, anon;
 grant execute on function public.ensure_current_parent_profile(text) to authenticated;
+
+create or replace function pg_temp.skeelio_create_policy_if_missing(
+  target_schema text,
+  target_table text,
+  target_policy text,
+  policy_sql text
+)
+returns void
+language plpgsql
+as $$
+begin
+  if not exists (
+    select 1
+    from pg_policies
+    where schemaname = target_schema
+      and tablename = target_table
+      and policyname = target_policy
+  ) then
+    execute policy_sql;
+  end if;
+end;
+$$;
 
 -- ---------------------------------------------------------------------------
 -- Legacy core app tables. These predate tracked migrations, so the definitions
@@ -367,8 +389,11 @@ alter table public.shop_items enable row level security;
 alter table public.reward_redemptions enable row level security;
 alter table public.parent_objectives enable row level security;
 
-drop policy if exists "parents can manage own shop items" on public.shop_items;
-create policy "parents can manage own shop items"
+select pg_temp.skeelio_create_policy_if_missing(
+  'public',
+  'shop_items',
+  'parents can manage own shop items',
+  $policy$create policy "parents can manage own shop items"
   on public.shop_items
   for all
   using (parent_id = auth.uid())
@@ -381,10 +406,14 @@ create policy "parents can manage own shop items"
         where c.id = child_id and c.parent_id = auth.uid()
       )
     )
-  );
+  )$policy$
+);
 
-drop policy if exists "parents can manage own reward redemptions" on public.reward_redemptions;
-create policy "parents can manage own reward redemptions"
+select pg_temp.skeelio_create_policy_if_missing(
+  'public',
+  'reward_redemptions',
+  'parents can manage own reward redemptions',
+  $policy$create policy "parents can manage own reward redemptions"
   on public.reward_redemptions
   for all
   using (parent_id = auth.uid())
@@ -394,10 +423,14 @@ create policy "parents can manage own reward redemptions"
       select 1 from public.children c
       where c.id = child_id and c.parent_id = auth.uid()
     )
-  );
+  )$policy$
+);
 
-drop policy if exists "parents can manage own objectives" on public.parent_objectives;
-create policy "parents can manage own objectives"
+select pg_temp.skeelio_create_policy_if_missing(
+  'public',
+  'parent_objectives',
+  'parents can manage own objectives',
+  $policy$create policy "parents can manage own objectives"
   on public.parent_objectives
   for all
   using (parent_id = auth.uid())
@@ -407,7 +440,8 @@ create policy "parents can manage own objectives"
       select 1 from public.children c
       where c.id = child_id and c.parent_id = auth.uid()
     )
-  );
+  )$policy$
+);
 
 -- ---------------------------------------------------------------------------
 -- School homework
@@ -505,8 +539,11 @@ alter table public.school_homework_items enable row level security;
 alter table public.school_homework_materials enable row level security;
 alter table public.child_homework_limits enable row level security;
 
-drop policy if exists "parents can manage own school homework days" on public.school_homework_days;
-create policy "parents can manage own school homework days"
+select pg_temp.skeelio_create_policy_if_missing(
+  'public',
+  'school_homework_days',
+  'parents can manage own school homework days',
+  $policy$create policy "parents can manage own school homework days"
   on public.school_homework_days
   for all
   using (parent_id = auth.uid())
@@ -516,10 +553,14 @@ create policy "parents can manage own school homework days"
       select 1 from public.children c
       where c.id = child_id and c.parent_id = auth.uid()
     )
-  );
+  )$policy$
+);
 
-drop policy if exists "parents can manage own school homework items" on public.school_homework_items;
-create policy "parents can manage own school homework items"
+select pg_temp.skeelio_create_policy_if_missing(
+  'public',
+  'school_homework_items',
+  'parents can manage own school homework items',
+  $policy$create policy "parents can manage own school homework items"
   on public.school_homework_items
   for all
   using (parent_id = auth.uid())
@@ -529,10 +570,14 @@ create policy "parents can manage own school homework items"
       select 1 from public.children c
       where c.id = child_id and c.parent_id = auth.uid()
     )
-  );
+  )$policy$
+);
 
-drop policy if exists "parents can manage own school homework materials" on public.school_homework_materials;
-create policy "parents can manage own school homework materials"
+select pg_temp.skeelio_create_policy_if_missing(
+  'public',
+  'school_homework_materials',
+  'parents can manage own school homework materials',
+  $policy$create policy "parents can manage own school homework materials"
   on public.school_homework_materials
   for all
   using (parent_id = auth.uid())
@@ -542,10 +587,14 @@ create policy "parents can manage own school homework materials"
       select 1 from public.children c
       where c.id = child_id and c.parent_id = auth.uid()
     )
-  );
+  )$policy$
+);
 
-drop policy if exists "parents can manage own child homework limits" on public.child_homework_limits;
-create policy "parents can manage own child homework limits"
+select pg_temp.skeelio_create_policy_if_missing(
+  'public',
+  'child_homework_limits',
+  'parents can manage own child homework limits',
+  $policy$create policy "parents can manage own child homework limits"
   on public.child_homework_limits
   for all
   using (parent_id = auth.uid())
@@ -555,7 +604,8 @@ create policy "parents can manage own child homework limits"
       select 1 from public.children c
       where c.id = child_id and c.parent_id = auth.uid()
     )
-  );
+  )$policy$
+);
 
 -- ---------------------------------------------------------------------------
 -- Learning/tutor additive columns and security policies for legacy live tables.
@@ -579,18 +629,25 @@ begin
 
   if to_regclass('public.reading_texts') is not null then
     execute 'alter table public.reading_texts enable row level security';
-    execute 'drop policy if exists "shared reading texts are readable" on public.reading_texts';
-    execute $sql$create policy "shared reading texts are readable"
+    perform pg_temp.skeelio_create_policy_if_missing(
+      'public',
+      'reading_texts',
+      'shared reading texts are readable',
+      $policy$create policy "shared reading texts are readable"
       on public.reading_texts
       for select
       to anon, authenticated
-      using (true)$sql$;
+      using (true)$policy$
+    );
   end if;
 
   if to_regclass('public.reading_questions') is not null then
     execute 'alter table public.reading_questions enable row level security';
-    execute 'drop policy if exists "shared reading questions are readable" on public.reading_questions';
-    execute $sql$create policy "shared reading questions are readable"
+    perform pg_temp.skeelio_create_policy_if_missing(
+      'public',
+      'reading_questions',
+      'shared reading questions are readable',
+      $policy$create policy "shared reading questions are readable"
       on public.reading_questions
       for select
       to anon, authenticated
@@ -600,15 +657,16 @@ begin
           from public.reading_texts rt
           where rt.id = reading_questions.text_id
         )
-      )$sql$;
+      )$policy$
+    );
   end if;
 
   if to_regclass('public.learning_session_summaries') is not null then
-    execute 'drop policy if exists "Allow authenticated users to insert learning summaries" on public.learning_session_summaries';
-    execute 'drop policy if exists "Allow authenticated users to read learning summaries" on public.learning_session_summaries';
-    execute 'drop policy if exists "Allow authenticated users to update learning summaries" on public.learning_session_summaries';
-
-    execute $sql$create policy "parents can read own learning summaries"
+    perform pg_temp.skeelio_create_policy_if_missing(
+      'public',
+      'learning_session_summaries',
+      'parents can read own learning summaries',
+      $policy$create policy "parents can read own learning summaries"
       on public.learning_session_summaries
       for select
       to authenticated
@@ -620,9 +678,14 @@ begin
           where c.id = learning_session_summaries.student_id
             and c.parent_id = auth.uid()
         )
-      )$sql$;
+      )$policy$
+    );
 
-    execute $sql$create policy "parents can insert own learning summaries"
+    perform pg_temp.skeelio_create_policy_if_missing(
+      'public',
+      'learning_session_summaries',
+      'parents can insert own learning summaries',
+      $policy$create policy "parents can insert own learning summaries"
       on public.learning_session_summaries
       for insert
       to authenticated
@@ -634,9 +697,14 @@ begin
           where c.id = learning_session_summaries.student_id
             and c.parent_id = auth.uid()
         )
-      )$sql$;
+      )$policy$
+    );
 
-    execute $sql$create policy "parents can update own learning summaries"
+    perform pg_temp.skeelio_create_policy_if_missing(
+      'public',
+      'learning_session_summaries',
+      'parents can update own learning summaries',
+      $policy$create policy "parents can update own learning summaries"
       on public.learning_session_summaries
       for update
       to authenticated
@@ -657,7 +725,8 @@ begin
           where c.id = learning_session_summaries.student_id
             and c.parent_id = auth.uid()
         )
-      )$sql$;
+      )$policy$
+    );
   end if;
 
   if to_regprocedure('public.update_skill_mastery()') is not null then
@@ -672,9 +741,7 @@ begin
     execute 'alter view public.latest_spelling_summary set (security_invoker = true)';
   end if;
 
-  if to_regclass('storage.objects') is not null then
-    execute 'drop policy if exists "TEMP allow anyone read spelling uploads" on storage.objects';
-  end if;
+  -- Baseline snapshots do not drop or replace existing storage policies.
 end $$;
 
 -- ---------------------------------------------------------------------------
