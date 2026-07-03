@@ -177,10 +177,6 @@ export default function ChildSettingsForm({
   const [appLanguage, setAppLanguage] = useState<AppLanguage>("en");
   const [schoolSystem, setSchoolSystem] = useState("");
   const [gradeLevel, setGradeLevel] = useState("");
-  const [additionLevel, setAdditionLevel] = useState("not_started");
-  const [subtractionLevel, setSubtractionLevel] = useState("not_started");
-  const [multiplicationLevel, setMultiplicationLevel] = useState("not_started");
-  const [divisionLevel, setDivisionLevel] = useState("not_started");
   const [focusSubjects, setFocusSubjects] = useState<string[]>([]);
   const [selectedAvatar, setSelectedAvatar] = useState<string | null>(null);
   const [openDropdown, setOpenDropdown] = useState<"school" | "grade" | null>(null);
@@ -246,10 +242,6 @@ export default function ChildSettingsForm({
     setLanguages(Array.isArray(data.languages) ? data.languages : ["English"]);
     setSchoolSystem(data.school_system ?? "");
     setGradeLevel(data.grade_level ?? "");
-    setAdditionLevel(data.max_addition_number ? String(data.max_addition_number) : "not_started");
-    setSubtractionLevel(data.math_subtraction_level ?? "not_started");
-    setMultiplicationLevel(data.max_times_table ? String(data.max_times_table) : "not_started");
-    setDivisionLevel(data.math_division_level ?? "not_started");
     setFocusSubjects(Array.isArray(data.focus_subjects) ? data.focus_subjects : []);
     setSelectedAvatar(data.selected_avatar ?? null);
 
@@ -274,10 +266,6 @@ export default function ChildSettingsForm({
     const birthDayInt = birthDay ? parseInt(birthDay, 10) : null;
     const age = birthYearInt ? new Date().getFullYear() - birthYearInt : null;
 
-    const parsedAdditionValue = additionLevel === "1000_plus" ? 1000 : parseInt(additionLevel, 10);
-    const additionValue = Number.isFinite(parsedAdditionValue) ? parsedAdditionValue : 10;
-    const parsedMultiplicationValue = parseInt(multiplicationLevel, 10);
-    const multiplicationValue = Number.isFinite(parsedMultiplicationValue) ? parsedMultiplicationValue : 0;
     const savedPin = isAddMode ? String(Math.floor(1000 + Math.random() * 9000)) : pin;
 
     const updateData: any = {
@@ -288,10 +276,6 @@ export default function ChildSettingsForm({
       school_system: schoolSystem,
       grade_level: gradeLevel,
       school_grade_level: null,
-      max_addition_number: additionValue,
-      math_subtraction_level: subtractionLevel || "not_started",
-      max_times_table: multiplicationValue,
-      math_division_level: divisionLevel || "not_started",
       focus_subjects: focusSubjects,
       child_goal: null,
       selected_avatar: isAddMode ? null : selectedAvatar,

@@ -1,4 +1,4 @@
-import { LADDERS, Operation, startingTier, tierIndex } from "../tutorConfig";
+import { Operation, tierIndex } from "../tutorConfig";
 
 export type SubjectId =
   | Operation
@@ -46,59 +46,31 @@ export const SUBJECT_UNLOCK_GRAPH: Record<SubjectId, SubjectUnlockNode> = {
   reading: { id: "reading" },
 };
 
-function hasExplicitNonDefaultStart(operation: Operation, child: any): boolean {
-  const defaultTier = startingTier(operation, {});
-  const childTier = startingTier(operation, child || {});
-  if (childTier === defaultTier) return false;
-
-  if (operation === "addition") {
-    return child?.max_addition_number != null;
-  }
-  if (operation === "subtraction") {
-    return Boolean(child?.math_subtraction_level && child.math_subtraction_level !== "not_started");
-  }
-  if (operation === "multiplication") {
-    return child?.max_times_table != null;
-  }
-  return Boolean(child?.math_division_level && child.math_division_level !== "not_started");
-}
-
-function explicitStartMeets(operation: Operation, throughTierId: string, child: any): boolean {
-  if (!hasExplicitNonDefaultStart(operation, child)) return false;
-  return tierIndex(operation, startingTier(operation, child || {})) >= tierIndex(operation, throughTierId);
-}
-
 function prerequisiteMet(
   prerequisite: SubjectPrerequisite,
-  highestSolidTierByOperation: Record<Operation, string | null>,
-  child: any
+  highestSolidTierByOperation: Record<Operation, string | null>
 ): boolean {
   const requiredIndex = tierIndex(prerequisite.operation, prerequisite.throughTierId);
   if (requiredIndex < 0) return false;
 
   const highestSolidTierId = highestSolidTierByOperation[prerequisite.operation];
   const highestSolidIndex = tierIndex(prerequisite.operation, highestSolidTierId);
-  return highestSolidIndex >= requiredIndex || explicitStartMeets(prerequisite.operation, prerequisite.throughTierId, child);
+  return highestSolidIndex >= requiredIndex;
 }
 
 export function computeUnlockState(
   highestSolidTierByOperation: Record<Operation, string | null>,
-  child: any
+  _child: any
 ): Record<SubjectId, SubjectUnlockState> {
   const state = {} as Record<SubjectId, SubjectUnlockState>;
 
   for (const node of Object.values(SUBJECT_UNLOCK_GRAPH)) {
-    if (LADDERS[node.id as Operation] && hasExplicitNonDefaultStart(node.id as Operation, child)) {
-      state[node.id] = { unlocked: true };
-      continue;
-    }
-
     if (!node.prerequisite) {
       state[node.id] = { unlocked: true };
       continue;
     }
 
-    state[node.id] = prerequisiteMet(node.prerequisite, highestSolidTierByOperation, child)
+    state[node.id] = prerequisiteMet(node.prerequisite, highestSolidTierByOperation)
       ? { unlocked: true }
       : {
           unlocked: false,

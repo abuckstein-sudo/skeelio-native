@@ -434,10 +434,10 @@ const unlock4 = computeUnlockState({ ...noSolid, multiplication: "M2" }, {});
 assert(unlock4.division.unlocked, "Division should unlock after M2");
 console.log("  ✅ M2 unlocks division");
 
-console.log("\nTest 16: parent-set division level unlocks division immediately");
+console.log("\nTest 16: parent-set division level no longer bypasses prerequisites");
 const unlock5 = computeUnlockState(noSolid, { math_division_level: "long" });
-assert(unlock5.division.unlocked, "Division should unlock when parent sets a non-beginner division level");
-console.log("  ✅ parent-set division placement unlocks division");
+assert(!unlock5.division.unlocked, "Division should still require multiplication mastery");
+console.log("  ✅ parent-set division placement does not bypass prerequisites");
 
 console.log("\n====== ALL TESTS COMPLETE ======\n");
 
