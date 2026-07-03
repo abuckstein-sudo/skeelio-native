@@ -172,13 +172,22 @@ function generateDivFacts(params: Extract<GenParams, { kind: "divFacts" }>): { a
 function generateDivMulti(params: Extract<GenParams, { kind: "divMulti" }>): { a: number; b: number; answer: number; remainder: number } {
   const { dividendMin, dividendMax, divisorMin, divisorMax, remainder } = params;
   const divisor = rand(divisorMin, divisorMax);
-  const quotient = Math.floor(rand(Math.ceil(dividendMin / divisor), Math.floor(dividendMax / divisor)));
+  const minQuotient = Math.ceil(dividendMin / divisor);
+  const maxQuotient =
+    remainder === "required"
+      ? Math.floor((dividendMax - 1) / divisor)
+      : Math.floor(dividendMax / divisor);
+  if (maxQuotient < minQuotient) {
+    throw new Error("Unable to generate division question for tier constraints");
+  }
+  const quotient = rand(minQuotient, maxQuotient);
+  const maxRemainder = Math.min(divisor - 1, dividendMax - divisor * quotient);
   let rem = 0;
 
   if (remainder === "required") {
-    rem = rand(1, divisor - 1);
-  } else if (remainder === "either") {
-    rem = Math.random() < 0.5 ? rand(1, divisor - 1) : 0;
+    rem = rand(1, maxRemainder);
+  } else if (remainder === "either" && maxRemainder > 0) {
+    rem = Math.random() < 0.5 ? rand(1, maxRemainder) : 0;
   }
 
   const dividend = divisor * quotient + rem;

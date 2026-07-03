@@ -382,6 +382,20 @@ try {
 }
 console.log("  ✅ S7 fallback path returns a valid borrowing/across-zero question");
 
+console.log("\nTest 11b: D6/D7 generated dividends stay inside their tier band");
+for (const tierId of ["D6", "D7"]) {
+  const tier = LADDERS.division.find((candidate) => candidate.id === tierId);
+  assert(tier?.gen.kind === "divMulti", `${tierId}: should be a divMulti tier`);
+  if (!tier || tier.gen.kind !== "divMulti") continue;
+
+  for (let i = 0; i < 1000; i++) {
+    const question = generateQuestion("division", tierId);
+    assertInRange(question.a, tier.gen.dividendMin, tier.gen.dividendMax, `${tierId}(${i}): dividend`);
+    assert(question.a === question.b * question.answer + (question.remainder || 0), `${tierId}(${i}): division identity`);
+  }
+}
+console.log("  ✅ D6/D7 dividends stay within configured max");
+
 console.log("\n====== SUBJECT UNLOCK GRAPH TESTS ======\n");
 
 const noSolid = {
