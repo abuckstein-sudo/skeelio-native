@@ -169,8 +169,10 @@ export function startingTier(op: Operation, child: any): string {
 }
 
 // --- Grade-expected tier benchmark ------------------------------------------
-// Sourced French year-end math targets. CE1/CE2 are directly sourced; CP and
-// CM1 are pending verification against their specific Eduscol grade documents.
+// Values map Eduscol end-of-year attendus to the nearest ladder tier. CM1's
+// new content (decimals, posed multi-digit multiplication, euclidean division)
+// sits at/above the top of the fact ladders, so A7/S7/M5/D4 represent the
+// whole-number/fact ceiling.
 export type GradeExpectedTierRow = Record<Operation, string | null>;
 export type GradeExpectedTierStandard = {
   locale: "fr-FR";
@@ -179,7 +181,7 @@ export type GradeExpectedTierStandard = {
 };
 
 export const GRADE_EXPECTED_TIER: Record<string, GradeExpectedTierRow> = {
-  CP:  { addition: "A2", subtraction: "S1", multiplication: null, division: null },
+  CP:  { addition: "A4", subtraction: "S2", multiplication: null, division: null },
   CE1: { addition: "A6", subtraction: "S6", multiplication: "M2", division: null },
   CE2: { addition: "A6", subtraction: "S6", multiplication: "M4", division: "D1" },
   CM1: { addition: "A7", subtraction: "S7", multiplication: "M5", division: "D4" },
