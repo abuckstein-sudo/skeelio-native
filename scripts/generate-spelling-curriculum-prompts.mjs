@@ -42,6 +42,7 @@ let query = supabase
   .from("spelling_curriculum_words")
   .select("id, word, tier_id, strand, frequency, sentence", { count: "exact" })
   .eq("language", "fr-FR")
+  .eq("excluded", false)
   .in("tier_id", tiers)
   .is("sentence", null)
   .order("tier_id", { ascending: true })
