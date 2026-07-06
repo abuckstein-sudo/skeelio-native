@@ -8,6 +8,9 @@ import { supabase } from "@/lib/supabase";
 import { getOperationStatus, OperationStatus } from "@/lib/tutor/status";
 import { LADDERS, Operation } from "@/lib/tutorConfig";
 import { Attempt, factTierCoverageGapAfterOtherGates } from "@/lib/tutor/ability";
+import { CONJUGATION_LADDER, ConjugationTierId } from "@/lib/conjugationConfig";
+import { ConjugationAttempt, currentConjugationTierAndBand } from "@/lib/tutor/conjugationAbility";
+import { fetchConjugationAttemptsForChild } from "@/lib/tutor/conjugationAttempts";
 import { computeUnlockState, SubjectId, SubjectUnlockState } from "@/lib/tutor/unlockGraph";
 import { listAssignmentsForChild, Assignment } from "@/lib/assignments";
 import {
@@ -112,6 +115,12 @@ const UNLOCK_STORAGE_PREFIX = "skeelio:unlockedSeen:";
 interface NextUpTile {
   subject: SubjectTile;
   unlockState: SubjectUnlockState;
+}
+
+interface ConjugationProgressState {
+  attempts: ConjugationAttempt[];
+  tierId: ConjugationTierId;
+  band: "solid" | "developing" | "struggling" | "needs-teach";
 }
 
 const TIER_LABEL_COPY: Record<ChildHomeLanguage, Partial<Record<string, string>>> = {
@@ -334,6 +343,9 @@ const coverageProgressForMathTile = (
   return factTierCoverageGapAfterOtherGates(tierId, attemptsByOperation[operation] || []);
 };
 
+const conjugationTierLabel = (tierId: ConjugationTierId) =>
+  CONJUGATION_LADDER.find((tier) => tier.id === tierId)?.label || tierId;
+
 export default function ChildHomeScreen() {
   const router = useRouter();
   const { childId } = useLocalSearchParams<{ childId: string }>();
@@ -345,6 +357,7 @@ export default function ChildHomeScreen() {
     {} as Record<Operation, OperationStatus>
   );
   const [attemptsByOperation, setAttemptsByOperation] = useState<Record<Operation, Attempt[]>>(emptyMathAttempts);
+  const [conjugationProgress, setConjugationProgress] = useState<ConjugationProgressState | null>(null);
   const [pendingAssignments, setPendingAssignments] = useState<Assignment[]>([]);
   const [schoolHomeworkWeekDays, setSchoolHomeworkWeekDays] = useState<(SchoolHomeworkDay | null)[]>([]);
   const [expandedHomeworkDate, setExpandedHomeworkDate] = useState(todayDateKey());
@@ -555,13 +568,31 @@ export default function ChildHomeScreen() {
     await maybeCelebrateUnlocks(statuses, statusChild, shouldCelebrate);
   }, [child, childId, maybeCelebrateUnlocks]);
 
+  const refreshConjugationProgress = useCallback(async () => {
+    if (!childId) return;
+
+    try {
+      const attempts = await fetchConjugationAttemptsForChild(childId);
+      const { tierId, band } = currentConjugationTierAndBand(attempts);
+      setConjugationProgress({ attempts, tierId, band });
+    } catch (err) {
+      console.error("[child-home] failed to fetch conjugation progress:", err);
+      setConjugationProgress({
+        attempts: [],
+        tierId: CONJUGATION_LADDER[0].id,
+        band: "needs-teach",
+      });
+    }
+  }, [childId]);
+
   useEffect(() => {
     if (childId) {
       skipNextFocusFeedRefreshRef.current = true;
       fetchChild();
       refreshHomeworkFeed();
+      refreshConjugationProgress();
     }
-  }, [childId, refreshHomeworkFeed]);
+  }, [childId, refreshHomeworkFeed, refreshConjugationProgress]);
 
   // Re-fetch stars, assignments, and episodes when screen gains focus
   useFocusEffect(
@@ -573,7 +604,8 @@ export default function ChildHomeScreen() {
       }
       refreshHomeworkFeed();
       refreshMathProgress(child, true);
-    }, [child, fetchStars, refreshHomeworkFeed, refreshMathProgress])
+      refreshConjugationProgress();
+    }, [child, fetchStars, refreshHomeworkFeed, refreshMathProgress, refreshConjugationProgress])
   );
 
   const fetchChild = async () => {
@@ -608,8 +640,49 @@ export default function ChildHomeScreen() {
     setStars(rewardsData?.stars ?? 0);
 
     await refreshMathProgress(data as Child, false);
+    await refreshConjugationProgress();
 
     setIsLoading(false);
+  };
+
+  const handleConjugationTierTap = async (
+    tierId: ConjugationTierId,
+    tierLabel: string,
+    mode: "teach" | "practice"
+  ) => {
+    if (!childId || !child) return;
+
+    try {
+      const tier = CONJUGATION_LADDER.find((candidate) => candidate.id === tierId);
+      if (!tier) throw new Error(`Unknown conjugation tier ${tierId}`);
+
+      const { data: authData } = await supabase.auth.getUser();
+      const userId = authData.user?.id;
+      if (!userId) return;
+
+      const { fetchConjugationPool, createConjugationSession } = await import("@/lib/conjugation");
+      const pool = await fetchConjugationPool(childId, child.grade_level || "CE1", tier.tense, tier.verbGroups, "fr-FR");
+
+      if (pool.length === 0) {
+        alert("No conjugation questions available for this level");
+        return;
+      }
+
+      const session = await createConjugationSession(childId, userId, Math.min(10, pool.length));
+      router.push({
+        pathname: "/conjugation/[sessionId]",
+        params: {
+          sessionId: session.id,
+          childId,
+          tierId,
+          tierLabel,
+          mode,
+        },
+      });
+    } catch (err) {
+      console.error("[child-home] failed to create tiered conjugation session:", err);
+      alert("Failed to start conjugation session");
+    }
   };
 
   const handleSubjectTap = async (topic: string) => {
@@ -626,42 +699,13 @@ export default function ChildHomeScreen() {
           params: { childId },
         });
       } else if (topic === "conjugation") {
-        // Create a new conjugation session
-        try {
-          const { data: authData } = await supabase.auth.getUser();
-          const userId = authData.user?.id;
-          if (!userId) return;
-
-          // Fetch child grade level
-          const { data: childData, error: childErr } = await supabase
-            .from("children")
-            .select("grade_level")
-            .eq("id", childId)
-            .single();
-
-          if (childErr) throw childErr;
-          const gradeLevel = childData?.grade_level || "CE1";
-
-          // Fetch pool first to ensure questions are available
-          const { fetchConjugationPool, createConjugationSession } = await import("@/lib/conjugation");
-          const pool = await fetchConjugationPool(childId, gradeLevel);
-
-          if (pool.length === 0) {
-            alert("No conjugation questions available for this grade level");
-            return;
-          }
-
-          // Only create session if pool is non-empty
-          const session = await createConjugationSession(childId, userId, Math.min(10, pool.length));
-
-          router.push({
-            pathname: "/conjugation/[sessionId]",
-            params: { sessionId: session.id, childId },
-          });
-        } catch (err) {
-          console.error("[child-home] failed to create conjugation session:", err);
-          alert("Failed to start conjugation session");
-        }
+        const tierId = conjugationProgress?.tierId || CONJUGATION_LADDER[0].id;
+        const tierLabel = conjugationTierLabel(tierId);
+        const hasTierAttempts = (conjugationProgress?.attempts || []).some((attempt) => {
+          const tier = CONJUGATION_LADDER.find((candidate) => candidate.id === tierId);
+          return !!tier && attempt.tense === tier.tense && tier.verbGroups.includes(attempt.verb_group as any);
+        });
+        await handleConjugationTierTap(tierId, tierLabel, hasTierAttempts ? "practice" : "teach");
       } else {
         router.push({
           pathname: "/practice",
@@ -1155,6 +1199,19 @@ export default function ChildHomeScreen() {
         : "",
     };
   };
+  const conjugationTileMeta = () => {
+    const tierId = conjugationProgress?.tierId || CONJUGATION_LADDER[0].id;
+    const tier = CONJUGATION_LADDER.find((candidate) => candidate.id === tierId);
+    const hasTierAttempts = !!tier && (conjugationProgress?.attempts || []).some((attempt) =>
+      attempt.tense === tier.tense && tier.verbGroups.includes(attempt.verb_group as any)
+    );
+    return {
+      tierId,
+      tierLabel: conjugationTierLabel(tierId),
+      mode: hasTierAttempts ? "practice" as const : "teach" as const,
+      action: hasTierAttempts ? setupCopy.nextMathActionPractice : setupCopy.nextMathActionTeach,
+    };
+  };
   const introSlides = setupCopy.introSlides;
   const currentIntroSlide = introSlides[introSlideIndex];
   const introVisible = !!child && !child.pin_setup_required && !child.intro_seen;
@@ -1539,10 +1596,11 @@ export default function ChildHomeScreen() {
           {nextUpTiles.map(({ subject, unlockState: state }) => {
             const isMathSubject = MATH_OPERATIONS.includes(subject.topic as Operation);
             const mathMeta = isMathSubject ? mathTileMeta(subject.topic as Operation) : null;
+            const conjugationMeta = subject.topic === "conjugation" ? conjugationTileMeta() : null;
             const unlocked = state?.unlocked;
-            const title = mathMeta?.tierLabel || subjectLabel(subject.topic);
+            const title = mathMeta?.tierLabel || conjugationMeta?.tierLabel || subjectLabel(subject.topic);
             const subtitle = unlocked
-              ? mathMeta?.action || subjectDescription(subject.topic)
+              ? mathMeta?.action || conjugationMeta?.action || subjectDescription(subject.topic)
               : lockedText(state, subject.topic);
 
             return (
@@ -1554,6 +1612,10 @@ export default function ChildHomeScreen() {
                   if (!unlocked) return;
                   if (mathMeta && isMathSubject) {
                     handleNextMathTap(subject.topic as Operation, mathMeta.tierId, mathMeta.tierLabel, mathMeta.mode);
+                    return;
+                  }
+                  if (conjugationMeta) {
+                    handleConjugationTierTap(conjugationMeta.tierId, conjugationMeta.tierLabel, conjugationMeta.mode);
                     return;
                   }
                   handleSubjectTap(subject.topic);

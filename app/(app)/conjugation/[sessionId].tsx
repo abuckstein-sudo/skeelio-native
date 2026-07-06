@@ -29,6 +29,8 @@ import {
 import QuitButton from "@/components/QuitButton";
 import HandwritingAnswerPad from "@/components/HandwritingAnswerPad";
 import { appLanguageForChild, AppLanguage } from "@/lib/appLanguage";
+import { CONJUGATION_LADDER, ConjugationTier, ConjugationTierId } from "@/lib/conjugationConfig";
+import { fetchConjugationAttemptsForChild } from "@/lib/tutor/conjugationAttempts";
 
 interface Answer {
   questionId: string;
@@ -108,10 +110,12 @@ const COPY = {
 
 export default function ConjugationPracticeScreen() {
   const router = useRouter();
-  const { sessionId, childId, assignmentId } = useLocalSearchParams<{
+  const { sessionId, childId, assignmentId, tierId, mode } = useLocalSearchParams<{
     sessionId: string;
     childId: string;
     assignmentId?: string;
+    tierId?: string;
+    mode?: string;
   }>();
 
   // Navigation
@@ -162,11 +166,44 @@ export default function ConjugationPracticeScreen() {
 
   const currentQuestion = questions[currentIndex];
 
+  const pickTierQuestions = async (
+    pool: ConjugationQuestion[],
+    tier: ConjugationTier,
+    count: number
+  ): Promise<ConjugationQuestion[]> => {
+    try {
+      const attempts = await fetchConjugationAttemptsForChild(childId);
+      const coveredPronouns = new Set<string>();
+      const coveredVerbs = new Set<string>();
+
+      attempts.forEach((attempt) => {
+        const matchesTier = attempt.tense === tier.tense && tier.verbGroups.includes(attempt.verb_group as any);
+        if (!matchesTier || attempt.aided || !(attempt.wasCorrect ?? attempt.is_correct ?? attempt.correct)) return;
+        coveredPronouns.add(attempt.pronoun);
+        coveredVerbs.add(attempt.verb);
+      });
+
+      const scored = [...pool].sort((a, b) => {
+        const aScore = (coveredPronouns.has(a.pronoun) ? 0 : 2) + (coveredVerbs.has(a.verb) ? 0 : 1);
+        const bScore = (coveredPronouns.has(b.pronoun) ? 0 : 2) + (coveredVerbs.has(b.verb) ? 0 : 1);
+        return bScore - aScore;
+      });
+
+      return scored.slice(0, Math.min(count, scored.length));
+    } catch (err) {
+      console.error("[ConjugationPractice] coverage-aware tier pick failed:", err);
+      return pickRandomQuestions(pool, count);
+    }
+  };
+
   // Initialize: check if assignment or free play
   useEffect(() => {
     const init = async () => {
       try {
-        if (assignmentId) {
+        if (tierId) {
+          setAppLanguage("fr");
+          await startQuizFromTier(tierId as ConjugationTierId);
+        } else if (assignmentId) {
           // Load assignment filters and go straight to quiz
           const { data: assignmentData, error: assignErr } = await supabase
             .from("assignments")
@@ -333,6 +370,63 @@ export default function ConjugationPracticeScreen() {
       setScreen("quiz");
     } catch (err) {
       console.error("[startQuizFromAssignment] failed:", err);
+      setError(String(err));
+      setIsLoadingQuiz(false);
+    }
+  };
+
+  const startQuizFromTier = async (requestedTierId: ConjugationTierId) => {
+    setIsLoadingQuiz(true);
+
+    try {
+      const tier = CONJUGATION_LADDER.find((candidate) => candidate.id === requestedTierId);
+      if (!tier) throw new Error(`Unknown conjugation tier ${requestedTierId}`);
+
+      const { data: childData, error: childErr } = await supabase
+        .from("children")
+        .select("grade_level")
+        .eq("id", childId)
+        .single();
+
+      if (childErr) throw childErr;
+      const gradeLevel = childData?.grade_level || "CE1";
+
+      const pool = await fetchConjugationPool(childId, gradeLevel, tier.tense, tier.verbGroups, "fr-FR");
+      if (pool.length === 0) {
+        setIsLoadingQuiz(false);
+        setError("No questions available for this conjugation level");
+        return;
+      }
+
+      const picked = await pickTierQuestions(pool, tier, 10);
+      setQuestions(picked);
+
+      const { data: sessions, error: sessErr } = await supabase
+        .from("conjugation_practice_sessions")
+        .select("*")
+        .eq("id", sessionId)
+        .single();
+
+      if (sessErr) throw sessErr;
+      await supabase
+        .from("conjugation_practice_sessions")
+        .update({ total_items: picked.length })
+        .eq("id", sessionId);
+
+      setSession(sessions);
+
+      if (picked.length > 0) {
+        const shuffled = shuffleOptions(picked[0].options, picked[0].correct_answer);
+        setShuffledOptions(shuffled);
+      }
+
+      setSelectedLanguage("fr-FR");
+      setSelectedTense(tier.tense);
+      setSelectedGroup(tier.verbGroups[0] || "");
+      setIsLoadingQuiz(false);
+      setScreen("quiz");
+    } catch (err) {
+      console.error("[startQuizFromTier] failed:", err);
       setError(String(err));
       setIsLoadingQuiz(false);
     }
