@@ -45,7 +45,7 @@ Rules:
     });
 
     if (!openaiRes.ok) {
-      const errText = await openAIRes.text();
+      const errText = await openaiRes.text();
       console.error("[spelling-sentence] OpenAI error", openaiRes.status, errText);
       return json({ error: "OpenAI request failed", status: openaiRes.status }, 502);
     }
