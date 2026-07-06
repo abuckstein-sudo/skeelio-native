@@ -18,6 +18,7 @@ type SpellingCurriculumWordRow = {
   word: string | null;
   strand: SpellingStrand | null;
   tier_id: SpellingTierId | null;
+  excluded?: boolean | null;
 };
 
 function joinedItem(row: SpellingPracticeAttemptRow): SpellingListItemJoin | null {
@@ -35,6 +36,7 @@ export function mapSpellingAttemptRows(
 ): SpellingAttempt[] {
   const curriculumByWord = new Map<string, { tierId: SpellingTierId; strand: SpellingStrand }>();
   for (const row of curriculumRows) {
+    if (row.excluded) continue;
     if (!row.word || !row.tier_id || !row.strand) continue;
     curriculumByWord.set(normalizeSpellingWord(row.word), {
       tierId: row.tier_id,
@@ -81,8 +83,9 @@ export async function fetchSpellingAttemptsForChild(childId: string): Promise<Sp
       .order("created_at", { ascending: true }),
     supabase
       .from("spelling_curriculum_words")
-      .select("word, strand, tier_id")
-      .eq("language", "fr-FR"),
+      .select("word, strand, tier_id, excluded")
+      .eq("language", "fr-FR")
+      .eq("excluded", false),
   ]);
 
   if (attemptError) throw attemptError;

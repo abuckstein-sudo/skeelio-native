@@ -396,6 +396,13 @@ const mappedSpellingAttempts = mapSpellingAttemptRows(
       word: "maison",
       strand: "lexical",
       tier_id: "SP1",
+      excluded: false,
+    },
+    {
+      word: "pipe",
+      strand: "lexical",
+      tier_id: "SP1",
+      excluded: true,
     },
   ]
 );
@@ -405,7 +412,28 @@ assert(mappedSpellingAttempts[0].tierId === "SP1", `Mapper should resolve SP1, g
 assert(mappedSpellingAttempts[0].strand === "lexical", `Mapper should resolve lexical strand, got ${mappedSpellingAttempts[0]?.strand}`);
 assert(mappedSpellingAttempts[1].tierId === null, "Words missing from curriculum should have tierId=null");
 assert(tierableSpellingAttempts(mappedSpellingAttempts).length === 1, "Only curriculum-matched words should count for tiering");
-console.log("  ✅ spelling attempts resolve by normalized curriculum word");
+const excludedMapped = mapSpellingAttemptRows(
+  [
+    {
+      item_text: "pipe",
+      is_correct: true,
+      aided: null,
+      created_at: "2026-07-06T12:02:00Z",
+      spelling_list_items: null,
+    },
+  ],
+  [
+    {
+      word: "pipe",
+      strand: "lexical",
+      tier_id: "SP1",
+      excluded: true,
+    },
+  ]
+);
+assert(excludedMapped[0].tierId === null, "Excluded curriculum words should not resolve to tier mastery");
+assert(tierableSpellingAttempts(excludedMapped).length === 0, "Excluded words should be ignored for tiering");
+console.log("  ✅ spelling attempts resolve by normalized curriculum word and skip excluded words");
 
 // Test 2: 5/8 at A3 → developing, not ready
 console.log("\nTest 2: 5/8 correct at A3 → developing, not ready");
