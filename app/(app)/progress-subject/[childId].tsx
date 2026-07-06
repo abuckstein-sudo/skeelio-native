@@ -48,6 +48,10 @@ type WeeklyBucket = {
   correct: number;
   accuracy: number;
 };
+type GradeProgressDisplay = {
+  displayTargetIndex: number;
+  bannerText: string | null;
+};
 
 const OPERATIONS: Operation[] = ["addition", "subtraction", "multiplication", "division"];
 const GRADE_ORDER = ["CP", "CE1", "CE2", "CM1"];
@@ -78,6 +82,51 @@ function nextGradeForOperation(operation: Operation, gradeLevel: string | null |
     if (gradeExpectedTierId(operation, GRADE_ORDER[index])) return GRADE_ORDER[index];
   }
   return null;
+}
+
+function gradeProgressDisplay({
+  operation,
+  gradeLevel,
+  highestSolidIndex,
+  targetIndex,
+}: {
+  operation: Operation;
+  gradeLevel?: string | null;
+  highestSolidIndex: number;
+  targetIndex: number;
+}): GradeProgressDisplay {
+  if (targetIndex < 0 || highestSolidIndex < targetIndex) {
+    return { displayTargetIndex: targetIndex, bannerText: null };
+  }
+
+  let highestMetGrade: string | null = null;
+  let nextTargetGrade: string | null = null;
+  let nextTargetIndex = -1;
+
+  for (const grade of GRADE_ORDER) {
+    const gradeTargetIndex = tierIndex(operation, gradeExpectedTierId(operation, grade));
+    if (gradeTargetIndex < 0) continue;
+    if (highestSolidIndex >= gradeTargetIndex) {
+      highestMetGrade = grade;
+    } else if (nextTargetGrade === null) {
+      nextTargetGrade = grade;
+      nextTargetIndex = gradeTargetIndex;
+    }
+  }
+
+  if (nextTargetGrade) {
+    const gradePrefix =
+      highestMetGrade && highestMetGrade !== gradeLevel ? `working at ${highestMetGrade} level` : `working toward ${nextTargetGrade} level`;
+    return {
+      displayTargetIndex: nextTargetIndex,
+      bannerText: `Ahead — ${gradePrefix}`,
+    };
+  }
+
+  return {
+    displayTargetIndex: highestSolidIndex,
+    bannerText: highestMetGrade ? `Working beyond ${highestMetGrade} level • Top of the ladder` : "Top of the ladder",
+  };
 }
 
 function buildWeeklyBuckets(rows: LearningAttemptRow[], now = new Date()): WeeklyBucket[] {
@@ -198,10 +247,11 @@ export default function ProgressSubjectScreen() {
   const gradeLabel = gradeLevel || "this grade";
   const standard = gradeExpectedTierStandard(gradeLevel);
   const startsInGrade = targetTierId ? null : nextGradeForOperation(operation, gradeLevel);
-  const beyondGrade = targetIndex >= 0 && highestSolidIndex >= targetIndex;
+  const gradeProgress = gradeProgressDisplay({ operation, gradeLevel, highestSolidIndex, targetIndex });
+  const targetPillText = gradeProgress.bannerText ? "next goal" : "year goal";
   const gradeBannerText = targetTier
-    ? beyondGrade
-      ? `Working beyond ${gradeLabel} level`
+    ? gradeProgress.bannerText
+      ? gradeProgress.bannerText
       : `${gradeLabel} year goal: ${targetTier.label}`
     : startsInGrade
       ? `Starts in ${startsInGrade}`
@@ -272,14 +322,14 @@ export default function ProgressSubjectScreen() {
               const stat = stats[tier.id];
               const mastered = isSolidTierStat(stat);
               const state = tierStateLabel({ index, currentIndex, mastered });
-              const isTarget = index === targetIndex;
+              const isTarget = index === gradeProgress.displayTargetIndex;
               return (
                 <View key={tier.id} style={[styles.tierRow, state === "current" && styles.tierRowCurrent]}>
                   <View style={[styles.tierDot, styles[`tierDot_${state}`]]} />
                   <View style={styles.tierTextWrap}>
                     <View style={styles.tierTitleRow}>
                       <Text style={styles.tierTitle}>{tier.id} · {tier.label}</Text>
-                      {isTarget ? <Text style={styles.targetPill}>year goal</Text> : null}
+                      {isTarget ? <Text style={styles.targetPill}>{targetPillText}</Text> : null}
                     </View>
                     <Text style={styles.tierState}>{state}</Text>
                     {state === "current" ? <TierStatsLine stat={stat} coverage={factTierCoverageProgress(tier.id, attempts)} /> : null}

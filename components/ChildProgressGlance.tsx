@@ -78,6 +78,10 @@ type ChecklistSelection = {
   operation: Operation;
   status?: OperationStatus;
 };
+type GradeProgressDisplay = {
+  displayTargetIndex: number;
+  statusText: string | null;
+};
 
 const MATH_OPERATIONS: Operation[] = ["addition", "subtraction", "multiplication", "division"];
 const GRADE_ORDER = ["CP", "CE1", "CE2", "CM1"];
@@ -143,6 +147,51 @@ function nextGradeForOperation(operation: Operation, gradeLevel: string | null |
     if (gradeExpectedTierId(operation, GRADE_ORDER[index])) return GRADE_ORDER[index];
   }
   return null;
+}
+
+function gradeProgressDisplay({
+  operation,
+  gradeLevel,
+  highestIndex,
+  targetIndex,
+}: {
+  operation: Operation;
+  gradeLevel?: string | null;
+  highestIndex: number;
+  targetIndex: number;
+}): GradeProgressDisplay {
+  if (targetIndex < 0 || highestIndex < targetIndex) {
+    return { displayTargetIndex: targetIndex, statusText: null };
+  }
+
+  let highestMetGrade: string | null = null;
+  let nextTargetGrade: string | null = null;
+  let nextTargetIndex = -1;
+
+  for (const grade of GRADE_ORDER) {
+    const gradeTargetIndex = tierIndex(operation, gradeExpectedTierId(operation, grade));
+    if (gradeTargetIndex < 0) continue;
+    if (highestIndex >= gradeTargetIndex) {
+      highestMetGrade = grade;
+    } else if (nextTargetGrade === null) {
+      nextTargetGrade = grade;
+      nextTargetIndex = gradeTargetIndex;
+    }
+  }
+
+  if (nextTargetGrade) {
+    const gradePrefix =
+      highestMetGrade && highestMetGrade !== gradeLevel ? `working at ${highestMetGrade} level` : `working toward ${nextTargetGrade} level`;
+    return {
+      displayTargetIndex: nextTargetIndex,
+      statusText: `Ahead — ${gradePrefix}`,
+    };
+  }
+
+  return {
+    displayTargetIndex: highestIndex,
+    statusText: highestMetGrade ? `Working beyond ${highestMetGrade} level • Top of the ladder` : "Top of the ladder",
+  };
 }
 
 function missingFactLabels(tierId: string, attempts: Attempt[]): string[] {
@@ -612,15 +661,15 @@ function MathSkillRow({
   const targetIndex = tierIndex(operation, targetTierId);
   const targetTier = targetIndex >= 0 ? ladder[targetIndex] : null;
   const startsInGrade = targetTierId ? null : nextGradeForOperation(operation, gradeLevel);
-  const beyondGrade = targetIndex >= 0 && highestIndex >= targetIndex;
+  const gradeProgress = gradeProgressDisplay({ operation, gradeLevel, highestIndex, targetIndex });
   const statusText = locked
     ? `Unlocks after ${unlockState?.reasonOperation || "a prerequisite"} ${unlockState?.reasonTierId || ""}`
     : !targetTier
       ? startsInGrade
         ? `Starts in ${startsInGrade}`
         : "No year goal set for this grade"
-    : beyondGrade
-      ? `Working beyond ${gradeLevel || "this grade"} level`
+    : gradeProgress.statusText
+      ? gradeProgress.statusText
     : status?.hasAttempts
       ? status.highestSolidTierLabel
         ? `Solid through ${status.highestSolidTierLabel} • Year goal: ${targetTier.label}`
@@ -644,7 +693,7 @@ function MathSkillRow({
       <View style={styles.segmentRow}>
         {ladder.map((tier, index) => {
           const mastered = index <= highestIndex;
-          const target = index === targetIndex;
+          const target = index === gradeProgress.displayTargetIndex;
           const current = index === currentIndex && !mastered;
           const stuck = current && status?.band === "struggling";
           return (
