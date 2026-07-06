@@ -19,7 +19,19 @@ Deno.serve(async (req) => {
     const { word, language } = await req.json();
     if (!word || !language) return json({ error: "word and language are required" }, 400);
 
-    const prompt = `Write ONE short, natural sentence in ${language} for a 6–10 year old that uses the word '${word}'. Max ~12 words. The sentence MUST contain the word. Return only the sentence, no quotes, no explanation.`;
+    const prompt = `Write ONE short, natural sentence in ${language} for a 6–10 year old that uses the word '${word}'.
+
+Rules:
+- Return only the sentence, no quotes, no explanation.
+- The sentence MUST contain the word exactly as written.
+- Use simple present tense when natural.
+- Use a concrete, kid-friendly context.
+- Keep it short: ideally 6–10 words, max ~12 words.
+- Make the French natural and idiomatic.
+- Prefer a simple third-person or descriptive sentence over "Je..." openings.
+- Avoid repetitive starts like "Je joue...", "J'aime...", "Nous allons...", or "Il y a..." unless clearly best.
+- Use natural French collocations. For example, say "dans la rue", never "sur la rue".
+- Avoid weapons, smoking, alcohol, romance, death, or scary/adult contexts.`;
 
     const openaiRes = await callOpenAIChat(OPENAI_API_KEY, {
       method: "POST",
@@ -33,7 +45,7 @@ Deno.serve(async (req) => {
     });
 
     if (!openaiRes.ok) {
-      const errText = await openaiRes.text();
+      const errText = await openAIRes.text();
       console.error("[spelling-sentence] OpenAI error", openaiRes.status, errText);
       return json({ error: "OpenAI request failed", status: openaiRes.status }, 502);
     }
