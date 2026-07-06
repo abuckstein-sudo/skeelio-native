@@ -36,6 +36,19 @@ import {
   isSolidConjugationTier,
 } from "@/lib/tutor/conjugationAbility";
 import { fetchConjugationAttemptsForChild } from "@/lib/tutor/conjugationAttempts";
+import {
+  SPELLING_GRADE_EXPECTED,
+  SPELLING_LEXICAL_LADDER,
+  SpellingTierId,
+} from "@/lib/spellingConfig";
+import {
+  SpellingAttempt,
+  SpellingTierStats,
+  currentSpellingTierAndBand,
+  isSolidSpellingTier,
+  spellingTierStats,
+} from "@/lib/tutor/spellingAbility";
+import { fetchSpellingAttemptsForChild } from "@/lib/tutor/spellingAttempts";
 
 type Child = {
   id: string;
@@ -201,6 +214,26 @@ function buildConjugationWeeklyBuckets(attempts: ConjugationAttempt[], now = new
   })), now);
 }
 
+function spellingExpectedTierId(gradeLevel: string | null | undefined): SpellingTierId | null {
+  return (SPELLING_GRADE_EXPECTED as Record<string, { lexical: SpellingTierId; invariable: SpellingTierId } | undefined>)[gradeLevel || ""]?.lexical ?? null;
+}
+
+function spellingTierIndex(tierId: SpellingTierId | string | null | undefined): number {
+  if (!tierId) return -1;
+  return SPELLING_LEXICAL_LADDER.findIndex((tier) => tier.id === tierId);
+}
+
+function buildSpellingWeeklyBuckets(attempts: SpellingAttempt[], now = new Date()): WeeklyBucket[] {
+  return buildWeeklyBuckets(attempts.map((attempt) => ({
+    tier: null,
+    question_text: null,
+    was_correct: Boolean(attempt.wasCorrect ?? attempt.is_correct ?? attempt.correct),
+    ai_hint_used: Boolean(attempt.aided || attempt.hintUsed),
+    evidence_source: null,
+    created_at: attempt.createdAt ?? null,
+  })), now);
+}
+
 export default function ProgressSubjectScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ childId: string; childName?: string; operation?: string }>();
@@ -208,6 +241,7 @@ export default function ProgressSubjectScreen() {
   const paramChildName = params.childName ? String(params.childName) : "";
   const requestedSubject = String(params.operation || "");
   const isConjugation = requestedSubject === "conjugation";
+  const isSpelling = requestedSubject === "spelling";
   const operation = OPERATIONS.includes(requestedSubject as Operation)
     ? (String(params.operation) as Operation)
     : "addition";
@@ -217,6 +251,7 @@ export default function ProgressSubjectScreen() {
   const [status, setStatus] = useState<OperationStatus | null>(null);
   const [attemptRows, setAttemptRows] = useState<LearningAttemptRow[]>([]);
   const [conjugationAttempts, setConjugationAttempts] = useState<ConjugationAttempt[]>([]);
+  const [spellingAttempts, setSpellingAttempts] = useState<SpellingAttempt[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -234,9 +269,11 @@ export default function ProgressSubjectScreen() {
         if (childError) throw childError;
 
         const loadedChild = childData as Child;
-        const [operationStatus, attemptsResult, conjugationRows] = isConjugation
-          ? [null, { data: [] }, await fetchConjugationAttemptsForChild(childId)] as const
-          : await Promise.all([
+        const [operationStatus, attemptsResult, conjugationRows, spellingRows] = isConjugation
+          ? [null, { data: [] }, await fetchConjugationAttemptsForChild(childId), [] as SpellingAttempt[]] as const
+          : isSpelling
+            ? [null, { data: [] }, [] as ConjugationAttempt[], await fetchSpellingAttemptsForChild(childId)] as const
+            : await Promise.all([
               getOperationStatus(childId, operation, loadedChild),
               supabase
                 .from("learning_attempts")
@@ -245,6 +282,7 @@ export default function ProgressSubjectScreen() {
                 .eq("topic", operation)
                 .not("tier", "is", null),
               Promise.resolve([] as ConjugationAttempt[]),
+              Promise.resolve([] as SpellingAttempt[]),
             ]);
 
         if (cancelled) return;
@@ -252,6 +290,7 @@ export default function ProgressSubjectScreen() {
         setStatus(operationStatus);
         setAttemptRows((attemptsResult.data || []) as LearningAttemptRow[]);
         setConjugationAttempts(conjugationRows);
+        setSpellingAttempts(spellingRows);
       } catch (error) {
         console.error("[progress-subject] load error:", error);
         if (!cancelled) {
@@ -259,6 +298,7 @@ export default function ProgressSubjectScreen() {
           setStatus(null);
           setAttemptRows([]);
           setConjugationAttempts([]);
+          setSpellingAttempts([]);
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -269,7 +309,7 @@ export default function ProgressSubjectScreen() {
     return () => {
       cancelled = true;
     };
-  }, [childId, operation, isConjugation]);
+  }, [childId, operation, isConjugation, isSpelling]);
 
   const attempts = useMemo(() => attemptRows.map(toAttempt).filter(Boolean) as Attempt[], [attemptRows]);
   const stats = useMemo(() => tierStats(attempts), [attempts]);
@@ -333,6 +373,27 @@ export default function ProgressSubjectScreen() {
     ? `Highest solid: ${CONJUGATION_LADDER[conjugationHighestSolidIndex].label}`
     : "Highest solid: not yet";
   const conjugationRecommendation = `Keep practicing ${conjugationCurrentTier.label} across all six pronouns.`;
+  const spellingStats = useMemo(() => spellingTierStats(spellingAttempts), [spellingAttempts]);
+  const spellingBand = useMemo(() => currentSpellingTierAndBand(spellingAttempts).lexical, [spellingAttempts]);
+  const spellingWeeklyBuckets = useMemo(() => buildSpellingWeeklyBuckets(spellingAttempts), [spellingAttempts]);
+  const spellingCurrentTier = SPELLING_LEXICAL_LADDER.find((tier) => tier.id === spellingBand.tierId) || SPELLING_LEXICAL_LADDER[0];
+  const spellingTargetTierId = spellingExpectedTierId(gradeLevel);
+  const spellingTargetIndex = spellingTierIndex(spellingTargetTierId);
+  const spellingTargetTier = spellingTargetIndex >= 0 ? SPELLING_LEXICAL_LADDER[spellingTargetIndex] : null;
+  const spellingHighestSolidIndex = useMemo(() => {
+    for (let index = SPELLING_LEXICAL_LADDER.length - 1; index >= 0; index--) {
+      if (isSolidSpellingTier(spellingStats[SPELLING_LEXICAL_LADDER[index].id])) return index;
+    }
+    return -1;
+  }, [spellingStats]);
+  const spellingMaxWeeklyTotal = Math.max(1, ...spellingWeeklyBuckets.map((bucket) => bucket.total));
+  const spellingBannerText = spellingTargetTier
+    ? `${gradeLabel} year goal: ${spellingTargetTier.label}`
+    : "No year goal set for this grade";
+  const spellingHighestSolidText = spellingHighestSolidIndex >= 0
+    ? `Highest solid: ${SPELLING_LEXICAL_LADDER[spellingHighestSolidIndex].label}`
+    : "Highest solid: not yet";
+  const spellingRecommendation = `Keep practicing ${spellingCurrentTier.label} until enough distinct words are correct unaided.`;
 
   const openAssign = () => {
     router.push({
@@ -432,6 +493,87 @@ export default function ProgressSubjectScreen() {
             <View style={styles.nextTextWrap}>
               <Text style={styles.sectionTitle}>What to do next</Text>
               <Text style={styles.recommendation}>{conjugationRecommendation}</Text>
+            </View>
+          </View>
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
+  if (isSpelling) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.headerButton} onPress={() => router.back()}>
+            <MaterialCommunityIcons name="arrow-left" size={22} color="#0f172a" />
+          </TouchableOpacity>
+          <View style={styles.headerTextWrap}>
+            <Text style={styles.headerTitle}>Spelling</Text>
+            <Text style={styles.headerSubtitle}>{childName}</Text>
+          </View>
+          <View style={styles.headerButton}>
+            <MaterialCommunityIcons name="book-open-page-variant-outline" size={21} color="#7c3aed" />
+          </View>
+        </View>
+
+        <ScrollView contentContainerStyle={styles.content}>
+          <View style={styles.gradeBanner}>
+            <Text style={styles.gradeTitle}>{spellingBannerText}</Text>
+            <Text style={styles.gradeMeta}>{spellingHighestSolidText}</Text>
+            <Text style={styles.sourceText}>Source: Échelle orthographique Dubois-Buyse</Text>
+          </View>
+
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Tier ladder</Text>
+            <View style={styles.ladder}>
+              {SPELLING_LEXICAL_LADDER.slice(0, spellingTargetIndex >= 0 ? spellingTargetIndex + 1 : SPELLING_LEXICAL_LADDER.length).map((tier, index) => {
+                const stat = spellingStats[tier.id];
+                const mastered = isSolidSpellingTier(stat);
+                const current = tier.id === spellingBand.tierId && !mastered;
+                const state = mastered ? "mastered" : current ? "current" : "future";
+                return (
+                  <View key={tier.id} style={[styles.tierRow, state === "current" && styles.tierRowCurrent]}>
+                    <View style={[styles.tierDot, styles[`tierDot_${state}`]]} />
+                    <View style={styles.tierTextWrap}>
+                      <View style={styles.tierTitleRow}>
+                        <Text style={styles.tierTitle}>{tier.id} · {tier.label}</Text>
+                        {index === spellingTargetIndex ? <Text style={styles.targetPill}>year goal</Text> : null}
+                      </View>
+                      <Text style={styles.tierState}>{state}</Text>
+                      {state === "current" ? <SpellingTierStatsLine stat={stat} /> : null}
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          </View>
+
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Accuracy over time</Text>
+            <View style={styles.weeklyPanel}>
+              {spellingWeeklyBuckets.map((bucket) => (
+                <View key={bucket.label} style={styles.weekItem}>
+                  <View style={styles.weekTrack}>
+                    <View
+                      style={[
+                        styles.weekVolume,
+                        { height: `${Math.max(10, (bucket.total / spellingMaxWeeklyTotal) * 100)}%` },
+                      ]}
+                    >
+                      <View style={[styles.weekAccuracy, { height: `${bucket.accuracy * 100}%` }]} />
+                    </View>
+                  </View>
+                  <Text style={styles.weekLabel}>{bucket.label}</Text>
+                  <Text style={styles.weekRate}>{bucket.total > 0 ? percent(bucket.accuracy * 100) : "—"}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+
+          <View style={styles.nextPanel}>
+            <View style={styles.nextTextWrap}>
+              <Text style={styles.sectionTitle}>What to do next</Text>
+              <Text style={styles.recommendation}>{spellingRecommendation}</Text>
             </View>
           </View>
         </ScrollView>
@@ -544,6 +686,18 @@ function ConjugationTierStatsLine({ stat }: { stat?: ConjugationTierStats }) {
   return (
     <Text style={styles.tierStats}>
       {percent(stat.masteryRate * 100)} accuracy • {stat.unaidedCorrect}/{stat.unaidedAttempts} unaided correct • pronouns {stat.pronounsCovered.length}/6 • verbs {stat.distinctVerbsCovered}
+    </Text>
+  );
+}
+
+function SpellingTierStatsLine({ stat }: { stat?: SpellingTierStats }) {
+  if (!stat) {
+    return <Text style={styles.tierStats}>No attempts yet</Text>;
+  }
+
+  return (
+    <Text style={styles.tierStats}>
+      {percent(stat.masteryRate * 100)} accuracy • {stat.unaidedCorrect}/{stat.unaidedAttempts} unaided correct • words {stat.distinctWordsCovered}
     </Text>
   );
 }
