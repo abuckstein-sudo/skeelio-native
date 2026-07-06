@@ -12,6 +12,13 @@ import {
 } from "../lib/tutorConfig";
 import { coverageKeysForQuestion, generateQuestion, pickUncoveredFactKey, producibleCoverageKeysForTier } from "../lib/tutor/generate";
 import { factTierCoverageKeys, requiredCoverageKeys, tierStats, currentTierAndBand, Attempt } from "../lib/tutor/ability";
+import {
+  conjugationCoverageProgress,
+  currentConjugationTierAndBand,
+  isSolidConjugationTier,
+  conjugationTierStats,
+  ConjugationAttempt,
+} from "../lib/tutor/conjugationAbility";
 import { pickNextStep } from "../lib/tutor/selector";
 import { computeUnlockState } from "../lib/tutor/unlockGraph";
 import { TIER_GATE } from "../lib/masteryConfig";
@@ -144,6 +151,20 @@ function assignedA1MasteryAttempts(): Attempt[] {
   }));
 }
 
+function masteredCj1Attempts(): ConjugationAttempt[] {
+  const verbs = ["être", "avoir", "aller", "faire", "dire", "être", "avoir", "aller", "faire", "dire", "être", "avoir"];
+  const pronouns = ["je", "tu", "il/elle", "nous", "vous", "ils/elles", "je", "tu", "il/elle", "nous", "vous", "ils/elles"];
+  return verbs.map((verb, index) => ({
+    verb,
+    tense: "présent",
+    verb_group: "irregulier",
+    pronoun: pronouns[index],
+    wasCorrect: true,
+    aided: false,
+    language: "fr-FR",
+  }));
+}
+
 console.log("\n====== TIER CONSTRAINT TESTS ======\n");
 
 for (const [op, tiers] of Object.entries(LADDERS)) {
@@ -250,6 +271,33 @@ assert(gradeExpectedTierIndex("division", "CE1") === -1, "CE1 division should no
 assert(gradeExpectedTierId("addition", "CE1") === "A6", "CE1 addition goal should be A6");
 assert(!!gradeExpectedTierStandard("CE2")?.citation.includes("Éduscol"), "CE2 standard should include the Eduscol citation");
 console.log("  ✅ nullable sourced grade goals are available");
+
+console.log("\nTest 1e: conjugation CJ1 requires unaided accuracy, pronoun coverage, and verbs");
+const cj1Mastery = masteredCj1Attempts();
+const cj1Stats = conjugationTierStats(cj1Mastery).CJ1;
+assert(isSolidConjugationTier(cj1Stats), "CJ1 should be solid with 12 unaided correct attempts, 6 pronouns, and 5 verbs");
+const cj1Band = currentConjugationTierAndBand(cj1Mastery);
+assert(cj1Band.tierId === "CJ2", `CJ1 mastery should advance working tier to CJ2, got ${cj1Band.tierId}`);
+assert(cj1Band.band === "needs-teach", `CJ2 should be needs-teach before attempts, got ${cj1Band.band}`);
+console.log("  ✅ CJ1 mastery advances to CJ2");
+
+console.log("\nTest 1f: conjugation tier is not solid when a pronoun is missing");
+const missingPronoun = cj1Mastery.map((attempt) => ({ ...attempt }));
+missingPronoun[5] = { ...missingPronoun[5], pronoun: "vous" };
+missingPronoun[11] = { ...missingPronoun[11], pronoun: "vous" };
+assert(!isSolidConjugationTier(conjugationTierStats(missingPronoun).CJ1), "CJ1 should not be solid without all 6 pronouns");
+const missingProgress = conjugationCoverageProgress("CJ1", missingPronoun);
+assert(missingProgress.pronounsCovered === 5, `CJ1 should cover 5 pronouns, got ${missingProgress.pronounsCovered}`);
+assert(missingProgress.needed.pronouns === 1, `CJ1 should need 1 pronoun, got ${missingProgress.needed.pronouns}`);
+console.log("  ✅ missing pronoun blocks CJ1 solidity");
+
+console.log("\nTest 1g: hinted conjugation attempts do not count for mastery");
+const hintedCj1 = cj1Mastery.map((attempt, index) => (index < 2 ? { ...attempt, aided: true } : attempt));
+const hintedStats = conjugationTierStats(hintedCj1).CJ1;
+assert(hintedStats.attempts === 12, `CJ1 should still show 12 total attempts, got ${hintedStats.attempts}`);
+assert(hintedStats.unaidedAttempts === 10, `CJ1 should count only 10 unaided attempts, got ${hintedStats.unaidedAttempts}`);
+assert(!isSolidConjugationTier(hintedStats), "CJ1 should not be solid when hinted attempts are needed to reach 12");
+console.log("  ✅ hinted attempts are display attempts only, not mastery evidence");
 
 // Test 2: 5/8 at A3 → developing, not ready
 console.log("\nTest 2: 5/8 correct at A3 → developing, not ready");
