@@ -20,6 +20,14 @@ import {
   ConjugationAttempt,
 } from "../lib/tutor/conjugationAbility";
 import { mapConjugationAttemptRows } from "../lib/tutor/conjugationAttempts";
+import {
+  currentSpellingTierAndBand,
+  isSolidSpellingTier,
+  spellingCoverageProgress,
+  spellingTierStats,
+  SpellingAttempt,
+} from "../lib/tutor/spellingAbility";
+import { mapSpellingAttemptRows, tierableSpellingAttempts } from "../lib/tutor/spellingAttempts";
 import { pickNextStep } from "../lib/tutor/selector";
 import { computeUnlockState } from "../lib/tutor/unlockGraph";
 import { TIER_GATE } from "../lib/masteryConfig";
@@ -163,6 +171,17 @@ function masteredCj1Attempts(): ConjugationAttempt[] {
     wasCorrect: true,
     aided: false,
     language: "fr-FR",
+  }));
+}
+
+function masteredSp1Attempts(): SpellingAttempt[] {
+  const words = ["maison", "papa", "porte", "rue", "terre", "été", "maman", "pipe", "maison", "papa", "porte", "rue"];
+  return words.map((word) => ({
+    word,
+    tierId: "SP1",
+    strand: "lexical",
+    wasCorrect: true,
+    aided: false,
   }));
 }
 
@@ -327,6 +346,66 @@ assert(joinedAttempts[0].pronoun === "je", `Mapper should recover joined pronoun
 assert(joinedAttempts[0].aided === true, "Mapper should carry aided=true into the engine attempt shape");
 assert(conjugationTierStats(joinedAttempts).CJ1.unaidedAttempts === 0, "Aided joined attempts should not count as unaided");
 console.log("  ✅ joined conjugation attempt rows feed aided/content into the engine");
+
+console.log("\nTest 1i: spelling SP1 requires unaided accuracy and distinct words");
+const sp1Mastery = masteredSp1Attempts();
+const sp1Stats = spellingTierStats(sp1Mastery).SP1;
+assert(isSolidSpellingTier(sp1Stats), "SP1 should be solid with 12 unaided correct attempts and 8 distinct words");
+const sp1Band = currentSpellingTierAndBand(sp1Mastery).lexical;
+assert(sp1Band.tierId === "SP2", `SP1 mastery should advance lexical working tier to SP2, got ${sp1Band.tierId}`);
+assert(sp1Band.band === "needs-teach", `SP2 should be needs-teach before attempts, got ${sp1Band.band}`);
+console.log("  ✅ SP1 mastery advances lexical strand to SP2");
+
+console.log("\nTest 1j: spelling tier is not solid with too few distinct words");
+const repeatedWords = sp1Mastery.map((attempt, index) => ({ ...attempt, word: index % 2 === 0 ? "maison" : "papa" }));
+const repeatedStats = spellingTierStats(repeatedWords).SP1;
+assert(!isSolidSpellingTier(repeatedStats), "SP1 should not be solid with only 2 distinct words");
+const repeatedProgress = spellingCoverageProgress("SP1", repeatedWords);
+assert(repeatedProgress.wordsCovered === 2, `SP1 should cover 2 distinct words, got ${repeatedProgress.wordsCovered}`);
+assert(repeatedProgress.needed.words === 6, `SP1 should need 6 more words, got ${repeatedProgress.needed.words}`);
+console.log("  ✅ distinct-word coverage gates spelling solidity");
+
+console.log("\nTest 1k: hinted spelling attempts do not count for mastery");
+const hintedSp1 = sp1Mastery.map((attempt, index) => (index < 2 ? { ...attempt, aided: true } : attempt));
+const hintedSpellingStats = spellingTierStats(hintedSp1).SP1;
+assert(hintedSpellingStats.attempts === 12, `SP1 should still show 12 total attempts, got ${hintedSpellingStats.attempts}`);
+assert(hintedSpellingStats.unaidedAttempts === 10, `SP1 should count only 10 unaided attempts, got ${hintedSpellingStats.unaidedAttempts}`);
+assert(!isSolidSpellingTier(hintedSpellingStats), "SP1 should not be solid when hinted attempts are needed to reach 12");
+console.log("  ✅ hinted spelling attempts are display attempts only, not mastery evidence");
+
+console.log("\nTest 1l: spelling attempt mapper matches curriculum words and ignores misses for tiering");
+const mappedSpellingAttempts = mapSpellingAttemptRows(
+  [
+    {
+      item_text: " Maison ",
+      is_correct: true,
+      aided: null,
+      created_at: "2026-07-06T12:00:00Z",
+      spelling_list_items: { normalized_text: "maison" },
+    },
+    {
+      item_text: "not-in-curriculum",
+      is_correct: true,
+      aided: null,
+      created_at: "2026-07-06T12:01:00Z",
+      spelling_list_items: null,
+    },
+  ],
+  [
+    {
+      word: "maison",
+      strand: "lexical",
+      tier_id: "SP1",
+    },
+  ]
+);
+assert(mappedSpellingAttempts.length === 2, `Mapper should retain display attempts, got ${mappedSpellingAttempts.length}`);
+assert(mappedSpellingAttempts[0].word === "maison", `Mapper should normalize joined word, got ${mappedSpellingAttempts[0]?.word}`);
+assert(mappedSpellingAttempts[0].tierId === "SP1", `Mapper should resolve SP1, got ${mappedSpellingAttempts[0]?.tierId}`);
+assert(mappedSpellingAttempts[0].strand === "lexical", `Mapper should resolve lexical strand, got ${mappedSpellingAttempts[0]?.strand}`);
+assert(mappedSpellingAttempts[1].tierId === null, "Words missing from curriculum should have tierId=null");
+assert(tierableSpellingAttempts(mappedSpellingAttempts).length === 1, "Only curriculum-matched words should count for tiering");
+console.log("  ✅ spelling attempts resolve by normalized curriculum word");
 
 // Test 2: 5/8 at A3 → developing, not ready
 console.log("\nTest 2: 5/8 correct at A3 → developing, not ready");
