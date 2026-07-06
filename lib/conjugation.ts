@@ -52,6 +52,7 @@ export type ConjugationAttempt = {
   student_answer: string;
   correct_answer: string;
   is_correct: boolean;
+  aided: boolean;
   attempt_number: number;
   created_at: string;
 };
@@ -276,7 +277,8 @@ export async function recordConjugationAttempt(
   userId: string,
   givenAnswer: string,
   correctAnswer: string,
-  isCorrect: boolean
+  isCorrect: boolean,
+  aided = false
 ): Promise<void> {
   const { error } = await supabase.from("conjugation_practice_attempts").insert({
     session_id: sessionId,
@@ -286,6 +288,7 @@ export async function recordConjugationAttempt(
     given_answer: givenAnswer,
     correct_answer: correctAnswer,
     is_correct: isCorrect,
+    aided,
   });
 
   if (error) throw error;

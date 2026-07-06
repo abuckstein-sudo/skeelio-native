@@ -459,7 +459,8 @@ export default function ConjugationPracticeScreen() {
         (await supabase.auth.getUser()).data.user?.id || "",
         selectedOption,
         currentQuestion.correct_answer,
-        isCorrect
+        isCorrect,
+        false
       );
 
       if (isCorrect) {
