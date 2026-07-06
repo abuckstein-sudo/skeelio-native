@@ -31,12 +31,21 @@ import {
   endSpellingSession,
   gradeSpellingAttempt,
   fallbackHint,
+  normalise,
   type SpellingItem,
   type SpellingLanguage,
   type SpellingSession,
 } from "@/lib/spelling";
+import { SPELLING_LADDER, SpellingStrand, SpellingTierId } from "@/lib/spellingConfig";
+import { fetchSpellingCurriculumPool } from "@/lib/tutor/spellingCurriculum";
+import { fetchSpellingAttemptsForChild } from "@/lib/tutor/spellingAttempts";
+
+type PracticeItem = SpellingItem & {
+  source?: "list" | "curriculum";
+};
+
 interface Answer {
-  itemId: string;
+  itemId: string | null;
   itemText: string;
   userAnswer: string;
   isCorrect: boolean;
@@ -94,17 +103,20 @@ const COPY = {
 
 export default function SpellingPracticeScreen() {
   const router = useRouter();
-  const { listId, childId, assignmentId, mode } = useLocalSearchParams<{
+  const { listId, childId, assignmentId, mode, tierId, strand, tierLabel } = useLocalSearchParams<{
     listId: string;
     childId: string;
     assignmentId?: string;
-    mode?: "practice" | "quiz";
+    mode?: "practice" | "quiz" | "teach";
+    tierId?: SpellingTierId;
+    strand?: SpellingStrand;
+    tierLabel?: string;
   }>();
 
   const [listTitle, setListTitle] = useState("");
   const [language, setLanguage] = useState<SpellingLanguage>("English");
   const [appLanguage, setAppLanguage] = useState<AppLanguage>("en");
-  const [items, setItems] = useState<SpellingItem[]>([]);
+  const [items, setItems] = useState<PracticeItem[]>([]);
   const [spellingSession, setSpellingSession] = useState<SpellingSession | null>(
     null
   );
@@ -124,6 +136,7 @@ export default function SpellingPracticeScreen() {
   const [sessionComplete, setSessionComplete] = useState(false);
   const [isSentenceLoading, setIsSentenceLoading] = useState(false);
   const [answerInputMode, setAnswerInputMode] = useState<"type" | "write">("type");
+  const [hasUsedHint, setHasUsedHint] = useState(false);
 
   const inputRef = useRef<TextInput>(null);
 
@@ -146,7 +159,77 @@ export default function SpellingPracticeScreen() {
 
     const loadList = async () => {
       try {
-        console.log("[SpellingPracticeScreen] loading list:", listId, "child:", childId, "assignmentId:", assignmentId);
+        console.log("[SpellingPracticeScreen] loading list:", listId, "child:", childId, "assignmentId:", assignmentId, "tierId:", tierId);
+        const { data: childData } = await supabase
+          .from("children")
+          .select("languages, preferred_language")
+          .eq("id", childId)
+          .single();
+        setAppLanguage(appLanguageForChild(childData));
+
+        if (tierId && strand) {
+          const tier = SPELLING_LADDER.find((candidate) => candidate.id === tierId && candidate.strand === strand);
+          if (!tier) {
+            setError(COPY[appLanguage].listNotFound);
+            setIsLoading(false);
+            return;
+          }
+
+          const [pool, previousAttempts] = await Promise.all([
+            fetchSpellingCurriculumPool({ tierIds: [tierId], language: "fr-FR" }),
+            fetchSpellingAttemptsForChild(childId),
+          ]);
+
+          if (pool.length === 0) {
+            setError(COPY[appLanguage].noWords);
+            setIsLoading(false);
+            return;
+          }
+
+          const unaidedCorrectWords = new Set(
+            previousAttempts
+              .filter((attempt) =>
+                attempt.tierId === tierId &&
+                attempt.strand === strand &&
+                !attempt.aided &&
+                Boolean(attempt.wasCorrect ?? attempt.is_correct ?? attempt.correct)
+              )
+              .map((attempt) => normalise(attempt.word))
+          );
+          const orderedPool = [...pool].sort((a, b) => {
+            const aCovered = unaidedCorrectWords.has(normalise(a.word)) ? 1 : 0;
+            const bCovered = unaidedCorrectWords.has(normalise(b.word)) ? 1 : 0;
+            return aCovered - bCovered || a.frequency - b.frequency;
+          });
+          const selectedItems: PracticeItem[] = orderedPool.slice(0, 10).map((word, index) => ({
+            id: word.id,
+            list_id: null,
+            item_text: word.word,
+            item_order: index,
+            language: "French",
+            user_id: null,
+            student_id: childId,
+            normalized_text: normalise(word.word),
+            sentence: word.sentence ?? undefined,
+            source: "curriculum",
+          }));
+
+          setListTitle(tierLabel || tier.label);
+          setLanguage("French");
+          setItems(selectedItems);
+
+          const sess = await createSpellingSession(childId, null, selectedItems.length);
+          setSpellingSession(sess);
+
+          setTimeout(() => {
+            console.log("[SpellingPracticeScreen] speaking first curriculum word:", selectedItems[0].item_text);
+            speakWord(selectedItems[0].item_text, "French");
+          }, 250);
+
+          setIsLoading(false);
+          return;
+        }
+
         const data = await getListWithItems(listId);
         if (!data) {
           setError(COPY[appLanguage].listNotFound);
@@ -162,16 +245,9 @@ export default function SpellingPracticeScreen() {
           return;
         }
 
-        const { data: childData } = await supabase
-          .from("children")
-          .select("languages, preferred_language")
-          .eq("id", childId)
-          .single();
-        setAppLanguage(appLanguageForChild(childData));
-
         setListTitle(data.list.title);
         setLanguage(data.list.language);
-        setItems(data.items);
+        setItems(data.items.map((item) => ({ ...item, source: "list" })));
 
         // Create session
         const sess = await createSpellingSession(
@@ -196,7 +272,7 @@ export default function SpellingPracticeScreen() {
     };
 
     loadList();
-  }, [listId, childId]);
+  }, [listId, childId, tierId, strand, tierLabel]);
 
   const currentItem = items[currentIndex];
 
@@ -259,15 +335,17 @@ export default function SpellingPracticeScreen() {
       );
 
       // Record attempt
+      const aided = hasUsedHint || feedback.type === "hint";
       await recordSpellingAttempt(
         spellingSession.id,
-        currentItem.id,
+        currentItem.source === "curriculum" ? null : currentItem.id,
         childId,
-        listId,
+        currentItem.source === "curriculum" ? null : listId,
         currentItem.item_text,
         given,
         is_correct,
-        attemptNumber
+        attemptNumber,
+        aided
       );
 
       if (is_correct) {
@@ -305,6 +383,7 @@ export default function SpellingPracticeScreen() {
           // Show hint - keep the user's answer visible so they can compare and edit
           const hint = fallbackHint(error_type, attemptNumber as 1 | 2, language);
           setFeedback({ type: "hint", text: hint });
+          setHasUsedHint(true);
           setAttemptNumber((n) => (n + 1) as 1 | 2 | 3);
           // DO NOT clear setUserAnswer("") — keep their typed text visible for comparison
           setTimeout(() => inputRef.current?.focus(), 50);
@@ -368,6 +447,7 @@ export default function SpellingPracticeScreen() {
       const nextIndex = currentIndex + 1;
       setCurrentIndex(nextIndex);
       setAttemptNumber(1);
+      setHasUsedHint(false);
       setUserAnswer("");
       setFeedback({ type: "idle", text: "" });
 

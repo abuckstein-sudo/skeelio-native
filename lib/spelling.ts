@@ -15,11 +15,11 @@ export type SpellingList = {
 
 export type SpellingItem = {
   id: string;
-  list_id: string;
+  list_id: string | null;
   item_text: string;
   item_order: number | null;
   language: SpellingLanguage;
-  user_id: string;
+  user_id: string | null;
   student_id: string;
   normalized_text: string;
   sentence?: string;
@@ -28,7 +28,7 @@ export type SpellingItem = {
 export type SpellingSession = {
   id: string;
   student_id: string;
-  list_id: string;
+  list_id: string | null;
   user_id: string;
   started_at: string;
   completed_at: string | null;
@@ -41,15 +41,16 @@ export type SpellingSession = {
 export type SpellingAttempt = {
   id: string;
   session_id: string;
-  item_id: string;
+  item_id: string | null;
   item_text: string;
   student_answer: string;
   is_correct: boolean;
+  aided?: boolean;
   attempt_number: number;
   created_at: string;
   user_id: string;
   student_id: string;
-  list_id: string;
+  list_id: string | null;
 };
 
 export type ErrorType =
@@ -393,7 +394,7 @@ export async function getListWithItems(listId: string): Promise<{
 
 export async function createSpellingSession(
   childId: string,
-  listId: string,
+  listId: string | null,
   totalItems: number
 ): Promise<SpellingSession> {
   const { data: authData } = await supabase.auth.getUser();
@@ -418,13 +419,14 @@ export async function createSpellingSession(
 
 export async function recordSpellingAttempt(
   sessionId: string,
-  itemId: string,
+  itemId: string | null,
   childId: string,
-  listId: string,
+  listId: string | null,
   itemText: string,
   studentAnswer: string,
   isCorrect: boolean,
-  attemptNumber: number
+  attemptNumber: number,
+  aided = false
 ): Promise<void> {
   const { data: authData } = await supabase.auth.getUser();
   if (!authData.user) throw new Error("Not authenticated");
@@ -439,6 +441,7 @@ export async function recordSpellingAttempt(
     student_answer: studentAnswer,
     is_correct: isCorrect,
     attempt_number: attemptNumber,
+    aided,
   });
 
   if (error) throw error;

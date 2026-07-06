@@ -73,6 +73,7 @@ export async function fetchSpellingAttemptsForChild(childId: string): Promise<Sp
       .select(`
         item_text,
         is_correct,
+        aided,
         created_at,
         spelling_list_items:item_id (
           normalized_text,

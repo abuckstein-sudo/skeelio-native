@@ -11,6 +11,9 @@ import { Attempt, factTierCoverageGapAfterOtherGates } from "@/lib/tutor/ability
 import { CONJUGATION_LADDER, ConjugationTierId } from "@/lib/conjugationConfig";
 import { ConjugationAttempt, currentConjugationTierAndBand } from "@/lib/tutor/conjugationAbility";
 import { fetchConjugationAttemptsForChild } from "@/lib/tutor/conjugationAttempts";
+import { SPELLING_LADDER, SpellingTierId } from "@/lib/spellingConfig";
+import { SpellingAttempt, currentSpellingTierAndBand } from "@/lib/tutor/spellingAbility";
+import { fetchSpellingAttemptsForChild } from "@/lib/tutor/spellingAttempts";
 import { computeUnlockState, SubjectId, SubjectUnlockState } from "@/lib/tutor/unlockGraph";
 import { listAssignmentsForChild, Assignment } from "@/lib/assignments";
 import {
@@ -120,6 +123,12 @@ interface NextUpTile {
 interface ConjugationProgressState {
   attempts: ConjugationAttempt[];
   tierId: ConjugationTierId;
+  band: "solid" | "developing" | "struggling" | "needs-teach";
+}
+
+interface SpellingProgressState {
+  attempts: SpellingAttempt[];
+  tierId: SpellingTierId;
   band: "solid" | "developing" | "struggling" | "needs-teach";
 }
 
@@ -346,6 +355,9 @@ const coverageProgressForMathTile = (
 const conjugationTierLabel = (tierId: ConjugationTierId) =>
   CONJUGATION_LADDER.find((tier) => tier.id === tierId)?.label || tierId;
 
+const spellingTierLabel = (tierId: SpellingTierId) =>
+  SPELLING_LADDER.find((tier) => tier.id === tierId)?.label || tierId;
+
 export default function ChildHomeScreen() {
   const router = useRouter();
   const { childId } = useLocalSearchParams<{ childId: string }>();
@@ -358,6 +370,7 @@ export default function ChildHomeScreen() {
   );
   const [attemptsByOperation, setAttemptsByOperation] = useState<Record<Operation, Attempt[]>>(emptyMathAttempts);
   const [conjugationProgress, setConjugationProgress] = useState<ConjugationProgressState | null>(null);
+  const [spellingProgress, setSpellingProgress] = useState<SpellingProgressState | null>(null);
   const [pendingAssignments, setPendingAssignments] = useState<Assignment[]>([]);
   const [schoolHomeworkWeekDays, setSchoolHomeworkWeekDays] = useState<(SchoolHomeworkDay | null)[]>([]);
   const [expandedHomeworkDate, setExpandedHomeworkDate] = useState(todayDateKey());
@@ -585,14 +598,32 @@ export default function ChildHomeScreen() {
     }
   }, [childId]);
 
+  const refreshSpellingProgress = useCallback(async () => {
+    if (!childId) return;
+
+    try {
+      const attempts = await fetchSpellingAttemptsForChild(childId);
+      const { tierId, band } = currentSpellingTierAndBand(attempts).lexical;
+      setSpellingProgress({ attempts, tierId, band });
+    } catch (err) {
+      console.error("[child-home] failed to fetch spelling progress:", err);
+      setSpellingProgress({
+        attempts: [],
+        tierId: "SP1",
+        band: "needs-teach",
+      });
+    }
+  }, [childId]);
+
   useEffect(() => {
     if (childId) {
       skipNextFocusFeedRefreshRef.current = true;
       fetchChild();
       refreshHomeworkFeed();
       refreshConjugationProgress();
+      refreshSpellingProgress();
     }
-  }, [childId, refreshHomeworkFeed, refreshConjugationProgress]);
+  }, [childId, refreshHomeworkFeed, refreshConjugationProgress, refreshSpellingProgress]);
 
   // Re-fetch stars, assignments, and episodes when screen gains focus
   useFocusEffect(
@@ -605,7 +636,8 @@ export default function ChildHomeScreen() {
       refreshHomeworkFeed();
       refreshMathProgress(child, true);
       refreshConjugationProgress();
-    }, [child, fetchStars, refreshHomeworkFeed, refreshMathProgress, refreshConjugationProgress])
+      refreshSpellingProgress();
+    }, [child, fetchStars, refreshHomeworkFeed, refreshMathProgress, refreshConjugationProgress, refreshSpellingProgress])
   );
 
   const fetchChild = async () => {
@@ -641,8 +673,29 @@ export default function ChildHomeScreen() {
 
     await refreshMathProgress(data as Child, false);
     await refreshConjugationProgress();
+    await refreshSpellingProgress();
 
     setIsLoading(false);
+  };
+
+  const handleSpellingTierTap = (
+    tierId: SpellingTierId,
+    tierLabel: string,
+    mode: "teach" | "practice"
+  ) => {
+    if (!childId) return;
+
+    router.push({
+      pathname: "/spelling/[listId]",
+      params: {
+        listId: "curriculum",
+        childId,
+        tierId,
+        strand: "lexical",
+        tierLabel,
+        mode,
+      },
+    });
   };
 
   const handleConjugationTierTap = async (
@@ -694,10 +747,11 @@ export default function ChildHomeScreen() {
           params: { childId },
         });
       } else if (topic === "spelling") {
-        router.push({
-          pathname: "/spelling-lists/[childId]",
-          params: { childId },
-        });
+        const tierId = spellingProgress?.tierId || "SP1";
+        const hasTierAttempts = (spellingProgress?.attempts || []).some((attempt) =>
+          attempt.tierId === tierId && attempt.strand === "lexical"
+        );
+        handleSpellingTierTap(tierId, spellingTierLabel(tierId), hasTierAttempts ? "practice" : "teach");
       } else if (topic === "conjugation") {
         const tierId = conjugationProgress?.tierId || CONJUGATION_LADDER[0].id;
         const tierLabel = conjugationTierLabel(tierId);
@@ -1212,6 +1266,18 @@ export default function ChildHomeScreen() {
       action: hasTierAttempts ? setupCopy.nextMathActionPractice : setupCopy.nextMathActionTeach,
     };
   };
+  const spellingTileMeta = () => {
+    const tierId = spellingProgress?.tierId || "SP1";
+    const hasTierAttempts = (spellingProgress?.attempts || []).some((attempt) =>
+      attempt.tierId === tierId && attempt.strand === "lexical"
+    );
+    return {
+      tierId,
+      tierLabel: spellingTierLabel(tierId),
+      mode: hasTierAttempts ? "practice" as const : "teach" as const,
+      action: hasTierAttempts ? setupCopy.nextMathActionPractice : setupCopy.nextMathActionTeach,
+    };
+  };
   const introSlides = setupCopy.introSlides;
   const currentIntroSlide = introSlides[introSlideIndex];
   const introVisible = !!child && !child.pin_setup_required && !child.intro_seen;
@@ -1596,11 +1662,12 @@ export default function ChildHomeScreen() {
           {nextUpTiles.map(({ subject, unlockState: state }) => {
             const isMathSubject = MATH_OPERATIONS.includes(subject.topic as Operation);
             const mathMeta = isMathSubject ? mathTileMeta(subject.topic as Operation) : null;
+            const spellingMeta = subject.topic === "spelling" ? spellingTileMeta() : null;
             const conjugationMeta = subject.topic === "conjugation" ? conjugationTileMeta() : null;
             const unlocked = state?.unlocked;
-            const title = mathMeta?.tierLabel || conjugationMeta?.tierLabel || subjectLabel(subject.topic);
+            const title = mathMeta?.tierLabel || spellingMeta?.tierLabel || conjugationMeta?.tierLabel || subjectLabel(subject.topic);
             const subtitle = unlocked
-              ? mathMeta?.action || conjugationMeta?.action || subjectDescription(subject.topic)
+              ? mathMeta?.action || spellingMeta?.action || conjugationMeta?.action || subjectDescription(subject.topic)
               : lockedText(state, subject.topic);
 
             return (
@@ -1612,6 +1679,10 @@ export default function ChildHomeScreen() {
                   if (!unlocked) return;
                   if (mathMeta && isMathSubject) {
                     handleNextMathTap(subject.topic as Operation, mathMeta.tierId, mathMeta.tierLabel, mathMeta.mode);
+                    return;
+                  }
+                  if (spellingMeta) {
+                    handleSpellingTierTap(spellingMeta.tierId, spellingMeta.tierLabel, spellingMeta.mode);
                     return;
                   }
                   if (conjugationMeta) {
