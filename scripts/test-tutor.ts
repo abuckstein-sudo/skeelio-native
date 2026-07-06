@@ -19,6 +19,7 @@ import {
   conjugationTierStats,
   ConjugationAttempt,
 } from "../lib/tutor/conjugationAbility";
+import { mapConjugationAttemptRows } from "../lib/tutor/conjugationAttempts";
 import { pickNextStep } from "../lib/tutor/selector";
 import { computeUnlockState } from "../lib/tutor/unlockGraph";
 import { TIER_GATE } from "../lib/masteryConfig";
@@ -298,6 +299,34 @@ assert(hintedStats.attempts === 12, `CJ1 should still show 12 total attempts, go
 assert(hintedStats.unaidedAttempts === 10, `CJ1 should count only 10 unaided attempts, got ${hintedStats.unaidedAttempts}`);
 assert(!isSolidConjugationTier(hintedStats), "CJ1 should not be solid when hinted attempts are needed to reach 12");
 console.log("  ✅ hinted attempts are display attempts only, not mastery evidence");
+
+console.log("\nTest 1h: conjugation attempt read mapper joins question content and carries aided");
+const joinedAttempts = mapConjugationAttemptRows([
+  {
+    is_correct: true,
+    aided: true,
+    conjugation_questions: {
+      language: "fr-FR",
+      verb: "être",
+      verb_group: "irregulier",
+      tense: "présent",
+      pronoun: "je",
+    },
+  },
+  {
+    is_correct: true,
+    aided: false,
+    conjugation_questions: null,
+  },
+]);
+assert(joinedAttempts.length === 1, `Mapper should drop rows missing joined question content, got ${joinedAttempts.length}`);
+assert(joinedAttempts[0].verb === "être", `Mapper should recover joined verb, got ${joinedAttempts[0]?.verb}`);
+assert(joinedAttempts[0].tense === "présent", `Mapper should recover joined tense, got ${joinedAttempts[0]?.tense}`);
+assert(joinedAttempts[0].verb_group === "irregulier", `Mapper should recover joined group, got ${joinedAttempts[0]?.verb_group}`);
+assert(joinedAttempts[0].pronoun === "je", `Mapper should recover joined pronoun, got ${joinedAttempts[0]?.pronoun}`);
+assert(joinedAttempts[0].aided === true, "Mapper should carry aided=true into the engine attempt shape");
+assert(conjugationTierStats(joinedAttempts).CJ1.unaidedAttempts === 0, "Aided joined attempts should not count as unaided");
+console.log("  ✅ joined conjugation attempt rows feed aided/content into the engine");
 
 // Test 2: 5/8 at A3 → developing, not ready
 console.log("\nTest 2: 5/8 correct at A3 → developing, not ready");
