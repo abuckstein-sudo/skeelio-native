@@ -22,18 +22,18 @@ export type SpellingTier = {
 };
 
 export const SPELLING_LADDER: SpellingTier[] = [
-  { id: "SP1", label: "Mots courants — niveau 1", strand: "lexical", order: 1 },
-  { id: "SP2", label: "Mots courants — niveau 2", strand: "lexical", order: 2 },
-  { id: "SP3", label: "Mots courants — niveau 3", strand: "lexical", order: 3 },
-  { id: "SP4", label: "Mots courants — niveau 4", strand: "lexical", order: 4 },
-  { id: "SP5", label: "Mots courants — niveau 5", strand: "lexical", order: 5 },
-  { id: "SP6", label: "Mots courants — niveau 6", strand: "lexical", order: 6 },
-  { id: "SP7", label: "Mots courants — niveau 7", strand: "lexical", order: 7 },
-  { id: "SP8", label: "Mots courants — niveau 8", strand: "lexical", order: 8 },
-  { id: "INV1", label: "Mots invariables — niveau 1", strand: "invariable", order: 1 },
-  { id: "INV2", label: "Mots invariables — niveau 2", strand: "invariable", order: 2 },
-  { id: "INV3", label: "Mots invariables — niveau 3", strand: "invariable", order: 3 },
-  { id: "INV4", label: "Mots invariables — niveau 4", strand: "invariable", order: 4 },
+  { id: "SP1", label: "Mots courants — échelons 1 à 9", strand: "lexical", order: 1 },
+  { id: "SP2", label: "Mots courants — échelons 10 à 11", strand: "lexical", order: 2 },
+  { id: "SP3", label: "Mots courants — échelons 12 à 13", strand: "lexical", order: 3 },
+  { id: "SP4", label: "Mots courants — échelons 14 à 15", strand: "lexical", order: 4 },
+  { id: "SP5", label: "Mots courants — échelons 16 à 17", strand: "lexical", order: 5 },
+  { id: "SP6", label: "Mots courants — échelons 18 à 19", strand: "lexical", order: 6 },
+  { id: "SP7", label: "Mots courants — échelons 20 à 23", strand: "lexical", order: 7 },
+  { id: "SP8", label: "Mots courants — échelon 24 et plus", strand: "lexical", order: 8 },
+  { id: "INV1", label: "Mots invariables — échelons 1 à 11", strand: "invariable", order: 1 },
+  { id: "INV2", label: "Mots invariables — échelons 12 à 15", strand: "invariable", order: 2 },
+  { id: "INV3", label: "Mots invariables — échelons 16 à 19", strand: "invariable", order: 3 },
+  { id: "INV4", label: "Mots invariables — échelon 20 et plus", strand: "invariable", order: 4 },
 ];
 
 export const SPELLING_LEXICAL_LADDER = SPELLING_LADDER.filter((tier) => tier.strand === "lexical");
@@ -53,9 +53,9 @@ export const SPELLING_GRADE_EXPECTED: Record<
   { lexical: SpellingTierId; invariable: SpellingTierId }
 > = {
   CP: { lexical: "SP1", invariable: "INV1" },
-  CE1: { lexical: "SP3", invariable: "INV2" },
-  CE2: { lexical: "SP6", invariable: "INV3" },
-  CM1: { lexical: "SP8", invariable: "INV4" },
+  CE1: { lexical: "SP2", invariable: "INV1" },
+  CE2: { lexical: "SP4", invariable: "INV2" },
+  CM1: { lexical: "SP6", invariable: "INV3" },
 };
 
 export const SPELLING_GRADE_EXPECTED_STANDARDS: Record<"CP" | "CE1" | "CE2" | "CM1", { citation: string }> = {
