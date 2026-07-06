@@ -17,6 +17,7 @@ export interface ConjugationAttempt {
   correct?: boolean;
   aided?: boolean;
   hintUsed?: boolean;
+  created_at?: string | null;
 }
 
 export interface ConjugationTierStats {

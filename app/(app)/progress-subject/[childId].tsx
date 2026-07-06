@@ -22,6 +22,20 @@ import {
 } from "@/lib/tutorConfig";
 import { operationLabel, recommendationFor } from "@/lib/progressGlance";
 import { todayDateKey } from "@/lib/schoolHomework";
+import {
+  CONJUGATION_GRADE_EXPECTED,
+  CONJUGATION_GRADE_EXPECTED_STANDARDS,
+  CONJUGATION_LADDER,
+  ConjugationTierId,
+} from "@/lib/conjugationConfig";
+import {
+  ConjugationAttempt,
+  ConjugationTierStats,
+  conjugationTierStats,
+  currentConjugationTierAndBand,
+  isSolidConjugationTier,
+} from "@/lib/tutor/conjugationAbility";
+import { fetchConjugationAttemptsForChild } from "@/lib/tutor/conjugationAttempts";
 
 type Child = {
   id: string;
@@ -167,12 +181,34 @@ function tierStateLabel({
   return "future";
 }
 
+function conjugationExpectedTierId(gradeLevel: string | null | undefined): ConjugationTierId | null {
+  return (CONJUGATION_GRADE_EXPECTED as Record<string, ConjugationTierId | null>)[gradeLevel || ""] ?? null;
+}
+
+function conjugationTierIndex(tierId: ConjugationTierId | string | null | undefined): number {
+  if (!tierId) return -1;
+  return CONJUGATION_LADDER.findIndex((tier) => tier.id === tierId);
+}
+
+function buildConjugationWeeklyBuckets(attempts: ConjugationAttempt[], now = new Date()): WeeklyBucket[] {
+  return buildWeeklyBuckets(attempts.map((attempt) => ({
+    tier: null,
+    question_text: null,
+    was_correct: Boolean(attempt.wasCorrect ?? attempt.is_correct ?? attempt.correct),
+    ai_hint_used: Boolean(attempt.aided || attempt.hintUsed),
+    evidence_source: null,
+    created_at: attempt.created_at ?? null,
+  })), now);
+}
+
 export default function ProgressSubjectScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ childId: string; childName?: string; operation?: string }>();
   const childId = String(params.childId || "");
   const paramChildName = params.childName ? String(params.childName) : "";
-  const operation = OPERATIONS.includes(String(params.operation) as Operation)
+  const requestedSubject = String(params.operation || "");
+  const isConjugation = requestedSubject === "conjugation";
+  const operation = OPERATIONS.includes(requestedSubject as Operation)
     ? (String(params.operation) as Operation)
     : "addition";
 
@@ -180,6 +216,7 @@ export default function ProgressSubjectScreen() {
   const [child, setChild] = useState<Child | null>(null);
   const [status, setStatus] = useState<OperationStatus | null>(null);
   const [attemptRows, setAttemptRows] = useState<LearningAttemptRow[]>([]);
+  const [conjugationAttempts, setConjugationAttempts] = useState<ConjugationAttempt[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -197,26 +234,31 @@ export default function ProgressSubjectScreen() {
         if (childError) throw childError;
 
         const loadedChild = childData as Child;
-        const [operationStatus, attemptsResult] = await Promise.all([
-          getOperationStatus(childId, operation, loadedChild),
-          supabase
-            .from("learning_attempts")
-            .select("tier, question_text, was_correct, ai_hint_used, evidence_source, created_at")
-            .eq("child_id", childId)
-            .eq("topic", operation)
-            .not("tier", "is", null),
-        ]);
+        const [operationStatus, attemptsResult, conjugationRows] = isConjugation
+          ? [null, { data: [] }, await fetchConjugationAttemptsForChild(childId)] as const
+          : await Promise.all([
+              getOperationStatus(childId, operation, loadedChild),
+              supabase
+                .from("learning_attempts")
+                .select("tier, question_text, was_correct, ai_hint_used, evidence_source, created_at")
+                .eq("child_id", childId)
+                .eq("topic", operation)
+                .not("tier", "is", null),
+              Promise.resolve([] as ConjugationAttempt[]),
+            ]);
 
         if (cancelled) return;
         setChild(loadedChild);
         setStatus(operationStatus);
         setAttemptRows((attemptsResult.data || []) as LearningAttemptRow[]);
+        setConjugationAttempts(conjugationRows);
       } catch (error) {
         console.error("[progress-subject] load error:", error);
         if (!cancelled) {
           setChild(null);
           setStatus(null);
           setAttemptRows([]);
+          setConjugationAttempts([]);
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -227,7 +269,7 @@ export default function ProgressSubjectScreen() {
     return () => {
       cancelled = true;
     };
-  }, [childId, operation]);
+  }, [childId, operation, isConjugation]);
 
   const attempts = useMemo(() => attemptRows.map(toAttempt).filter(Boolean) as Attempt[], [attemptRows]);
   const stats = useMemo(() => tierStats(attempts), [attempts]);
@@ -268,6 +310,29 @@ export default function ProgressSubjectScreen() {
       : null
   );
   const maxWeeklyTotal = Math.max(1, ...weeklyBuckets.map((bucket) => bucket.total));
+  const conjugationStats = useMemo(() => conjugationTierStats(conjugationAttempts), [conjugationAttempts]);
+  const conjugationBand = useMemo(() => currentConjugationTierAndBand(conjugationAttempts), [conjugationAttempts]);
+  const conjugationWeeklyBuckets = useMemo(() => buildConjugationWeeklyBuckets(conjugationAttempts), [conjugationAttempts]);
+  const conjugationCurrentTier = CONJUGATION_LADDER.find((tier) => tier.id === conjugationBand.tierId) || CONJUGATION_LADDER[0];
+  const conjugationCurrentStats = conjugationStats[conjugationCurrentTier.id];
+  const conjugationTargetTierId = conjugationExpectedTierId(gradeLevel);
+  const conjugationTargetIndex = conjugationTierIndex(conjugationTargetTierId);
+  const conjugationTargetTier = conjugationTargetIndex >= 0 ? CONJUGATION_LADDER[conjugationTargetIndex] : null;
+  const conjugationStandard = (CONJUGATION_GRADE_EXPECTED_STANDARDS as Record<string, { citation: string } | undefined>)[gradeLevel || ""];
+  const conjugationHighestSolidIndex = useMemo(() => {
+    for (let index = CONJUGATION_LADDER.length - 1; index >= 0; index--) {
+      if (isSolidConjugationTier(conjugationStats[CONJUGATION_LADDER[index].id])) return index;
+    }
+    return -1;
+  }, [conjugationStats]);
+  const conjugationMaxWeeklyTotal = Math.max(1, ...conjugationWeeklyBuckets.map((bucket) => bucket.total));
+  const conjugationBannerText = conjugationTargetTier
+    ? `${gradeLabel} year goal: ${conjugationTargetTier.label}`
+    : "No year goal set for this grade";
+  const conjugationHighestSolidText = conjugationHighestSolidIndex >= 0
+    ? `Highest solid: ${CONJUGATION_LADDER[conjugationHighestSolidIndex].label}`
+    : "Highest solid: not yet";
+  const conjugationRecommendation = `Keep practicing ${conjugationCurrentTier.label} across all six pronouns.`;
 
   const openAssign = () => {
     router.push({
@@ -289,6 +354,87 @@ export default function ProgressSubjectScreen() {
         <View style={styles.loadingWrap}>
           <ActivityIndicator size="large" color="#2563eb" />
         </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (isConjugation) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.headerButton} onPress={() => router.back()}>
+            <MaterialCommunityIcons name="arrow-left" size={22} color="#0f172a" />
+          </TouchableOpacity>
+          <View style={styles.headerTextWrap}>
+            <Text style={styles.headerTitle}>Conjugation</Text>
+            <Text style={styles.headerSubtitle}>{childName}</Text>
+          </View>
+          <View style={styles.headerButton}>
+            <MaterialCommunityIcons name="format-letter-case" size={21} color="#0f766e" />
+          </View>
+        </View>
+
+        <ScrollView contentContainerStyle={styles.content}>
+          <View style={styles.gradeBanner}>
+            <Text style={styles.gradeTitle}>{conjugationBannerText}</Text>
+            <Text style={styles.gradeMeta}>{conjugationHighestSolidText}</Text>
+            <Text style={styles.sourceText}>Source: {conjugationStandard?.citation || "Grade target source unavailable."}</Text>
+          </View>
+
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Tier ladder</Text>
+            <View style={styles.ladder}>
+              {CONJUGATION_LADDER.slice(0, conjugationTargetIndex >= 0 ? conjugationTargetIndex + 1 : CONJUGATION_LADDER.length).map((tier, index) => {
+                const stat = conjugationStats[tier.id];
+                const mastered = isSolidConjugationTier(stat);
+                const current = tier.id === conjugationBand.tierId && !mastered;
+                const state = mastered ? "mastered" : current ? "current" : "future";
+                return (
+                  <View key={tier.id} style={[styles.tierRow, state === "current" && styles.tierRowCurrent]}>
+                    <View style={[styles.tierDot, styles[`tierDot_${state}`]]} />
+                    <View style={styles.tierTextWrap}>
+                      <View style={styles.tierTitleRow}>
+                        <Text style={styles.tierTitle}>{tier.id} · {tier.label}</Text>
+                        {index === conjugationTargetIndex ? <Text style={styles.targetPill}>year goal</Text> : null}
+                      </View>
+                      <Text style={styles.tierState}>{state}</Text>
+                      {state === "current" ? <ConjugationTierStatsLine stat={stat} /> : null}
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          </View>
+
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Accuracy over time</Text>
+            <View style={styles.weeklyPanel}>
+              {conjugationWeeklyBuckets.map((bucket) => (
+                <View key={bucket.label} style={styles.weekItem}>
+                  <View style={styles.weekTrack}>
+                    <View
+                      style={[
+                        styles.weekVolume,
+                        { height: `${Math.max(10, (bucket.total / conjugationMaxWeeklyTotal) * 100)}%` },
+                      ]}
+                    >
+                      <View style={[styles.weekAccuracy, { height: `${bucket.accuracy * 100}%` }]} />
+                    </View>
+                  </View>
+                  <Text style={styles.weekLabel}>{bucket.label}</Text>
+                  <Text style={styles.weekRate}>{bucket.total > 0 ? percent(bucket.accuracy * 100) : "—"}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+
+          <View style={styles.nextPanel}>
+            <View style={styles.nextTextWrap}>
+              <Text style={styles.sectionTitle}>What to do next</Text>
+              <Text style={styles.recommendation}>{conjugationRecommendation}</Text>
+            </View>
+          </View>
+        </ScrollView>
       </SafeAreaView>
     );
   }
@@ -386,6 +532,18 @@ function TierStatsLine({ stat, coverage }: { stat?: TierStats; coverage: { cover
   return (
     <Text style={styles.tierStats}>
       {percent(stat.masteryRate * 100)} accuracy • {stat.attempts} attempts{coverageText}
+    </Text>
+  );
+}
+
+function ConjugationTierStatsLine({ stat }: { stat?: ConjugationTierStats }) {
+  if (!stat) {
+    return <Text style={styles.tierStats}>No attempts yet</Text>;
+  }
+
+  return (
+    <Text style={styles.tierStats}>
+      {percent(stat.masteryRate * 100)} accuracy • {stat.unaidedCorrect}/{stat.unaidedAttempts} unaided correct • pronouns {stat.pronounsCovered.length}/6 • verbs {stat.distinctVerbsCovered}
     </Text>
   );
 }

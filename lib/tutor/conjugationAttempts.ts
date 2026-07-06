@@ -11,6 +11,7 @@ type ConjugationQuestionJoin = {
 type ConjugationAttemptRow = {
   is_correct: boolean | null;
   aided: boolean | null;
+  created_at?: string | null;
   conjugation_questions: ConjugationQuestionJoin | ConjugationQuestionJoin[] | null;
 };
 
@@ -32,6 +33,7 @@ export function mapConjugationAttemptRows(rows: ConjugationAttemptRow[]): Conjug
       language: question.language ?? "fr-FR",
       is_correct: !!row.is_correct,
       aided: !!row.aided,
+      created_at: row.created_at ?? null,
     }];
   });
 }

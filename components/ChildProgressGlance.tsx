@@ -23,6 +23,19 @@ import {
 import { listWorksheetSkillsForChild, worksheetSkillLabel, WorksheetSkill } from "@/lib/worksheetSkills";
 import { operationLabel, recommendationFor } from "@/lib/progressGlance";
 import { todayDateKey } from "@/lib/schoolHomework";
+import {
+  CONJUGATION_GRADE_EXPECTED,
+  CONJUGATION_GRADE_EXPECTED_STANDARDS,
+  CONJUGATION_LADDER,
+  ConjugationTierId,
+} from "@/lib/conjugationConfig";
+import {
+  ConjugationAttempt,
+  conjugationTierStats,
+  currentConjugationTierAndBand,
+  isSolidConjugationTier,
+} from "@/lib/tutor/conjugationAbility";
+import { fetchConjugationAttemptsForChild } from "@/lib/tutor/conjugationAttempts";
 
 type Child = {
   id: string;
@@ -63,6 +76,15 @@ type StuckCard =
       tierLabel: string;
       missingFacts: string[];
       recommendation: string;
+    }
+  | {
+      id: string;
+      kind: "conjugation-struggling";
+      tierId: ConjugationTierId;
+      tierLabel: string;
+      attemptCount: number;
+      accuracy: number;
+      recommendation: string;
     };
 
 type RecentWin = {
@@ -75,8 +97,12 @@ type RecentWin = {
 
 type Timeframe = "7d" | "30d" | "all";
 type ChecklistSelection = {
+  type: "math";
   operation: Operation;
   status?: OperationStatus;
+} | {
+  type: "conjugation";
+  attempts: ConjugationAttempt[];
 };
 type GradeProgressDisplay = {
   displayTargetIndex: number;
@@ -194,6 +220,64 @@ function gradeProgressDisplay({
   };
 }
 
+function conjugationExpectedTierId(gradeLevel: string | null | undefined): ConjugationTierId | null {
+  return (CONJUGATION_GRADE_EXPECTED as Record<string, ConjugationTierId | null>)[gradeLevel || ""] ?? null;
+}
+
+function conjugationTierIndex(tierId: ConjugationTierId | string | null | undefined): number {
+  if (!tierId) return -1;
+  return CONJUGATION_LADDER.findIndex((tier) => tier.id === tierId);
+}
+
+function nextConjugationGrade(gradeLevel: string | null | undefined): string | null {
+  const startIndex = gradeLevel ? Math.max(0, GRADE_ORDER.indexOf(gradeLevel) + 1) : 0;
+  for (let index = startIndex; index < GRADE_ORDER.length; index++) {
+    if (conjugationExpectedTierId(GRADE_ORDER[index])) return GRADE_ORDER[index];
+  }
+  return null;
+}
+
+function conjugationGradeProgressDisplay({
+  gradeLevel,
+  highestIndex,
+  targetIndex,
+}: {
+  gradeLevel?: string | null;
+  highestIndex: number;
+  targetIndex: number;
+}): GradeProgressDisplay {
+  if (targetIndex < 0 || highestIndex < targetIndex) {
+    return { displayTargetIndex: targetIndex, statusText: null };
+  }
+
+  const nextTarget = CONJUGATION_LADDER.find((_, index) => index > highestIndex);
+  if (nextTarget) {
+    return {
+      displayTargetIndex: conjugationTierIndex(nextTarget.id),
+      statusText: `Ahead — working beyond ${gradeLevel || "grade"} level`,
+    };
+  }
+
+  return {
+    displayTargetIndex: highestIndex,
+    statusText: "Working beyond CM1 level • Top of the ladder",
+  };
+}
+
+function highestSolidConjugationIndex(attempts: ConjugationAttempt[]): number {
+  const stats = conjugationTierStats(attempts);
+  for (let index = CONJUGATION_LADDER.length - 1; index >= 0; index--) {
+    if (isSolidConjugationTier(stats[CONJUGATION_LADDER[index].id])) return index;
+  }
+  return -1;
+}
+
+function conjugationRecommendation(tierLabel: string, band: string): string {
+  if (band === "struggling") return `Replay a short model, then assign mixed pronoun practice for ${tierLabel}.`;
+  if (band === "developing") return `Keep practicing ${tierLabel} with all six pronouns.`;
+  return `Introduce the next conjugation pattern when the current tier feels steady.`;
+}
+
 function missingFactLabels(tierId: string, attempts: Attempt[]): string[] {
   const keys = factTierCoverageKeys(tierId, attempts);
   if (!keys) return [];
@@ -272,7 +356,7 @@ function trendBuckets(events: RecentWin[], timeframe: Timeframe, now: Date, rang
   });
 }
 
-function buildStuckCards(statuses: OperationStatus[], rows: LearningAttemptRow[]): StuckCard[] {
+function buildStuckCards(statuses: OperationStatus[], rows: LearningAttemptRow[], conjugationAttempts: ConjugationAttempt[]): StuckCard[] {
   const cards: StuckCard[] = [];
 
   for (const status of statuses) {
@@ -300,7 +384,7 @@ function buildStuckCards(statuses: OperationStatus[], rows: LearningAttemptRow[]
       .map(toAttempt)
       .filter(Boolean) as Attempt[];
     for (const tier of LADDERS[operation]) {
-      if (cards.some((card) => card.operation === operation && card.tierId === tier.id)) continue;
+      if (cards.some((card) => card.kind !== "conjugation-struggling" && card.operation === operation && card.tierId === tier.id)) continue;
       const gap = factTierCoverageGapAfterOtherGates(tier.id, attempts);
       if (!gap) continue;
       const missingFacts = missingFactLabels(tier.id, attempts);
@@ -316,6 +400,22 @@ function buildStuckCards(statuses: OperationStatus[], rows: LearningAttemptRow[]
     }
   }
 
+  const conjugationBand = currentConjugationTierAndBand(conjugationAttempts);
+  if (conjugationBand.band === "struggling") {
+    const stats = conjugationTierStats(conjugationAttempts);
+    const stat = stats[conjugationBand.tierId];
+    const tierLabel = CONJUGATION_LADDER.find((tier) => tier.id === conjugationBand.tierId)?.label || conjugationBand.tierId;
+    cards.push({
+      id: `struggling-conjugation-${conjugationBand.tierId}`,
+      kind: "conjugation-struggling",
+      tierId: conjugationBand.tierId,
+      tierLabel,
+      attemptCount: stat?.attempts || 0,
+      accuracy: stat ? stat.masteryRate * 100 : 0,
+      recommendation: conjugationRecommendation(tierLabel, "struggling"),
+    });
+  }
+
   return cards.slice(0, 3);
 }
 
@@ -326,6 +426,7 @@ export default function ChildProgressGlance({ child }: { child: Child }) {
   const [statuses, setStatuses] = useState<OperationStatus[]>([]);
   const [attemptRows, setAttemptRows] = useState<LearningAttemptRow[]>([]);
   const [worksheetSkills, setWorksheetSkills] = useState<WorksheetSkill[]>([]);
+  const [conjugationAttempts, setConjugationAttempts] = useState<ConjugationAttempt[]>([]);
   const [spellingListCount, setSpellingListCount] = useState(0);
   const [stars, setStars] = useState(0);
   const [checklistSelection, setChecklistSelection] = useState<ChecklistSelection | null>(null);
@@ -336,7 +437,7 @@ export default function ChildProgressGlance({ child }: { child: Child }) {
     async function load() {
       setLoading(true);
       try {
-        const [operationStatuses, attemptsResult, rewardsResult, skills, spellingResult] = await Promise.all([
+        const [operationStatuses, attemptsResult, rewardsResult, skills, spellingResult, conjugationRows] = await Promise.all([
           Promise.all(MATH_OPERATIONS.map((operation) => getOperationStatus(child.id, operation, child))),
           supabase
             .from("learning_attempts")
@@ -346,6 +447,7 @@ export default function ChildProgressGlance({ child }: { child: Child }) {
           supabase.from("rewards").select("stars").eq("child_id", child.id).maybeSingle(),
           listWorksheetSkillsForChild(child.id),
           supabase.from("spelling_lists").select("id", { count: "exact", head: true }).eq("child_id", child.id),
+          fetchConjugationAttemptsForChild(child.id),
         ]);
 
         if (cancelled) return;
@@ -354,6 +456,7 @@ export default function ChildProgressGlance({ child }: { child: Child }) {
         setStars(rewardsResult.data?.stars ?? 0);
         setWorksheetSkills(skills);
         setSpellingListCount(spellingResult.count ?? 0);
+        setConjugationAttempts(conjugationRows);
       } catch (error) {
         console.error("[progress-glance] load error:", error);
         if (!cancelled) {
@@ -361,6 +464,7 @@ export default function ChildProgressGlance({ child }: { child: Child }) {
           setAttemptRows([]);
           setWorksheetSkills([]);
           setSpellingListCount(0);
+          setConjugationAttempts([]);
           setStars(0);
         }
       } finally {
@@ -378,6 +482,7 @@ export default function ChildProgressGlance({ child }: { child: Child }) {
   const mathMasteryEvents = useMemo(() => masteryEvents(attemptRows), [attemptRows]);
   const allActivityDates = [
     ...attemptRows.map((row) => dateFromString(row.created_at)).filter(Boolean),
+    ...conjugationAttempts.map((attempt) => dateFromString(attempt.created_at)).filter(Boolean),
     ...worksheetSkills.map(dateForWorksheetSkill).filter(Boolean),
     ...mathMasteryEvents.map((event) => event.date),
   ] as Date[];
@@ -388,7 +493,7 @@ export default function ChildProgressGlance({ child }: { child: Child }) {
   const masteredInWindow = mathMasteryEvents.filter((event) => isWithinTimeframe(event.date, selectedStart, now)).length;
   const trends = trendBuckets(mathMasteryEvents, timeframe, now, selectedStart);
   const maxTrend = Math.max(1, ...trends.map((trend) => trend.count));
-  const stuckCards = buildStuckCards(statuses, attemptRows);
+  const stuckCards = buildStuckCards(statuses, attemptRows, conjugationAttempts);
   const windowLabel = timeframeLabel(timeframe);
   const worksheetActivity = worksheetSkills.filter((skill) => {
     if (skill.status !== "complete") return false;
@@ -417,6 +522,16 @@ export default function ChildProgressGlance({ child }: { child: Child }) {
         childId: child.id,
         childName: child.name,
         operation,
+      },
+    });
+  };
+  const openConjugationDetail = () => {
+    router.push({
+      pathname: "/(app)/progress-subject/[childId]",
+      params: {
+        childId: child.id,
+        childName: child.name,
+        operation: "conjugation",
       },
     });
   };
@@ -533,11 +648,17 @@ export default function ChildProgressGlance({ child }: { child: Child }) {
               status={status}
               unlockState={unlockState[operation]}
               gradeLevel={child.grade_level}
-              onOpenChecklist={() => setChecklistSelection({ operation, status })}
+              onOpenChecklist={() => setChecklistSelection({ type: "math", operation, status })}
               onOpenDetail={() => openSubjectDetail(operation)}
             />
           );
         })}
+        <ConjugationSkillRow
+          attempts={conjugationAttempts}
+          gradeLevel={child.grade_level}
+          onOpenChecklist={() => setChecklistSelection({ type: "conjugation", attempts: conjugationAttempts })}
+          onOpenDetail={openConjugationDetail}
+        />
         <SpellingSkillRow listCount={spellingListCount} unlockState={unlockState.spelling} />
       </View>
 
@@ -612,23 +733,29 @@ function MetricTile({ label, value, tone }: { label: string; value: string; tone
 }
 
 function StuckCardView({ card, onAssign }: { card: StuckCard; onAssign: (operation: Operation, tierId: string) => void }) {
-  const danger = card.kind === "struggling";
+  const danger = card.kind === "struggling" || card.kind === "conjugation-struggling";
+  const subject = card.kind === "conjugation-struggling" ? "Conjugation" : operationLabel(card.operation);
   return (
     <View style={[styles.stuckCard, danger ? styles.stuckDanger : styles.stuckWarning]}>
       <View style={styles.stuckTopRow}>
         <View style={styles.stuckTextWrap}>
-          <Text style={styles.stuckKicker}>{operationLabel(card.operation)} • {card.tierId}</Text>
+          <Text style={styles.stuckKicker}>{subject} • {card.tierId}</Text>
           <Text style={styles.stuckTitle}>{card.tierLabel}</Text>
         </View>
         <MaterialCommunityIcons name={danger ? "alert-circle-outline" : "progress-alert"} size={24} color={danger ? "#dc2626" : "#d97706"} />
       </View>
-      {card.kind === "struggling" ? (
+      {card.kind === "struggling" || card.kind === "conjugation-struggling" ? (
         <Text style={styles.stuckMeta}>{percent(card.accuracy)} mastery accuracy • {card.attemptCount} attempts</Text>
       ) : (
         <Text style={styles.stuckMeta}>Missing facts: {card.missingFacts.join(", ")}</Text>
       )}
       <Text style={styles.recommendation}>{card.recommendation}</Text>
-      <TouchableOpacity style={styles.assignButton} onPress={() => onAssign(card.operation, card.tierId)}>
+      <TouchableOpacity
+        style={styles.assignButton}
+        onPress={() => {
+          if (card.kind !== "conjugation-struggling") onAssign(card.operation, card.tierId);
+        }}
+      >
         <MaterialCommunityIcons name="playlist-plus" size={16} color="#1d4ed8" />
         <Text style={styles.assignButtonText}>
           {card.kind === "coverage" ? "Assign these facts" : "Assign practice"}
@@ -716,6 +843,75 @@ function MathSkillRow({
   );
 }
 
+function ConjugationSkillRow({
+  attempts,
+  gradeLevel,
+  onOpenChecklist,
+  onOpenDetail,
+}: {
+  attempts: ConjugationAttempt[];
+  gradeLevel?: string | null;
+  onOpenChecklist: () => void;
+  onOpenDetail: () => void;
+}) {
+  const stats = conjugationTierStats(attempts);
+  const current = currentConjugationTierAndBand(attempts);
+  const highestIndex = highestSolidConjugationIndex(attempts);
+  const currentIndex = conjugationTierIndex(current.tierId);
+  const targetTierId = conjugationExpectedTierId(gradeLevel);
+  const targetIndex = conjugationTierIndex(targetTierId);
+  const targetTier = targetIndex >= 0 ? CONJUGATION_LADDER[targetIndex] : null;
+  const startsInGrade = targetTierId ? null : nextConjugationGrade(gradeLevel);
+  const gradeProgress = conjugationGradeProgressDisplay({ gradeLevel, highestIndex, targetIndex });
+  const statusText = !targetTier
+    ? startsInGrade
+      ? `Starts in ${startsInGrade}`
+      : "No year goal set for this grade"
+    : gradeProgress.statusText
+      ? gradeProgress.statusText
+      : highestIndex >= 0
+        ? `Solid through ${CONJUGATION_LADDER[highestIndex].label} • Year goal: ${targetTier.label}`
+        : `Working on ${CONJUGATION_LADDER[currentIndex]?.label || current.tierId} • Year goal: ${targetTier.label}`;
+
+  return (
+    <TouchableOpacity style={styles.skillRow} activeOpacity={0.78} onPress={onOpenDetail}>
+      <View style={styles.skillRowHeader}>
+        <View style={styles.skillLabelWrap}>
+          <MaterialCommunityIcons name="format-letter-case" size={18} color="#0f766e" />
+          <Text style={styles.skillTitle}>Conjugation</Text>
+        </View>
+        <View style={styles.skillRowActions}>
+          <TouchableOpacity style={styles.checklistIconButton} onPress={onOpenChecklist}>
+            <MaterialCommunityIcons name="clipboard-check-outline" size={18} color="#64748b" />
+          </TouchableOpacity>
+          <MaterialCommunityIcons name="chevron-right" size={20} color="#94a3b8" />
+        </View>
+      </View>
+      <View style={styles.segmentRow}>
+        {CONJUGATION_LADDER.map((tier, index) => {
+          const mastered = isSolidConjugationTier(stats[tier.id]);
+          const target = index === gradeProgress.displayTargetIndex;
+          const currentTier = index === currentIndex && !mastered;
+          const stuck = currentTier && current.band === "struggling";
+          return (
+            <View
+              key={tier.id}
+              style={[
+                styles.segment,
+                mastered && styles.segmentMastered,
+                target && !mastered && !currentTier && styles.segmentTarget,
+                currentTier && styles.segmentCurrent,
+                stuck && styles.segmentStuck,
+              ]}
+            />
+          );
+        })}
+      </View>
+      <Text style={styles.skillStatus}>{statusText}</Text>
+    </TouchableOpacity>
+  );
+}
+
 function SpellingSkillRow({ listCount, unlockState }: { listCount: number; unlockState?: SubjectUnlockState }) {
   const locked = unlockState && !unlockState.unlocked;
   return (
@@ -748,15 +944,25 @@ function GradeGoalChecklistModal({
   gradeLevel?: string | null;
   onClose: () => void;
 }) {
-  const operation = selection?.operation;
-  const standard = gradeExpectedTierStandard(gradeLevel);
-  const targetTierId = operation ? gradeExpectedTierId(operation, gradeLevel) : null;
-  const targetIndex = operation ? tierIndex(operation, targetTierId) : -1;
-  const tiers = operation && targetIndex >= 0 ? LADDERS[operation].slice(0, targetIndex + 1) : [];
-  const highestIndex = operation ? tierIndex(operation, selection?.status?.highestSolidTierId) : -1;
-  const startsInGrade = operation && !targetTierId ? nextGradeForOperation(operation, gradeLevel) : null;
+  const isConjugation = selection?.type === "conjugation";
+  const operation = selection?.type === "math" ? selection.operation : null;
+  const standard = isConjugation
+    ? (CONJUGATION_GRADE_EXPECTED_STANDARDS as Record<string, { citation: string } | undefined>)[gradeLevel || ""]
+    : gradeExpectedTierStandard(gradeLevel);
+  const targetTierId = isConjugation ? conjugationExpectedTierId(gradeLevel) : operation ? gradeExpectedTierId(operation, gradeLevel) : null;
+  const targetIndex = isConjugation ? conjugationTierIndex(targetTierId) : operation ? tierIndex(operation, targetTierId) : -1;
+  const tiers = isConjugation
+    ? targetIndex >= 0 ? CONJUGATION_LADDER.slice(0, targetIndex + 1) : []
+    : operation && targetIndex >= 0 ? LADDERS[operation].slice(0, targetIndex + 1) : [];
+  const conjugationStats = isConjugation ? conjugationTierStats(selection.attempts) : null;
+  const highestIndex = isConjugation
+    ? highestSolidConjugationIndex(selection.attempts)
+    : operation ? tierIndex(operation, selection?.status?.highestSolidTierId) : -1;
+  const startsInGrade = isConjugation
+    ? !targetTierId ? nextConjugationGrade(gradeLevel) : null
+    : operation && !targetTierId ? nextGradeForOperation(operation, gradeLevel) : null;
   const gradeLabel = gradeLevel || "this grade";
-  const subjectLabel = operation ? operationLabel(operation) : "";
+  const subjectLabel = isConjugation ? "Conjugation" : operation ? operationLabel(operation) : "";
 
   return (
     <Modal visible={!!selection} transparent animationType="fade" onRequestClose={onClose}>
@@ -776,7 +982,7 @@ function GradeGoalChecklistModal({
           ) : (
             <View style={styles.checklistRows}>
               {tiers.map((tier, index) => {
-                const mastered = index <= highestIndex;
+                const mastered = isConjugation ? isSolidConjugationTier(conjugationStats?.[tier.id as ConjugationTierId]) : index <= highestIndex;
                 return (
                   <View key={tier.id} style={styles.checklistRow}>
                     <MaterialCommunityIcons
