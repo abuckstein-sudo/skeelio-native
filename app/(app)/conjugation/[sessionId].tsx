@@ -74,6 +74,8 @@ const COPY = {
     loading: "Loading...",
     choose: "Choose",
     write: "Write",
+    writeInstead: "Write the answer",
+    chooseInstead: "Use choices",
     check: "Check",
     recognizedAnswer: "Recognized answer",
   },
@@ -103,10 +105,24 @@ const COPY = {
     loading: "Chargement...",
     choose: "Choisir",
     write: "Écrire",
+    writeInstead: "Écrire la réponse",
+    chooseInstead: "Voir les choix",
     check: "Valider",
     recognizedAnswer: "Réponse reconnue",
   },
 } as const;
+
+const BEGINNER_CHOICE_TIERS: ConjugationTierId[] = ["CJ1", "CJ2"];
+
+function defaultAnswerModeForTier(tier: ConjugationTierId | string | undefined): "choose" | "write" {
+  return tier && BEGINNER_CHOICE_TIERS.includes(tier as ConjugationTierId) ? "choose" : "write";
+}
+
+function errorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (err && typeof err === "object" && "message" in err) return String((err as { message?: unknown }).message);
+  return String(err);
+}
 
 export default function ConjugationPracticeScreen() {
   const router = useRouter();
@@ -202,6 +218,7 @@ export default function ConjugationPracticeScreen() {
       try {
         if (tierId) {
           setAppLanguage("fr");
+          setAnswerMode(defaultAnswerModeForTier(tierId));
           await startQuizFromTier(tierId as ConjugationTierId);
         } else if (assignmentId) {
           // Load assignment filters and go straight to quiz
@@ -266,7 +283,7 @@ export default function ConjugationPracticeScreen() {
         }
       } catch (err) {
         console.error("[ConjugationPractice] init failed:", err);
-        setError(String(err));
+        setError(errorMessage(err));
         setScreen("selection");
       }
     };
@@ -370,7 +387,7 @@ export default function ConjugationPracticeScreen() {
       setScreen("quiz");
     } catch (err) {
       console.error("[startQuizFromAssignment] failed:", err);
-      setError(String(err));
+      setError(errorMessage(err));
       setIsLoadingQuiz(false);
     }
   };
@@ -423,11 +440,12 @@ export default function ConjugationPracticeScreen() {
       setSelectedLanguage("fr-FR");
       setSelectedTense(tier.tense);
       setSelectedGroup(tier.verbGroups[0] || "");
+      setAnswerMode(defaultAnswerModeForTier(requestedTierId));
       setIsLoadingQuiz(false);
       setScreen("quiz");
     } catch (err) {
       console.error("[startQuizFromTier] failed:", err);
-      setError(String(err));
+      setError(errorMessage(err));
       setIsLoadingQuiz(false);
     }
   };
@@ -533,12 +551,12 @@ export default function ConjugationPracticeScreen() {
       setScreen("quiz");
     } catch (err) {
       console.error("[ConjugationPractice] quiz start failed:", err);
-      setError(String(err));
+      setError(errorMessage(err));
       setIsLoadingQuiz(false);
     }
   };
 
-  const handleSelectOption = async (selectedOption: string) => {
+  const handleSelectOption = async (selectedOption: string, aided = false) => {
     if (!currentQuestion || !session || isSubmitting) return;
 
     setIsSubmitting(true);
@@ -554,7 +572,7 @@ export default function ConjugationPracticeScreen() {
         selectedOption,
         currentQuestion.correct_answer,
         isCorrect,
-        false
+        aided
       );
 
       if (isCorrect) {
@@ -587,7 +605,7 @@ export default function ConjugationPracticeScreen() {
   const handleSubmitWrittenAnswer = () => {
     const answer = writtenAnswer.trim();
     if (!answer || feedback.type !== "idle" || isSubmitting) return;
-    handleSelectOption(answer);
+    handleSelectOption(answer, false);
   };
 
   const handleNext = async () => {
@@ -596,6 +614,7 @@ export default function ConjugationPracticeScreen() {
       setCurrentIndex(nextIndex);
       setFeedback({ type: "idle" });
       setWrittenAnswer("");
+      if (tierId) setAnswerMode(defaultAnswerModeForTier(tierId));
       const shuffled = shuffleOptions(questions[nextIndex].options, questions[nextIndex].correct_answer);
       setShuffledOptions(shuffled);
     } else {
@@ -760,6 +779,7 @@ export default function ConjugationPracticeScreen() {
   if (screen === "quiz") {
     const copy = COPY[appLanguage];
     const forceWriteMode = Boolean(assignmentId);
+    const isTierMode = Boolean(tierId);
     const effectiveAnswerMode = forceWriteMode ? "write" : answerMode;
     if (error) {
       return (
@@ -804,7 +824,7 @@ export default function ConjugationPracticeScreen() {
             </Text>
           </View>
 
-          {!forceWriteMode && (
+          {!forceWriteMode && !isTierMode && (
             <View style={styles.answerModeRow}>
               <TouchableOpacity
                 style={[styles.answerModeButton, answerMode === "choose" && styles.answerModeButtonActive]}
@@ -817,6 +837,20 @@ export default function ConjugationPracticeScreen() {
                 onPress={() => setAnswerMode("write")}
               >
                 <Text style={[styles.answerModeButtonText, answerMode === "write" && styles.answerModeButtonTextActive]}>{copy.write}</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {!forceWriteMode && isTierMode && feedback.type === "idle" && (
+            <View style={styles.tierModeActionRow}>
+              <TouchableOpacity
+                style={styles.tierModeActionButton}
+                onPress={() => setAnswerMode(effectiveAnswerMode === "choose" ? "write" : "choose")}
+                disabled={isSubmitting}
+              >
+                <Text style={styles.tierModeActionText}>
+                  {effectiveAnswerMode === "choose" ? copy.writeInstead : copy.chooseInstead}
+                </Text>
               </TouchableOpacity>
             </View>
           )}
@@ -835,7 +869,7 @@ export default function ConjugationPracticeScreen() {
                     feedback.type === "wrong" && isCorrect && styles.optionCorrect,
                     feedback.type === "wrong" && !isCorrect && isSelected && styles.optionWrong,
                   ]}
-                  onPress={() => handleSelectOption(option)}
+                  onPress={() => handleSelectOption(option, true)}
                   disabled={feedback.type !== "idle" || isSubmitting}
                 >
                   <Text style={styles.optionText}>{option}</Text>
@@ -1127,6 +1161,25 @@ const styles = StyleSheet.create({
   },
   answerModeButtonTextActive: {
     color: "#1d4ed8",
+  },
+  tierModeActionRow: {
+    marginHorizontal: 16,
+    marginBottom: 12,
+    alignItems: "flex-end",
+  },
+  tierModeActionButton: {
+    minHeight: 40,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#2563eb",
+    backgroundColor: "#eff6ff",
+    justifyContent: "center",
+  },
+  tierModeActionText: {
+    color: "#1d4ed8",
+    fontSize: 13,
+    fontWeight: "800",
   },
   optionsContainer: {
     gap: 12,

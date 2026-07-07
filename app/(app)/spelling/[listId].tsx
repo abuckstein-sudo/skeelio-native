@@ -155,7 +155,8 @@ export default function SpellingPracticeScreen() {
 
   // Load list and items
   useEffect(() => {
-    if (!listId || !childId) return;
+    const isTierMode = Boolean(tierId && strand);
+    if (!childId || (!isTierMode && !listId)) return;
 
     const loadList = async () => {
       try {
@@ -165,12 +166,13 @@ export default function SpellingPracticeScreen() {
           .select("languages, preferred_language")
           .eq("id", childId)
           .single();
-        setAppLanguage(appLanguageForChild(childData));
+        const childAppLanguage = appLanguageForChild(childData);
+        setAppLanguage(childAppLanguage);
 
         if (tierId && strand) {
           const tier = SPELLING_LADDER.find((candidate) => candidate.id === tierId && candidate.strand === strand);
           if (!tier) {
-            setError(COPY[appLanguage].listNotFound);
+            setError(COPY[childAppLanguage].listNotFound);
             setIsLoading(false);
             return;
           }
@@ -181,7 +183,7 @@ export default function SpellingPracticeScreen() {
           ]);
 
           if (pool.length === 0) {
-            setError(COPY[appLanguage].noWords);
+            setError(COPY[childAppLanguage].noWords);
             setIsLoading(false);
             return;
           }
@@ -232,7 +234,7 @@ export default function SpellingPracticeScreen() {
 
         const data = await getListWithItems(listId);
         if (!data) {
-          setError(COPY[appLanguage].listNotFound);
+          setError(COPY[childAppLanguage].listNotFound);
           setIsLoading(false);
           return;
         }
@@ -240,7 +242,7 @@ export default function SpellingPracticeScreen() {
         console.log("[SpellingPracticeScreen] list items count:", data.items.length);
 
         if (data.items.length === 0) {
-          setError(COPY[appLanguage].noWords);
+          setError(COPY[childAppLanguage].noWords);
           setIsLoading(false);
           return;
         }

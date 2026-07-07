@@ -280,7 +280,7 @@ export async function recordConjugationAttempt(
   isCorrect: boolean,
   aided = false
 ): Promise<void> {
-  const { error } = await supabase.from("conjugation_practice_attempts").insert({
+  const payload = {
     session_id: sessionId,
     question_id: questionId,
     student_id: childId,
@@ -289,7 +289,23 @@ export async function recordConjugationAttempt(
     correct_answer: correctAnswer,
     is_correct: isCorrect,
     aided,
-  });
+  };
+
+  const { error } = await supabase.from("conjugation_practice_attempts").insert(payload);
+
+  if (error && !aided && (error.message || "").toLowerCase().includes("aided")) {
+    const fallback = await supabase.from("conjugation_practice_attempts").insert({
+      session_id: sessionId,
+      question_id: questionId,
+      student_id: childId,
+      user_id: userId,
+      given_answer: givenAnswer,
+      correct_answer: correctAnswer,
+      is_correct: isCorrect,
+    });
+    if (fallback.error) throw fallback.error;
+    return;
+  }
 
   if (error) throw error;
 }

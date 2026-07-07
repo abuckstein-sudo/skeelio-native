@@ -10,7 +10,7 @@ type ConjugationQuestionJoin = {
 
 type ConjugationAttemptRow = {
   is_correct: boolean | null;
-  aided: boolean | null;
+  aided?: boolean | null;
   created_at?: string | null;
   conjugation_questions: ConjugationQuestionJoin | ConjugationQuestionJoin[] | null;
 };
@@ -40,7 +40,7 @@ export function mapConjugationAttemptRows(rows: ConjugationAttemptRow[]): Conjug
 
 export async function fetchConjugationAttemptsForChild(childId: string): Promise<ConjugationAttempt[]> {
   const { supabase } = await import("@/lib/supabase");
-  const { data, error } = await supabase
+  const withAided = await supabase
     .from("conjugation_practice_attempts")
     .select(`
       is_correct,
@@ -57,6 +57,28 @@ export async function fetchConjugationAttemptsForChild(childId: string): Promise
     .eq("student_id", childId)
     .order("created_at", { ascending: true });
 
-  if (error) throw error;
-  return mapConjugationAttemptRows((data ?? []) as ConjugationAttemptRow[]);
+  if (!withAided.error) return mapConjugationAttemptRows((withAided.data ?? []) as ConjugationAttemptRow[]);
+
+  const message = withAided.error.message || "";
+  if (!message.toLowerCase().includes("aided")) throw withAided.error;
+
+  console.warn("[fetchConjugationAttemptsForChild] aided column unavailable; reading attempts without aided");
+  const fallback = await supabase
+    .from("conjugation_practice_attempts")
+    .select(`
+      is_correct,
+      created_at,
+      conjugation_questions:question_id (
+        language,
+        verb,
+        verb_group,
+        tense,
+        pronoun
+      )
+    `)
+    .eq("student_id", childId)
+    .order("created_at", { ascending: true });
+
+  if (fallback.error) throw fallback.error;
+  return mapConjugationAttemptRows((fallback.data ?? []) as ConjugationAttemptRow[]);
 }
