@@ -624,8 +624,14 @@ export default function ConjugationPracticeScreen() {
   };
 
   const focusAnswerInput = () => {
-    setTimeout(() => inputRef.current?.focus(), 80);
+    setTimeout(() => inputRef.current?.focus(), 120);
   };
+
+  useEffect(() => {
+    if (screen !== "quiz" || answerInputMode !== "type" || feedback.type !== "idle" || isSubmitting) return;
+    const timer = setTimeout(() => inputRef.current?.focus(), 120);
+    return () => clearTimeout(timer);
+  }, [answerInputMode, currentIndex, feedback.type, isSubmitting, screen]);
 
   const handleNext = async () => {
     if (currentIndex < questions.length - 1) {
@@ -893,7 +899,7 @@ export default function ConjugationPracticeScreen() {
             <View style={styles.inputContainer}>
               <TextInput
                 ref={inputRef}
-                style={styles.input}
+                style={[styles.input, answerInputMode === "type" && styles.inputTyping]}
                 value={writtenAnswer}
                 onChangeText={setWrittenAnswer}
                 placeholder={copy.recognizedAnswer}
@@ -1227,6 +1233,10 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: "#111827",
     backgroundColor: "#fff",
+  },
+  inputTyping: {
+    borderColor: "#2563eb",
+    backgroundColor: "#eff6ff",
   },
   inputModeRow: {
     flexDirection: "row",

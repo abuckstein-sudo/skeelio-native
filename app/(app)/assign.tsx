@@ -40,6 +40,8 @@ import {
   type SpellingList,
   type SpellingLanguage,
 } from "@/lib/spelling";
+import { fetchSpellingCurriculumPool } from "@/lib/tutor/spellingCurriculum";
+import type { SpellingTierId } from "@/lib/spellingConfig";
 import { getWordsForLevel } from "@/lib/wordBank";
 
 interface Child {
@@ -60,6 +62,13 @@ export default function AssignScreen() {
     homeworkDate?: string;
     topic?: string;
     tierId?: string;
+    assignmentSubject?: string;
+    conjugationTierId?: string;
+    conjugationTense?: string;
+    conjugationVerbGroups?: string;
+    spellingTierId?: string;
+    spellingTierLabel?: string;
+    spellingLanguage?: string;
     openAssignment?: string;
   }>();
   const id = String(params.childId || "");
@@ -69,6 +78,12 @@ export default function AssignScreen() {
   const linkedHomeworkDate = params.homeworkDate ? String(params.homeworkDate) : "";
   const prefillTopic = params.topic ? String(params.topic) : "";
   const prefillTierId = params.tierId ? String(params.tierId) : "";
+  const prefillAssignmentSubject = params.assignmentSubject ? String(params.assignmentSubject) : "";
+  const prefillConjugationTense = params.conjugationTense ? String(params.conjugationTense) : "";
+  const prefillConjugationVerbGroups = params.conjugationVerbGroups ? String(params.conjugationVerbGroups) : "";
+  const prefillSpellingTierId = params.spellingTierId ? String(params.spellingTierId) : "";
+  const prefillSpellingTierLabel = params.spellingTierLabel ? String(params.spellingTierLabel) : "";
+  const prefillSpellingLanguage = params.spellingLanguage ? String(params.spellingLanguage) : "";
   const shouldOpenAssignment = params.openAssignment === "1";
 
   const [child, setChild] = useState<Child | null>(null);
@@ -349,30 +364,43 @@ export default function AssignScreen() {
         child.grade_level || "3",
         wordCount
       );
+      const curriculumRows = prefillSpellingTierId
+        ? await fetchSpellingCurriculumPool({
+            tierIds: [prefillSpellingTierId as SpellingTierId],
+            language: prefillSpellingLanguage || "fr-FR",
+            limit: wordCount,
+          })
+        : [];
+      const selectedWords = curriculumRows.length > 0
+        ? curriculumRows.map((row) => row.word)
+        : words;
 
-      if (words.length === 0) {
+      if (selectedWords.length === 0) {
         Alert.alert("Error", "No words available for this level");
         setIsCreatingAssignment(false);
         return;
       }
 
       const today = new Date().toISOString().split("T")[0];
-      const listTitle = `Generated · ${today}`;
+      const listTitle = prefillSpellingTierId
+        ? `${prefillSpellingTierId} · ${prefillSpellingTierLabel || "Spelling practice"}`
+        : `Generated · ${today}`;
+      const listLanguage = prefillSpellingTierId ? "French" : generateLanguage;
 
       const newList = await createSpellingList(
         id,
         listTitle,
-        generateLanguage,
+        listLanguage,
         "manual"
       );
 
-      await createSpellingItems(newList.id, id, words, generateLanguage);
+      await createSpellingItems(newList.id, id, selectedWords, listLanguage);
 
       const assignment = await createSpellingAssignment(
         id,
         newList.id,
         listTitle,
-        words.length,
+        selectedWords.length,
         "practice",
         dueDate || undefined
       );
@@ -394,7 +422,7 @@ export default function AssignScreen() {
       setGenerateLanguage("English");
       setIsGeneratingNewList(false);
 
-      Alert.alert("Success", `Created list with ${words.length} words`);
+      Alert.alert("Success", `Created list with ${selectedWords.length} words`);
     } catch (err) {
       console.error("[handleGenerateAndAssignList] error:", err);
       Alert.alert("Error", "Failed to generate and assign list");
@@ -685,6 +713,35 @@ export default function AssignScreen() {
 
   useEffect(() => {
     const mathTopics = new Set(["addition", "subtraction", "multiplication", "division", "word_problems"]);
+    if (prefillAssignmentSubject === "conjugation") {
+      const groups = prefillConjugationVerbGroups
+        .split(",")
+        .map((group) => group.trim())
+        .filter(Boolean);
+      setAssignmentSubject("conjugation");
+      setConjugationLanguage("fr-FR");
+      setQuestionCount(8);
+      setAssignmentMode("practice");
+      setDueDate(linkedHomeworkDate || todayDateKey());
+      if (shouldOpenAssignment) setShowAssignmentForm(true);
+      loadConjugationOptions("fr-FR").then(() => {
+        if (groups.length > 0) setConjugationVerbGroups(groups);
+        if (prefillConjugationTense) setConjugationTenses([prefillConjugationTense]);
+      });
+      return;
+    }
+
+    if (prefillAssignmentSubject === "spelling") {
+      setAssignmentSubject("spelling");
+      setSelectedSpellingList(null);
+      setIsGeneratingNewList(true);
+      setGenerateLanguage(prefillSpellingLanguage === "en-CA" ? "English" : "French");
+      setGenerateWordCount("10");
+      setDueDate(linkedHomeworkDate || todayDateKey());
+      if (shouldOpenAssignment) setShowAssignmentForm(true);
+      return;
+    }
+
     if (!mathTopics.has(prefillTopic)) return;
 
     const topic = prefillTopic as Operation | "word_problems";
@@ -700,7 +757,16 @@ export default function AssignScreen() {
       loadConjugationLanguages();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [prefillTopic, prefillTierId, linkedHomeworkDate, shouldOpenAssignment]);
+  }, [
+    prefillAssignmentSubject,
+    prefillConjugationTense,
+    prefillConjugationVerbGroups,
+    prefillSpellingLanguage,
+    prefillTopic,
+    prefillTierId,
+    linkedHomeworkDate,
+    shouldOpenAssignment,
+  ]);
 
   useFocusEffect(
     useCallback(() => {

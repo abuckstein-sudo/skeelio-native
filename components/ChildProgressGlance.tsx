@@ -614,14 +614,50 @@ export default function ChildProgressGlance({ child }: { child: Child }) {
   });
   const worksheetSkillLabels = Array.from(new Set(worksheetActivity.map(worksheetSkillLabel))).slice(0, 8);
 
-  const openAssignFlow = (operation: Operation, tierId: string) => {
+  const openAssignFlow = (card: StuckCard) => {
+    if (card.kind === "conjugation-struggling") {
+      const tier = CONJUGATION_LADDER.find((candidate) => candidate.id === card.tierId);
+      router.push({
+        pathname: "/(app)/assign",
+        params: {
+          childId: child.id,
+          childName: child.name,
+          assignmentSubject: "conjugation",
+          conjugationTierId: card.tierId,
+          conjugationTense: tier?.tense || "",
+          conjugationVerbGroups: tier?.verbGroups.join(",") || "",
+          homeworkDate: todayDateKey(),
+          openAssignment: "1",
+        },
+      });
+      return;
+    }
+
+    if (card.kind === "spelling-struggling") {
+      router.push({
+        pathname: "/(app)/assign",
+        params: {
+          childId: child.id,
+          childName: child.name,
+          assignmentSubject: "spelling",
+          spellingTierId: card.tierId,
+          spellingTierLabel: card.tierLabel,
+          spellingLanguage: "fr-FR",
+          homeworkDate: todayDateKey(),
+          openAssignment: "1",
+        },
+      });
+      return;
+    }
+
     router.push({
       pathname: "/(app)/assign",
       params: {
         childId: child.id,
         childName: child.name,
-        topic: operation,
-        tierId,
+        assignmentSubject: "math",
+        topic: card.operation,
+        tierId: card.tierId,
         homeworkDate: todayDateKey(),
         openAssignment: "1",
       },
@@ -861,7 +897,7 @@ function MetricTile({ label, value, tone }: { label: string; value: string; tone
   );
 }
 
-function StuckCardView({ card, onAssign }: { card: StuckCard; onAssign: (operation: Operation, tierId: string) => void }) {
+function StuckCardView({ card, onAssign }: { card: StuckCard; onAssign: (card: StuckCard) => void }) {
   const danger = card.kind === "struggling" || card.kind === "conjugation-struggling" || card.kind === "spelling-struggling";
   const subject = card.kind === "conjugation-struggling"
     ? "Conjugation"
@@ -885,9 +921,7 @@ function StuckCardView({ card, onAssign }: { card: StuckCard; onAssign: (operati
       <Text style={styles.recommendation}>{card.recommendation}</Text>
       <TouchableOpacity
         style={styles.assignButton}
-        onPress={() => {
-          if (card.kind !== "conjugation-struggling" && card.kind !== "spelling-struggling") onAssign(card.operation, card.tierId);
-        }}
+        onPress={() => onAssign(card)}
       >
         <MaterialCommunityIcons name="playlist-plus" size={16} color="#1d4ed8" />
         <Text style={styles.assignButtonText}>
