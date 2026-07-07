@@ -13,59 +13,69 @@ export type ConjugationTierId =
 
 export type ConjugationVerbGroup = "groupe_1" | "groupe_2" | "groupe_3" | "irregulier";
 
+export type ConjugationAnswerMode = "choice" | "input";
+
 export type ConjugationTier = {
   id: ConjugationTierId;
   label: string;
   tense: string;
   verbGroups: ConjugationVerbGroup[];
+  answerMode: ConjugationAnswerMode;
 };
 
 export const CONJUGATION_LADDER: ConjugationTier[] = [
-  { id: "CJ1", label: "Présent des verbes irréguliers", tense: "présent", verbGroups: ["irregulier"] },
-  { id: "CJ2", label: "Présent des verbes du 1er groupe", tense: "présent", verbGroups: ["groupe_1"] },
+  { id: "CJ1", label: "Présent des verbes irréguliers", tense: "présent", verbGroups: ["irregulier"], answerMode: "choice" },
+  { id: "CJ2", label: "Présent des verbes du 1er groupe", tense: "présent", verbGroups: ["groupe_1"], answerMode: "choice" },
   {
     id: "CJ3",
     label: "Futur simple des verbes irréguliers et du 1er groupe",
     tense: "futur simple",
     verbGroups: ["irregulier", "groupe_1"],
+    answerMode: "input",
   },
   {
     id: "CJ4",
     label: "Imparfait des verbes irréguliers et du 1er groupe",
     tense: "imparfait",
     verbGroups: ["irregulier", "groupe_1"],
+    answerMode: "input",
   },
   {
     id: "CJ5",
     label: "Passé composé des verbes du 1er groupe et irréguliers",
     tense: "passé composé",
     verbGroups: ["groupe_1", "irregulier"],
+    answerMode: "input",
   },
-  { id: "CJ6", label: "Présent des verbes du 2e groupe", tense: "présent", verbGroups: ["groupe_2"] },
-  { id: "CJ7", label: "Présent des verbes du 3e groupe", tense: "présent", verbGroups: ["groupe_3"] },
+  { id: "CJ6", label: "Présent des verbes du 2e groupe", tense: "présent", verbGroups: ["groupe_2"], answerMode: "input" },
+  { id: "CJ7", label: "Présent des verbes du 3e groupe", tense: "présent", verbGroups: ["groupe_3"], answerMode: "input" },
   {
     id: "CJ8",
     label: "Futur simple des verbes des 2e et 3e groupes",
     tense: "futur simple",
     verbGroups: ["groupe_2", "groupe_3"],
+    answerMode: "input",
   },
   {
     id: "CJ9",
     label: "Imparfait des verbes des 2e et 3e groupes",
     tense: "imparfait",
     verbGroups: ["groupe_2", "groupe_3"],
+    answerMode: "input",
   },
   {
     id: "CJ10",
     label: "Passé composé des verbes des 2e et 3e groupes",
     tense: "passé composé",
     verbGroups: ["groupe_2", "groupe_3"],
+    answerMode: "input",
   },
   {
     id: "CJ11",
     label: "Passé simple des verbes réguliers et irréguliers",
     tense: "passé simple",
     verbGroups: ["groupe_1", "groupe_2", "groupe_3", "irregulier"],
+    answerMode: "input",
   },
 ];
 

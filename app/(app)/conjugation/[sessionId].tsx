@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   ScrollView,
   TextInput,
+  Keyboard,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { supabase } from "@/lib/supabase";
@@ -46,6 +47,8 @@ type Screen = "loading" | "language" | "selection" | "teaching" | "quiz" | "comp
 
 type VerbGroupOption = { value: string; label: string };
 type TenseOption = { value: string; label: string };
+type QuestionAnswerMode = "choice" | "input";
+type AnswerInputMode = "type" | "write";
 
 const COPY = {
   en: {
@@ -74,10 +77,11 @@ const COPY = {
     loading: "Loading...",
     choose: "Choose",
     write: "Write",
-    writeInstead: "Write the answer",
-    chooseInstead: "Use choices",
     check: "Check",
-    recognizedAnswer: "Recognized answer",
+    recognizedAnswer: "Your answer",
+    inputType: "Answer with",
+    keyboard: "Keyboard",
+    handwriting: "Handwriting",
   },
   fr: {
     chooseLanguage: "Choisis la langue",
@@ -105,17 +109,18 @@ const COPY = {
     loading: "Chargement...",
     choose: "Choisir",
     write: "Écrire",
-    writeInstead: "Écrire la réponse",
-    chooseInstead: "Voir les choix",
     check: "Valider",
-    recognizedAnswer: "Réponse reconnue",
+    recognizedAnswer: "Ta réponse",
+    inputType: "Répondre avec",
+    keyboard: "Clavier",
+    handwriting: "Écriture",
   },
 } as const;
 
-const BEGINNER_CHOICE_TIERS: ConjugationTierId[] = ["CJ1", "CJ2"];
-
-function defaultAnswerModeForTier(tier: ConjugationTierId | string | undefined): "choose" | "write" {
-  return tier && BEGINNER_CHOICE_TIERS.includes(tier as ConjugationTierId) ? "choose" : "write";
+function questionModeForTier(tier: ConjugationTier | null, questionIndex: number): QuestionAnswerMode {
+  if (!tier || tier.answerMode === "input") return "input";
+  // Beginner tiers scaffold most prompts with choices, then regularly ask for production.
+  return (questionIndex + 1) % 3 === 0 ? "input" : "choice";
 }
 
 function errorMessage(err: unknown): string {
@@ -126,6 +131,7 @@ function errorMessage(err: unknown): string {
 
 export default function ConjugationPracticeScreen() {
   const router = useRouter();
+  const inputRef = useRef<TextInput>(null);
   const { sessionId, childId, assignmentId, tierId, mode } = useLocalSearchParams<{
     sessionId: string;
     childId: string;
@@ -176,11 +182,13 @@ export default function ConjugationPracticeScreen() {
   const [correctCount, setCorrectCount] = useState(0);
   const [answers, setAnswers] = useState<Answer[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [answerMode, setAnswerMode] = useState<"choose" | "write">("choose");
+  const [freePlayAnswerMode, setFreePlayAnswerMode] = useState<QuestionAnswerMode>("choice");
+  const [answerInputMode, setAnswerInputMode] = useState<AnswerInputMode>("type");
   const [writtenAnswer, setWrittenAnswer] = useState("");
   const [isWritingStroke, setIsWritingStroke] = useState(false);
 
   const currentQuestion = questions[currentIndex];
+  const currentTier = tierId ? CONJUGATION_LADDER.find((candidate) => candidate.id === tierId) ?? null : null;
 
   const pickTierQuestions = async (
     pool: ConjugationQuestion[],
@@ -218,7 +226,6 @@ export default function ConjugationPracticeScreen() {
       try {
         if (tierId) {
           setAppLanguage("fr");
-          setAnswerMode(defaultAnswerModeForTier(tierId));
           await startQuizFromTier(tierId as ConjugationTierId);
         } else if (assignmentId) {
           // Load assignment filters and go straight to quiz
@@ -230,7 +237,7 @@ export default function ConjugationPracticeScreen() {
 
           if (assignErr) throw assignErr;
           const cq = (assignmentData?.custom_questions as any) || {};
-          setAnswerMode("write");
+          setFreePlayAnswerMode("input");
           setAppLanguage((cq.language || "fr-FR") === "fr-FR" ? "fr" : "en");
           setAssignmentFilters({
             language: cq.language || "fr-FR",
@@ -440,7 +447,6 @@ export default function ConjugationPracticeScreen() {
       setSelectedLanguage("fr-FR");
       setSelectedTense(tier.tense);
       setSelectedGroup(tier.verbGroups[0] || "");
-      setAnswerMode(defaultAnswerModeForTier(requestedTierId));
       setIsLoadingQuiz(false);
       setScreen("quiz");
     } catch (err) {
@@ -608,13 +614,16 @@ export default function ConjugationPracticeScreen() {
     handleSelectOption(answer, false);
   };
 
+  const focusAnswerInput = () => {
+    setTimeout(() => inputRef.current?.focus(), 80);
+  };
+
   const handleNext = async () => {
     if (currentIndex < questions.length - 1) {
       const nextIndex = currentIndex + 1;
       setCurrentIndex(nextIndex);
       setFeedback({ type: "idle" });
       setWrittenAnswer("");
-      if (tierId) setAnswerMode(defaultAnswerModeForTier(tierId));
       const shuffled = shuffleOptions(questions[nextIndex].options, questions[nextIndex].correct_answer);
       setShuffledOptions(shuffled);
     } else {
@@ -780,7 +789,11 @@ export default function ConjugationPracticeScreen() {
     const copy = COPY[appLanguage];
     const forceWriteMode = Boolean(assignmentId);
     const isTierMode = Boolean(tierId);
-    const effectiveAnswerMode = forceWriteMode ? "write" : answerMode;
+    const effectiveAnswerMode: QuestionAnswerMode = forceWriteMode
+      ? "input"
+      : isTierMode
+        ? questionModeForTier(currentTier, currentIndex)
+        : freePlayAnswerMode;
     if (error) {
       return (
         <SafeAreaView style={styles.container}>
@@ -827,35 +840,21 @@ export default function ConjugationPracticeScreen() {
           {!forceWriteMode && !isTierMode && (
             <View style={styles.answerModeRow}>
               <TouchableOpacity
-                style={[styles.answerModeButton, answerMode === "choose" && styles.answerModeButtonActive]}
-                onPress={() => setAnswerMode("choose")}
+                style={[styles.answerModeButton, freePlayAnswerMode === "choice" && styles.answerModeButtonActive]}
+                onPress={() => setFreePlayAnswerMode("choice")}
               >
-                <Text style={[styles.answerModeButtonText, answerMode === "choose" && styles.answerModeButtonTextActive]}>{copy.choose}</Text>
+                <Text style={[styles.answerModeButtonText, freePlayAnswerMode === "choice" && styles.answerModeButtonTextActive]}>{copy.choose}</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.answerModeButton, answerMode === "write" && styles.answerModeButtonActive]}
-                onPress={() => setAnswerMode("write")}
+                style={[styles.answerModeButton, freePlayAnswerMode === "input" && styles.answerModeButtonActive]}
+                onPress={() => setFreePlayAnswerMode("input")}
               >
-                <Text style={[styles.answerModeButtonText, answerMode === "write" && styles.answerModeButtonTextActive]}>{copy.write}</Text>
+                <Text style={[styles.answerModeButtonText, freePlayAnswerMode === "input" && styles.answerModeButtonTextActive]}>{copy.write}</Text>
               </TouchableOpacity>
             </View>
           )}
 
-          {!forceWriteMode && isTierMode && feedback.type === "idle" && (
-            <View style={styles.tierModeActionRow}>
-              <TouchableOpacity
-                style={styles.tierModeActionButton}
-                onPress={() => setAnswerMode(effectiveAnswerMode === "choose" ? "write" : "choose")}
-                disabled={isSubmitting}
-              >
-                <Text style={styles.tierModeActionText}>
-                  {effectiveAnswerMode === "choose" ? copy.writeInstead : copy.chooseInstead}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          )}
-
-          {effectiveAnswerMode === "choose" ? (
+          {effectiveAnswerMode === "choice" ? (
           <View style={styles.optionsContainer}>
             {shuffledOptions.map((option, idx) => {
               const isCorrect = option === currentQuestion.correct_answer;
@@ -878,23 +877,57 @@ export default function ConjugationPracticeScreen() {
             })}
           </View>
           ) : (
-            <View style={styles.writingContainer}>
+            <View style={styles.inputContainer}>
               <TextInput
-                style={styles.writtenInput}
+                ref={inputRef}
+                style={styles.input}
                 value={writtenAnswer}
                 onChangeText={setWrittenAnswer}
                 placeholder={copy.recognizedAnswer}
                 placeholderTextColor="#94a3b8"
                 editable={feedback.type === "idle" && !isSubmitting}
                 autoCapitalize="none"
+                autoCorrect={false}
+                showSoftInputOnFocus={answerInputMode === "type"}
               />
               {feedback.type === "idle" && (
-                <HandwritingAnswerPad
-                  language={appLanguage}
-                  questionText={`${currentQuestion.pronoun} ${currentQuestion.verb} ${currentQuestion.tense}`}
-                  onRecognized={setWrittenAnswer}
-                  onDrawingChange={setIsWritingStroke}
-                />
+                <View style={styles.inputModeRow}>
+                  <Text style={styles.inputModeLabel}>{copy.inputType}</Text>
+                  <TouchableOpacity
+                    style={[styles.inputModeButton, answerInputMode === "type" && styles.inputModeButtonActive]}
+                    onPress={() => {
+                      setAnswerInputMode("type");
+                      focusAnswerInput();
+                    }}
+                  >
+                    <Text style={[styles.inputModeButtonText, answerInputMode === "type" && styles.inputModeButtonTextActive]}>
+                      {copy.keyboard}
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.inputModeButton, answerInputMode === "write" && styles.inputModeButtonActive]}
+                    onPress={() => {
+                      Keyboard.dismiss();
+                      setAnswerInputMode("write");
+                    }}
+                  >
+                    <Text style={[styles.inputModeButtonText, answerInputMode === "write" && styles.inputModeButtonTextActive]}>
+                      {copy.handwriting}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+              {feedback.type === "idle" && (
+                answerInputMode === "write" && (
+                  <View style={styles.handwritingBox}>
+                    <HandwritingAnswerPad
+                      language={appLanguage}
+                      questionText={`${currentQuestion.pronoun} ${currentQuestion.verb} ${currentQuestion.tense}`}
+                      onRecognized={setWrittenAnswer}
+                      onDrawingChange={setIsWritingStroke}
+                    />
+                  </View>
+                )
               )}
               {feedback.type === "idle" && (
                 <TouchableOpacity
@@ -1162,36 +1195,17 @@ const styles = StyleSheet.create({
   answerModeButtonTextActive: {
     color: "#1d4ed8",
   },
-  tierModeActionRow: {
-    marginHorizontal: 16,
-    marginBottom: 12,
-    alignItems: "flex-end",
-  },
-  tierModeActionButton: {
-    minHeight: 40,
-    paddingHorizontal: 14,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#2563eb",
-    backgroundColor: "#eff6ff",
-    justifyContent: "center",
-  },
-  tierModeActionText: {
-    color: "#1d4ed8",
-    fontSize: 13,
-    fontWeight: "800",
-  },
   optionsContainer: {
     gap: 12,
     marginHorizontal: 16,
     marginBottom: 24,
   },
-  writingContainer: {
+  inputContainer: {
     marginHorizontal: 16,
     gap: 10,
     marginBottom: 24,
   },
-  writtenInput: {
+  input: {
     borderWidth: 2,
     borderColor: "#cbd5e1",
     borderRadius: 8,
@@ -1200,6 +1214,41 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: "#111827",
     backgroundColor: "#fff",
+  },
+  inputModeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    flexWrap: "wrap",
+  },
+  inputModeLabel: {
+    fontSize: 13,
+    color: "#475569",
+    fontWeight: "700",
+  },
+  inputModeButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#cbd5e1",
+    backgroundColor: "#f8fafc",
+  },
+  inputModeButtonActive: {
+    borderColor: "#2563eb",
+    backgroundColor: "#dbeafe",
+  },
+  inputModeButtonText: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#475569",
+  },
+  inputModeButtonTextActive: {
+    color: "#1d4ed8",
+  },
+  handwritingBox: {
+    borderRadius: 8,
+    overflow: "hidden",
   },
   submitWrittenButton: {
     minHeight: 44,
