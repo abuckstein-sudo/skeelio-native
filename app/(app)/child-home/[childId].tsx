@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, SafeAreaView, Modal, TextInput, Image, Alert, Linking, KeyboardAvoidingView, Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
+import { useAuth } from "../../_layout";
 import * as ImageManipulator from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
 import { supabase } from "@/lib/supabase";
@@ -360,6 +361,7 @@ const spellingTierLabel = (tierId: SpellingTierId) =>
 
 export default function ChildHomeScreen() {
   const router = useRouter();
+  const { session: authSession } = useAuth();
   const { childId } = useLocalSearchParams<{ childId: string }>();
   const [child, setChild] = useState<Child | null>(null);
   const [stars, setStars] = useState(0);
@@ -709,8 +711,7 @@ export default function ChildHomeScreen() {
       const tier = CONJUGATION_LADDER.find((candidate) => candidate.id === tierId);
       if (!tier) throw new Error(`Unknown conjugation tier ${tierId}`);
 
-      const { data: authData } = await supabase.auth.getUser();
-      const userId = authData.user?.id;
+      const userId = authSession?.user?.id;
       if (!userId) return;
 
       const { fetchConjugationPool, createConjugationSession } = await import("@/lib/conjugation");
@@ -818,8 +819,7 @@ export default function ChildHomeScreen() {
     } else if (assignment?.subject === "conjugation") {
       // Create conjugation session for homework
       try {
-        const { data: authData } = await supabase.auth.getUser();
-        const userId = authData.user?.id;
+        const userId = authSession?.user?.id;
         if (!userId) return;
 
         const { createConjugationSession } = await import("@/lib/conjugation");

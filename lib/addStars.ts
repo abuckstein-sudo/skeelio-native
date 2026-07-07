@@ -1,7 +1,18 @@
 import { supabase } from "./supabase";
 
-export async function addStars(childId: string, delta: number, streakBump: number = 0) {
+export async function addStars(childId: string, delta: number, userId: string | undefined, streakBump: number = 0) {
   try {
+    if (!userId) {
+      console.error("[addStars] auth missing: no user id");
+      return;
+    }
+
+    const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError || sessionData.session?.user?.id !== userId) {
+      console.error("[addStars] auth missing:", sessionError?.message || "session user mismatch");
+      return;
+    }
+
     // Read current rewards
     const { data: existing, error: readError } = await supabase
       .from("rewards")

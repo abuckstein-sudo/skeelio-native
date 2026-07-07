@@ -13,6 +13,7 @@ import {
   Platform,
 } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
+import { useAuth } from "../_layout";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { supabase } from "@/lib/supabase";
 import { addStars } from "@/lib/addStars";
@@ -69,6 +70,7 @@ const HANDWRITING_CONFIDENCE_MIN = 0.75;
 
 export default function EpisodeScreen() {
   const router = useRouter();
+  const { session } = useAuth();
   const params = useLocalSearchParams();
   const routeEpisodeId = typeof params.episodeId === "string" ? params.episodeId : "";
 
@@ -924,7 +926,7 @@ export default function EpisodeScreen() {
 
       if (!alreadyComplete && awardChildId && starsDelta > 0) {
         console.log('[episode] awarding stars:', { childId: awardChildId, starsDelta, unaidedCorrect });
-        await addStars(awardChildId, starsDelta);
+        await addStars(awardChildId, starsDelta, session?.user?.id);
       }
 
       console.log('[episode complete]', {

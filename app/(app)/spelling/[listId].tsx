@@ -13,6 +13,7 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { useAuth } from "../../_layout";
 import { setAudioModeAsync } from "expo-audio";
 import { supabase } from "@/lib/supabase";
 import { addStars } from "@/lib/addStars";
@@ -103,6 +104,7 @@ const COPY = {
 
 export default function SpellingPracticeScreen() {
   const router = useRouter();
+  const { session: authSession } = useAuth();
   const { listId, childId, assignmentId, mode, tierId, strand, tierLabel } = useLocalSearchParams<{
     listId: string;
     childId: string;
@@ -139,6 +141,7 @@ export default function SpellingPracticeScreen() {
   const [hasUsedHint, setHasUsedHint] = useState(false);
 
   const inputRef = useRef<TextInput>(null);
+  const authUserId = authSession?.user?.id;
 
   // Configure audio to play in silent mode (iOS)
   useEffect(() => {
@@ -157,6 +160,11 @@ export default function SpellingPracticeScreen() {
   useEffect(() => {
     const isTierMode = Boolean(tierId && strand);
     if (!childId || (!isTierMode && !listId)) return;
+    if (!authUserId) {
+      setError("Please sign in again before practising.");
+      setIsLoading(false);
+      return;
+    }
 
     const loadList = async () => {
       try {
@@ -220,7 +228,7 @@ export default function SpellingPracticeScreen() {
           setLanguage("French");
           setItems(selectedItems);
 
-          const sess = await createSpellingSession(childId, null, selectedItems.length);
+          const sess = await createSpellingSession(childId, null, selectedItems.length, authUserId);
           setSpellingSession(sess);
 
           setTimeout(() => {
@@ -255,7 +263,8 @@ export default function SpellingPracticeScreen() {
         const sess = await createSpellingSession(
           childId,
           listId,
-          data.items.length
+          data.items.length,
+          authUserId
         );
         setSpellingSession(sess);
 
@@ -274,7 +283,7 @@ export default function SpellingPracticeScreen() {
     };
 
     loadList();
-  }, [listId, childId, tierId, strand, tierLabel]);
+  }, [listId, childId, tierId, strand, tierLabel, authUserId]);
 
   const currentItem = items[currentIndex];
 
@@ -324,6 +333,10 @@ export default function SpellingPracticeScreen() {
 
   const handleSubmit = async () => {
     if (!currentItem || !spellingSession || !childId || isSubmitting) return;
+    if (!authUserId) {
+      setError("Please sign in again before practising.");
+      return;
+    }
 
     const given = userAnswer.trim();
     if (!given) return;
@@ -347,6 +360,7 @@ export default function SpellingPracticeScreen() {
         given,
         is_correct,
         attemptNumber,
+        authUserId,
         aided
       );
 
@@ -422,6 +436,11 @@ export default function SpellingPracticeScreen() {
 
       const finalCorrect = correctCount;
       if (spellingSession && childId) {
+        if (!authUserId) {
+          setError("Please sign in again before practising.");
+          return;
+        }
+
         await endSpellingSession(
           spellingSession.id,
           items.length,
@@ -439,7 +458,7 @@ export default function SpellingPracticeScreen() {
 
         // Award stars
         if (finalCorrect > 0) {
-          await addStars(childId, finalCorrect);
+          await addStars(childId, finalCorrect, authUserId);
         }
       }
 

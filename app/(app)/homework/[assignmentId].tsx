@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, ActivityIndicator, ScrollView, SafeAreaView, KeyboardAvoidingView, Platform } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { useAuth } from "../../_layout";
 import { supabase } from "@/lib/supabase";
 import { markAssignmentComplete, Assignment, CustomQuestion } from "@/lib/assignments";
 import { addStars } from "@/lib/addStars";
@@ -125,6 +126,7 @@ function normalizeCustomQuestions(value: unknown): CustomQuestion[] {
 
 export default function HomeworkScreen() {
   const router = useRouter();
+  const { session } = useAuth();
   const { assignmentId, childId } = useLocalSearchParams<{ assignmentId: string; childId: string }>();
   const inputRef = useRef<TextInput>(null);
 
@@ -489,7 +491,7 @@ export default function HomeworkScreen() {
 
       // Award stars: 1 star per correct answer
       if (correctCount > 0) {
-        await addStars(childId, correctCount);
+        await addStars(childId, correctCount, session?.user?.id);
       }
 
       console.log("[homework] assignment completed, stars awarded:", correctCount);

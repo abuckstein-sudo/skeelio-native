@@ -11,6 +11,7 @@ import {
   Keyboard,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { useAuth } from "../../_layout";
 import { supabase } from "@/lib/supabase";
 import { addStars } from "@/lib/addStars";
 import {
@@ -132,6 +133,7 @@ function errorMessage(err: unknown): string {
 export default function ConjugationPracticeScreen() {
   const router = useRouter();
   const inputRef = useRef<TextInput>(null);
+  const { session: authSession } = useAuth();
   const { sessionId, childId, assignmentId, tierId, mode } = useLocalSearchParams<{
     sessionId: string;
     childId: string;
@@ -189,6 +191,7 @@ export default function ConjugationPracticeScreen() {
 
   const currentQuestion = questions[currentIndex];
   const currentTier = tierId ? CONJUGATION_LADDER.find((candidate) => candidate.id === tierId) ?? null : null;
+  const authUserId = authSession?.user?.id;
 
   const pickTierQuestions = async (
     pool: ConjugationQuestion[],
@@ -224,6 +227,8 @@ export default function ConjugationPracticeScreen() {
   useEffect(() => {
     const init = async () => {
       try {
+        if (!authUserId) throw new Error("Please sign in again before practising.");
+
         if (tierId) {
           setAppLanguage("fr");
           await startQuizFromTier(tierId as ConjugationTierId);
@@ -564,6 +569,10 @@ export default function ConjugationPracticeScreen() {
 
   const handleSelectOption = async (selectedOption: string, aided = false) => {
     if (!currentQuestion || !session || isSubmitting) return;
+    if (!authUserId) {
+      setError("Please sign in again before practising.");
+      return;
+    }
 
     setIsSubmitting(true);
     try {
@@ -574,7 +583,7 @@ export default function ConjugationPracticeScreen() {
         session.id,
         currentQuestion.id,
         childId,
-        (await supabase.auth.getUser()).data.user?.id || "",
+        authUserId,
         selectedOption,
         currentQuestion.correct_answer,
         isCorrect,
@@ -584,7 +593,7 @@ export default function ConjugationPracticeScreen() {
       if (isCorrect) {
         setCorrectCount((c) => c + 1);
         setFeedback({ type: "correct" });
-        await addStars(childId, 1);
+        await addStars(childId, 1, authUserId);
       } else {
         setFeedback({ type: "wrong", correctAnswer: currentQuestion.correct_answer });
       }
@@ -629,6 +638,10 @@ export default function ConjugationPracticeScreen() {
     } else {
       // Session complete
       if (session) {
+        if (!authUserId) {
+          setError("Please sign in again before practising.");
+          return;
+        }
         const incorrectCount = questions.length - correctCount;
         await endConjugationSession(session.id, questions.length, correctCount, incorrectCount);
       }

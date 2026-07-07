@@ -395,17 +395,17 @@ export async function getListWithItems(listId: string): Promise<{
 export async function createSpellingSession(
   childId: string,
   listId: string | null,
-  totalItems: number
+  totalItems: number,
+  userId: string
 ): Promise<SpellingSession> {
-  const { data: authData } = await supabase.auth.getUser();
-  if (!authData.user) throw new Error("Not authenticated");
+  if (!userId) throw new Error("Not authenticated");
 
   const { data, error } = await supabase
     .from("spelling_practice_sessions")
     .insert({
       student_id: childId,
       list_id: listId,
-      user_id: authData.user.id,
+      user_id: userId,
       started_at: new Date().toISOString(),
       status: "in_progress",
       total_items: totalItems,
@@ -426,17 +426,17 @@ export async function recordSpellingAttempt(
   studentAnswer: string,
   isCorrect: boolean,
   attemptNumber: number,
+  userId: string,
   aided = false
 ): Promise<void> {
-  const { data: authData } = await supabase.auth.getUser();
-  if (!authData.user) throw new Error("Not authenticated");
+  if (!userId) throw new Error("Not authenticated");
 
   const { error } = await supabase.from("spelling_practice_attempts").insert({
     session_id: sessionId,
     item_id: itemId,
     student_id: childId,
     list_id: listId,
-    user_id: authData.user.id,
+    user_id: userId,
     item_text: itemText,
     student_answer: studentAnswer,
     is_correct: isCorrect,

@@ -556,7 +556,7 @@ export default function PracticeScreen() {
       const starsDelta = correctCount * 2 + (allCorrect ? 5 : 0);
 
       console.log("[practice] awarding stars:", { correctCount, allCorrect, starsDelta });
-      await addStars(childId, starsDelta);
+      await addStars(childId, starsDelta, session.user.id);
     }
 
     // Re-run ability assessment to show outcome
