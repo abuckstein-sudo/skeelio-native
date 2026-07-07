@@ -84,6 +84,12 @@ const OPERATIONS: Operation[] = ["addition", "subtraction", "multiplication", "d
 const GRADE_ORDER = ["CP", "CE1", "CE2", "CM1"];
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
+function normalizeGradeLevel(gradeLevel: string | null | undefined): string | null {
+  if (!gradeLevel) return null;
+  const normalized = gradeLevel.trim().toUpperCase().replace(/\s+/g, "");
+  return GRADE_ORDER.includes(normalized) ? normalized : null;
+}
+
 function toAttempt(row: LearningAttemptRow): Attempt | null {
   if (!row.tier) return null;
   return {
@@ -195,7 +201,7 @@ function tierStateLabel({
 }
 
 function conjugationExpectedTierId(gradeLevel: string | null | undefined): ConjugationTierId | null {
-  return (CONJUGATION_GRADE_EXPECTED as Record<string, ConjugationTierId | null>)[gradeLevel || ""] ?? null;
+  return (CONJUGATION_GRADE_EXPECTED as Record<string, ConjugationTierId | null>)[normalizeGradeLevel(gradeLevel) || ""] ?? null;
 }
 
 function conjugationTierIndex(tierId: ConjugationTierId | string | null | undefined): number {
@@ -215,7 +221,7 @@ function buildConjugationWeeklyBuckets(attempts: ConjugationAttempt[], now = new
 }
 
 function spellingExpectedTierId(gradeLevel: string | null | undefined): SpellingTierId | null {
-  return (SPELLING_GRADE_EXPECTED as Record<string, { lexical: SpellingTierId; invariable: SpellingTierId } | undefined>)[gradeLevel || ""]?.lexical ?? null;
+  return (SPELLING_GRADE_EXPECTED as Record<string, { lexical: SpellingTierId; invariable: SpellingTierId } | undefined>)[normalizeGradeLevel(gradeLevel) || ""]?.lexical ?? null;
 }
 
 function spellingTierIndex(tierId: SpellingTierId | string | null | undefined): number {
@@ -315,7 +321,7 @@ export default function ProgressSubjectScreen() {
   const stats = useMemo(() => tierStats(attempts), [attempts]);
   const weeklyBuckets = useMemo(() => buildWeeklyBuckets(attemptRows), [attemptRows]);
   const ladder = LADDERS[operation];
-  const gradeLevel = child?.grade_level || null;
+  const gradeLevel = normalizeGradeLevel(child?.grade_level) || child?.grade_level || null;
   const targetTierId = gradeExpectedTierId(operation, gradeLevel);
   const targetIndex = tierIndex(operation, targetTierId);
   const targetTier = targetIndex >= 0 ? ladder[targetIndex] : null;
@@ -358,7 +364,7 @@ export default function ProgressSubjectScreen() {
   const conjugationTargetTierId = conjugationExpectedTierId(gradeLevel);
   const conjugationTargetIndex = conjugationTierIndex(conjugationTargetTierId);
   const conjugationTargetTier = conjugationTargetIndex >= 0 ? CONJUGATION_LADDER[conjugationTargetIndex] : null;
-  const conjugationStandard = (CONJUGATION_GRADE_EXPECTED_STANDARDS as Record<string, { citation: string } | undefined>)[gradeLevel || ""];
+  const conjugationStandard = (CONJUGATION_GRADE_EXPECTED_STANDARDS as Record<string, { citation: string } | undefined>)[normalizeGradeLevel(gradeLevel) || ""];
   const conjugationHighestSolidIndex = useMemo(() => {
     for (let index = CONJUGATION_LADDER.length - 1; index >= 0; index--) {
       if (isSolidConjugationTier(conjugationStats[CONJUGATION_LADDER[index].id])) return index;

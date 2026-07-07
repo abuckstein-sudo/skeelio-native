@@ -136,6 +136,12 @@ type GradeProgressDisplay = {
 
 const MATH_OPERATIONS: Operation[] = ["addition", "subtraction", "multiplication", "division"];
 const GRADE_ORDER = ["CP", "CE1", "CE2", "CM1"];
+
+function normalizeGradeLevel(gradeLevel: string | null | undefined): string | null {
+  if (!gradeLevel) return null;
+  const normalized = gradeLevel.trim().toUpperCase().replace(/\s+/g, "");
+  return GRADE_ORDER.includes(normalized) ? normalized : null;
+}
 const DAY_MS = 24 * 60 * 60 * 1000;
 const TIMEFRAME_OPTIONS: Array<{ id: Timeframe | "custom"; label: string }> = [
   { id: "7d", label: "Last 7 days" },
@@ -246,7 +252,7 @@ function gradeProgressDisplay({
 }
 
 function conjugationExpectedTierId(gradeLevel: string | null | undefined): ConjugationTierId | null {
-  return (CONJUGATION_GRADE_EXPECTED as Record<string, ConjugationTierId | null>)[gradeLevel || ""] ?? null;
+  return (CONJUGATION_GRADE_EXPECTED as Record<string, ConjugationTierId | null>)[normalizeGradeLevel(gradeLevel) || ""] ?? null;
 }
 
 function conjugationTierIndex(tierId: ConjugationTierId | string | null | undefined): number {
@@ -255,7 +261,8 @@ function conjugationTierIndex(tierId: ConjugationTierId | string | null | undefi
 }
 
 function nextConjugationGrade(gradeLevel: string | null | undefined): string | null {
-  const startIndex = gradeLevel ? Math.max(0, GRADE_ORDER.indexOf(gradeLevel) + 1) : 0;
+  const normalizedGrade = normalizeGradeLevel(gradeLevel);
+  const startIndex = normalizedGrade ? Math.max(0, GRADE_ORDER.indexOf(normalizedGrade) + 1) : 0;
   for (let index = startIndex; index < GRADE_ORDER.length; index++) {
     if (conjugationExpectedTierId(GRADE_ORDER[index])) return GRADE_ORDER[index];
   }
@@ -298,7 +305,7 @@ function highestSolidConjugationIndex(attempts: ConjugationAttempt[]): number {
 }
 
 function spellingExpectedTierId(gradeLevel: string | null | undefined): SpellingTierId | null {
-  return (SPELLING_GRADE_EXPECTED as Record<string, { lexical: SpellingTierId; invariable: SpellingTierId } | undefined>)[gradeLevel || ""]?.lexical ?? null;
+  return (SPELLING_GRADE_EXPECTED as Record<string, { lexical: SpellingTierId; invariable: SpellingTierId } | undefined>)[normalizeGradeLevel(gradeLevel) || ""]?.lexical ?? null;
 }
 
 function spellingTierIndex(tierId: SpellingTierId | string | null | undefined): number {
@@ -307,7 +314,8 @@ function spellingTierIndex(tierId: SpellingTierId | string | null | undefined): 
 }
 
 function nextSpellingGrade(gradeLevel: string | null | undefined): string | null {
-  const startIndex = gradeLevel ? Math.max(0, GRADE_ORDER.indexOf(gradeLevel) + 1) : 0;
+  const normalizedGrade = normalizeGradeLevel(gradeLevel);
+  const startIndex = normalizedGrade ? Math.max(0, GRADE_ORDER.indexOf(normalizedGrade) + 1) : 0;
   for (let index = startIndex; index < GRADE_ORDER.length; index++) {
     if (spellingExpectedTierId(GRADE_ORDER[index])) return GRADE_ORDER[index];
   }
@@ -622,7 +630,7 @@ export default function ChildProgressGlance({ child }: { child: Child }) {
 
   const openSubjectDetail = (operation: Operation) => {
     router.push({
-      pathname: "/(app)/progress-subject/[childId]",
+      pathname: "/progress-subject/[childId]" as any,
       params: {
         childId: child.id,
         childName: child.name,
@@ -632,7 +640,7 @@ export default function ChildProgressGlance({ child }: { child: Child }) {
   };
   const openConjugationDetail = () => {
     router.push({
-      pathname: "/(app)/progress-subject/[childId]",
+      pathname: "/progress-subject/[childId]" as any,
       params: {
         childId: child.id,
         childName: child.name,
@@ -642,7 +650,7 @@ export default function ChildProgressGlance({ child }: { child: Child }) {
   };
   const openSpellingDetail = () => {
     router.push({
-      pathname: "/(app)/progress-subject/[childId]",
+      pathname: "/progress-subject/[childId]" as any,
       params: {
         childId: child.id,
         childName: child.name,
@@ -979,15 +987,16 @@ function ConjugationSkillRow({
   onOpenChecklist: () => void;
   onOpenDetail: () => void;
 }) {
+  const normalizedGrade = normalizeGradeLevel(gradeLevel);
   const stats = conjugationTierStats(attempts);
   const current = currentConjugationTierAndBand(attempts);
   const highestIndex = highestSolidConjugationIndex(attempts);
   const currentIndex = conjugationTierIndex(current.tierId);
-  const targetTierId = conjugationExpectedTierId(gradeLevel);
+  const targetTierId = conjugationExpectedTierId(normalizedGrade);
   const targetIndex = conjugationTierIndex(targetTierId);
   const targetTier = targetIndex >= 0 ? CONJUGATION_LADDER[targetIndex] : null;
-  const startsInGrade = targetTierId ? null : nextConjugationGrade(gradeLevel);
-  const gradeProgress = conjugationGradeProgressDisplay({ gradeLevel, highestIndex, targetIndex });
+  const startsInGrade = targetTierId ? null : nextConjugationGrade(normalizedGrade);
+  const gradeProgress = conjugationGradeProgressDisplay({ gradeLevel: normalizedGrade, highestIndex, targetIndex });
   const statusText = !targetTier
     ? startsInGrade
       ? `Starts in ${startsInGrade}`
@@ -1050,16 +1059,17 @@ function SpellingSkillRow({
   onOpenChecklist: () => void;
   onOpenDetail: () => void;
 }) {
+  const normalizedGrade = normalizeGradeLevel(gradeLevel);
   const locked = unlockState && !unlockState.unlocked;
   const stats = spellingTierStats(attempts);
   const current = currentSpellingTierAndBand(attempts).lexical;
   const highestIndex = highestSolidSpellingIndex(attempts);
   const currentIndex = spellingTierIndex(current.tierId);
-  const targetTierId = spellingExpectedTierId(gradeLevel);
+  const targetTierId = spellingExpectedTierId(normalizedGrade);
   const targetIndex = spellingTierIndex(targetTierId);
   const targetTier = targetIndex >= 0 ? SPELLING_LEXICAL_LADDER[targetIndex] : null;
-  const startsInGrade = targetTierId ? null : nextSpellingGrade(gradeLevel);
-  const gradeProgress = spellingGradeProgressDisplay({ gradeLevel, highestIndex, targetIndex });
+  const startsInGrade = targetTierId ? null : nextSpellingGrade(normalizedGrade);
+  const gradeProgress = spellingGradeProgressDisplay({ gradeLevel: normalizedGrade, highestIndex, targetIndex });
   const statusText = locked
     ? `Unlocks after ${unlockState?.reasonOperation || "a prerequisite"} ${unlockState?.reasonTierId || ""}`
     : !targetTier
@@ -1124,10 +1134,11 @@ function GradeGoalChecklistModal({
   const isConjugation = selection?.type === "conjugation";
   const isSpelling = selection?.type === "spelling";
   const operation = selection?.type === "math" ? selection.operation : null;
+  const normalizedGrade = normalizeGradeLevel(gradeLevel);
   const standard = isSpelling
-    ? (SPELLING_GRADE_EXPECTED_STANDARDS as Record<string, { citation: string } | undefined>)[gradeLevel || ""]
+    ? (SPELLING_GRADE_EXPECTED_STANDARDS as Record<string, { citation: string } | undefined>)[normalizedGrade || ""]
     : isConjugation
-    ? (CONJUGATION_GRADE_EXPECTED_STANDARDS as Record<string, { citation: string } | undefined>)[gradeLevel || ""]
+    ? (CONJUGATION_GRADE_EXPECTED_STANDARDS as Record<string, { citation: string } | undefined>)[normalizedGrade || ""]
     : gradeExpectedTierStandard(gradeLevel);
   const targetTierId = isSpelling
     ? spellingExpectedTierId(gradeLevel)
@@ -1152,7 +1163,7 @@ function GradeGoalChecklistModal({
     : isConjugation
     ? !targetTierId ? nextConjugationGrade(gradeLevel) : null
     : operation && !targetTierId ? nextGradeForOperation(operation, gradeLevel) : null;
-  const gradeLabel = gradeLevel || "this grade";
+  const gradeLabel = normalizedGrade || gradeLevel || "this grade";
   const subjectLabel = isSpelling ? "Spelling" : isConjugation ? "Conjugation" : operation ? operationLabel(operation) : "";
   const sourceCitation = isSpelling ? "Échelle orthographique Dubois-Buyse" : standard?.citation;
 
