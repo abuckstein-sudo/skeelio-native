@@ -912,7 +912,10 @@ export default function ConjugationPracticeScreen() {
                 editable={answerInputMode === "type" && feedback.type === "idle" && !isSubmitting}
                 autoCapitalize="none"
                 autoCorrect={false}
+                spellCheck={false}
+                autoFocus={true}
                 showSoftInputOnFocus
+                blurOnSubmit={false}
               />
               {feedback.type === "idle" && (
                 <View style={styles.inputModeRow}>
