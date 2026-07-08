@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { createAudioPlayer } from "expo-audio";
 import * as Speech from "expo-speech";
 
 export type SpellingLanguage = "English" | "French";
@@ -23,6 +24,8 @@ export type SpellingItem = {
   student_id: string;
   normalized_text: string;
   sentence?: string;
+  audio_url?: string | null;
+  sentence_audio_url?: string | null;
 };
 
 export type SpellingSession = {
@@ -225,12 +228,27 @@ export function speechLangCode(language: SpellingLanguage): string {
   return language === "French" ? "fr-FR" : "en-US";
 }
 
+let currentAudioPlayer: ReturnType<typeof createAudioPlayer> | null = null;
+
+async function playStoredAudio(audioUrl: string): Promise<void> {
+  currentAudioPlayer?.pause();
+  currentAudioPlayer?.remove();
+  currentAudioPlayer = createAudioPlayer(audioUrl);
+  currentAudioPlayer.play();
+}
+
 export async function speakWord(
   word: string,
-  language: SpellingLanguage
+  language: SpellingLanguage,
+  audioUrl?: string | null
 ): Promise<void> {
   try {
     console.log("[speakWord] starting - word:", word, "language:", language);
+    if (audioUrl) {
+      await Speech.stop();
+      await playStoredAudio(audioUrl);
+      return;
+    }
     await Speech.stop();
     await Speech.speak(word, {
       language: speechLangCode(language),
@@ -246,10 +264,16 @@ export async function speakWord(
 
 export async function speakSentence(
   sentence: string,
-  language: SpellingLanguage
+  language: SpellingLanguage,
+  audioUrl?: string | null
 ): Promise<void> {
   try {
     console.log("[speakSentence] starting - sentence:", sentence.substring(0, 50), "language:", language);
+    if (audioUrl) {
+      await Speech.stop();
+      await playStoredAudio(audioUrl);
+      return;
+    }
     await Speech.stop();
     await Speech.speak(sentence, {
       language: speechLangCode(language),
