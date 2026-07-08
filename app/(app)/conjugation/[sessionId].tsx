@@ -624,12 +624,17 @@ export default function ConjugationPracticeScreen() {
   };
 
   const focusAnswerInput = () => {
-    setTimeout(() => inputRef.current?.focus(), 120);
+    inputRef.current?.blur();
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        setTimeout(() => inputRef.current?.focus(), 80);
+      });
+    });
   };
 
   useEffect(() => {
     if (screen !== "quiz" || answerInputMode !== "type" || feedback.type !== "idle" || isSubmitting) return;
-    const timer = setTimeout(() => inputRef.current?.focus(), 120);
+    const timer = setTimeout(() => inputRef.current?.focus(), 180);
     return () => clearTimeout(timer);
   }, [answerInputMode, currentIndex, feedback.type, isSubmitting, screen]);
 
@@ -904,10 +909,10 @@ export default function ConjugationPracticeScreen() {
                 onChangeText={setWrittenAnswer}
                 placeholder={copy.recognizedAnswer}
                 placeholderTextColor="#94a3b8"
-                editable={feedback.type === "idle" && !isSubmitting}
+                editable={answerInputMode === "type" && feedback.type === "idle" && !isSubmitting}
                 autoCapitalize="none"
                 autoCorrect={false}
-                showSoftInputOnFocus={answerInputMode === "type"}
+                showSoftInputOnFocus
               />
               {feedback.type === "idle" && (
                 <View style={styles.inputModeRow}>

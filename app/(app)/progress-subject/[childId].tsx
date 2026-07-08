@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  Alert,
   ActivityIndicator,
   SafeAreaView,
   ScrollView,
@@ -11,7 +12,7 @@ import {
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { supabase } from "@/lib/supabase";
-import { Attempt, factTierCoverageProgress, isSolidTierStat, tierStats, TierStats } from "@/lib/tutor/ability";
+import { Attempt, factTierCoverageGapAfterOtherGates, factTierCoverageKeys, factTierCoverageProgress, isSolidTierStat, tierStats, TierStats } from "@/lib/tutor/ability";
 import { getOperationStatus, OperationStatus } from "@/lib/tutor/status";
 import {
   gradeExpectedTierId,
@@ -21,6 +22,7 @@ import {
   tierIndex,
 } from "@/lib/tutorConfig";
 import { operationLabel, recommendationFor } from "@/lib/progressGlance";
+import { createProgressPracticeAssignment, ProgressPracticeTarget } from "@/lib/progressPracticeAssignments";
 import { todayDateKey } from "@/lib/schoolHomework";
 import {
   CONJUGATION_GRADE_EXPECTED,
@@ -258,6 +260,7 @@ export default function ProgressSubjectScreen() {
   const [attemptRows, setAttemptRows] = useState<LearningAttemptRow[]>([]);
   const [conjugationAttempts, setConjugationAttempts] = useState<ConjugationAttempt[]>([]);
   const [spellingAttempts, setSpellingAttempts] = useState<SpellingAttempt[]>([]);
+  const [isAssigningPractice, setIsAssigningPractice] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -401,18 +404,90 @@ export default function ProgressSubjectScreen() {
     : "Highest solid: not yet";
   const spellingRecommendation = `Keep practicing ${spellingCurrentTier.label} until enough distinct words are correct unaided.`;
 
-  const openAssign = () => {
-    router.push({
-      pathname: "/(app)/assign",
+  const goBackToChildProgress = () => {
+    router.replace({
+      pathname: "/(app)/parent" as any,
       params: {
         childId,
         childName,
-        topic: operation,
-        tierId: currentTierId,
-        homeworkDate: todayDateKey(),
-        openAssignment: "1",
+        tab: "progress",
       },
     });
+  };
+
+  const missingFactLabelsForTier = (tierId: string) => {
+    const keys = factTierCoverageKeys(tierId, attempts);
+    if (!keys) return [];
+    const covered = new Set(keys.covered);
+    return keys.required.filter((key) => !covered.has(key));
+  };
+
+  const progressAssignmentTarget = (): ProgressPracticeTarget => {
+    if (isConjugation) {
+      return {
+        subject: "conjugation",
+        tierId: conjugationCurrentTier.id,
+        tierLabel: conjugationCurrentTier.label,
+      };
+    }
+
+    if (isSpelling) {
+      return {
+        subject: "spelling",
+        tierId: spellingCurrentTier.id,
+        tierLabel: spellingCurrentTier.label,
+      };
+    }
+
+    if (status?.band === "struggling") {
+      return {
+        subject: "math",
+        operation,
+        tierId: status.workingTierId,
+        tierLabel: status.workingTierLabel,
+      };
+    }
+
+    for (const tier of ladder) {
+      const gap = factTierCoverageGapAfterOtherGates(tier.id, attempts);
+      if (!gap) continue;
+      return {
+        subject: "math",
+        operation,
+        tierId: tier.id,
+        tierLabel: tier.label,
+        missingFacts: missingFactLabelsForTier(tier.id),
+      };
+    }
+
+    return {
+      subject: "math",
+      operation,
+      tierId: currentTierId,
+      tierLabel: currentTier?.label,
+    };
+  };
+
+  const openAssign = async () => {
+    if (isAssigningPractice) return;
+    setIsAssigningPractice(true);
+    try {
+      const result = await createProgressPracticeAssignment(childId, progressAssignmentTarget(), todayDateKey());
+      Alert.alert("Added to today's agenda", result.taskText);
+      router.replace({
+        pathname: "/(app)/parent" as any,
+        params: {
+          childId,
+          childName,
+          tab: "today",
+        },
+      });
+    } catch (err) {
+      console.error("[progress-subject] direct assignment error:", err);
+      Alert.alert("Could not add practice", err instanceof Error ? err.message : "Please try again.");
+    } finally {
+      setIsAssigningPractice(false);
+    }
   };
 
   if (loading) {
@@ -429,7 +504,7 @@ export default function ProgressSubjectScreen() {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.header}>
-          <TouchableOpacity style={styles.headerButton} onPress={() => router.back()}>
+          <TouchableOpacity style={styles.headerButton} onPress={goBackToChildProgress}>
             <MaterialCommunityIcons name="arrow-left" size={22} color="#0f172a" />
           </TouchableOpacity>
           <View style={styles.headerTextWrap}>
@@ -500,6 +575,14 @@ export default function ProgressSubjectScreen() {
               <Text style={styles.sectionTitle}>What to do next</Text>
               <Text style={styles.recommendation}>{conjugationRecommendation}</Text>
             </View>
+            <TouchableOpacity style={[styles.assignButton, isAssigningPractice && styles.assignButtonDisabled]} onPress={openAssign} disabled={isAssigningPractice}>
+              {isAssigningPractice ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <MaterialCommunityIcons name="playlist-plus" size={17} color="#fff" />
+              )}
+              <Text style={styles.assignButtonText}>{isAssigningPractice ? "Adding..." : "Assign practice"}</Text>
+            </TouchableOpacity>
           </View>
         </ScrollView>
       </SafeAreaView>
@@ -510,7 +593,7 @@ export default function ProgressSubjectScreen() {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.header}>
-          <TouchableOpacity style={styles.headerButton} onPress={() => router.back()}>
+          <TouchableOpacity style={styles.headerButton} onPress={goBackToChildProgress}>
             <MaterialCommunityIcons name="arrow-left" size={22} color="#0f172a" />
           </TouchableOpacity>
           <View style={styles.headerTextWrap}>
@@ -581,6 +664,14 @@ export default function ProgressSubjectScreen() {
               <Text style={styles.sectionTitle}>What to do next</Text>
               <Text style={styles.recommendation}>{spellingRecommendation}</Text>
             </View>
+            <TouchableOpacity style={[styles.assignButton, isAssigningPractice && styles.assignButtonDisabled]} onPress={openAssign} disabled={isAssigningPractice}>
+              {isAssigningPractice ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <MaterialCommunityIcons name="playlist-plus" size={17} color="#fff" />
+              )}
+              <Text style={styles.assignButtonText}>{isAssigningPractice ? "Adding..." : "Assign practice"}</Text>
+            </TouchableOpacity>
           </View>
         </ScrollView>
       </SafeAreaView>
@@ -590,7 +681,7 @@ export default function ProgressSubjectScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity style={styles.headerButton} onPress={() => router.back()}>
+        <TouchableOpacity style={styles.headerButton} onPress={goBackToChildProgress}>
           <MaterialCommunityIcons name="arrow-left" size={22} color="#0f172a" />
         </TouchableOpacity>
         <View style={styles.headerTextWrap}>
@@ -661,9 +752,13 @@ export default function ProgressSubjectScreen() {
             <Text style={styles.sectionTitle}>What to do next</Text>
             <Text style={styles.recommendation}>{recommendation}</Text>
           </View>
-          <TouchableOpacity style={styles.assignButton} onPress={openAssign}>
-            <MaterialCommunityIcons name="playlist-plus" size={17} color="#fff" />
-            <Text style={styles.assignButtonText}>Assign practice</Text>
+          <TouchableOpacity style={[styles.assignButton, isAssigningPractice && styles.assignButtonDisabled]} onPress={openAssign} disabled={isAssigningPractice}>
+            {isAssigningPractice ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <MaterialCommunityIcons name="playlist-plus" size={17} color="#fff" />
+            )}
+            <Text style={styles.assignButtonText}>{isAssigningPractice ? "Adding..." : "Assign practice"}</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -929,6 +1024,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
     paddingHorizontal: 13,
+  },
+  assignButtonDisabled: {
+    opacity: 0.65,
   },
   assignButtonText: {
     fontSize: 13,

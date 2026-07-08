@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Modal,
   StyleSheet,
   Text,
@@ -22,6 +23,7 @@ import {
 } from "@/lib/tutorConfig";
 import { listWorksheetSkillsForChild, worksheetSkillLabel, WorksheetSkill } from "@/lib/worksheetSkills";
 import { operationLabel, recommendationFor } from "@/lib/progressGlance";
+import { createProgressPracticeAssignment, ProgressPracticeTarget } from "@/lib/progressPracticeAssignments";
 import { todayDateKey } from "@/lib/schoolHomework";
 import {
   CONJUGATION_GRADE_EXPECTED,
@@ -542,6 +544,7 @@ export default function ChildProgressGlance({ child }: { child: Child }) {
   const [spellingAttempts, setSpellingAttempts] = useState<SpellingAttempt[]>([]);
   const [stars, setStars] = useState(0);
   const [checklistSelection, setChecklistSelection] = useState<ChecklistSelection | null>(null);
+  const [assigningCardId, setAssigningCardId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -614,54 +617,44 @@ export default function ChildProgressGlance({ child }: { child: Child }) {
   });
   const worksheetSkillLabels = Array.from(new Set(worksheetActivity.map(worksheetSkillLabel))).slice(0, 8);
 
-  const openAssignFlow = (card: StuckCard) => {
+  const assignmentTargetForCard = (card: StuckCard): ProgressPracticeTarget => {
     if (card.kind === "conjugation-struggling") {
-      const tier = CONJUGATION_LADDER.find((candidate) => candidate.id === card.tierId);
-      router.push({
-        pathname: "/(app)/assign",
-        params: {
-          childId: child.id,
-          childName: child.name,
-          assignmentSubject: "conjugation",
-          conjugationTierId: card.tierId,
-          conjugationTense: tier?.tense || "",
-          conjugationVerbGroups: tier?.verbGroups.join(",") || "",
-          homeworkDate: todayDateKey(),
-          openAssignment: "1",
-        },
-      });
-      return;
+      return { subject: "conjugation", tierId: card.tierId, tierLabel: card.tierLabel };
     }
 
     if (card.kind === "spelling-struggling") {
-      router.push({
-        pathname: "/(app)/assign",
+      return { subject: "spelling", tierId: card.tierId, tierLabel: card.tierLabel };
+    }
+
+    return {
+      subject: "math",
+      operation: card.operation,
+      tierId: card.tierId,
+      tierLabel: card.tierLabel,
+      missingFacts: card.kind === "coverage" ? card.missingFacts : undefined,
+    };
+  };
+
+  const openAssignFlow = async (card: StuckCard) => {
+    if (assigningCardId) return;
+    setAssigningCardId(card.id);
+    try {
+      await createProgressPracticeAssignment(child.id, assignmentTargetForCard(card), todayDateKey());
+      Alert.alert("Added to today's agenda", `${card.tierLabel} is ready for practice today.`);
+      router.replace({
+        pathname: "/(app)/parent" as any,
         params: {
           childId: child.id,
           childName: child.name,
-          assignmentSubject: "spelling",
-          spellingTierId: card.tierId,
-          spellingTierLabel: card.tierLabel,
-          spellingLanguage: "fr-FR",
-          homeworkDate: todayDateKey(),
-          openAssignment: "1",
+          tab: "today",
         },
       });
-      return;
+    } catch (err) {
+      console.error("[progress-glance] direct assignment error:", err);
+      Alert.alert("Could not add practice", err instanceof Error ? err.message : "Please try again.");
+    } finally {
+      setAssigningCardId(null);
     }
-
-    router.push({
-      pathname: "/(app)/assign",
-      params: {
-        childId: child.id,
-        childName: child.name,
-        assignmentSubject: "math",
-        topic: card.operation,
-        tierId: card.tierId,
-        homeworkDate: todayDateKey(),
-        openAssignment: "1",
-      },
-    });
   };
 
   const openSubjectDetail = (operation: Operation) => {
@@ -792,7 +785,14 @@ export default function ChildProgressGlance({ child }: { child: Child }) {
             <Text style={styles.emptyGoodText}>{`${child.name}'s on track — nothing stuck right now.`}</Text>
           </View>
         ) : (
-          stuckCards.map((card) => <StuckCardView key={card.id} card={card} onAssign={openAssignFlow} />)
+          stuckCards.map((card) => (
+            <StuckCardView
+              key={card.id}
+              card={card}
+              assigning={assigningCardId === card.id}
+              onAssign={openAssignFlow}
+            />
+          ))
         )}
       </View>
 
@@ -897,7 +897,7 @@ function MetricTile({ label, value, tone }: { label: string; value: string; tone
   );
 }
 
-function StuckCardView({ card, onAssign }: { card: StuckCard; onAssign: (card: StuckCard) => void }) {
+function StuckCardView({ card, assigning, onAssign }: { card: StuckCard; assigning: boolean; onAssign: (card: StuckCard) => void }) {
   const danger = card.kind === "struggling" || card.kind === "conjugation-struggling" || card.kind === "spelling-struggling";
   const subject = card.kind === "conjugation-struggling"
     ? "Conjugation"
@@ -920,12 +920,17 @@ function StuckCardView({ card, onAssign }: { card: StuckCard; onAssign: (card: S
       )}
       <Text style={styles.recommendation}>{card.recommendation}</Text>
       <TouchableOpacity
-        style={styles.assignButton}
+        style={[styles.assignButton, assigning && styles.assignButtonDisabled]}
         onPress={() => onAssign(card)}
+        disabled={assigning}
       >
-        <MaterialCommunityIcons name="playlist-plus" size={16} color="#1d4ed8" />
+        {assigning ? (
+          <ActivityIndicator size="small" color="#1d4ed8" />
+        ) : (
+          <MaterialCommunityIcons name="playlist-plus" size={16} color="#1d4ed8" />
+        )}
         <Text style={styles.assignButtonText}>
-          {card.kind === "coverage" ? "Assign these facts" : "Assign practice"}
+          {assigning ? "Adding..." : card.kind === "coverage" ? "Assign these facts" : "Assign practice"}
         </Text>
       </TouchableOpacity>
     </View>
@@ -1457,6 +1462,9 @@ const styles = StyleSheet.create({
     borderColor: "#bfdbfe",
     backgroundColor: "#eff6ff",
     paddingHorizontal: 12,
+  },
+  assignButtonDisabled: {
+    opacity: 0.65,
   },
   assignButtonText: {
     fontSize: 13,

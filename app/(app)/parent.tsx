@@ -1,4 +1,4 @@
-import { useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import {
   View,
   Text,
@@ -10,7 +10,7 @@ import {
   Modal,
   ScrollView,
 } from "react-native";
-import { useRouter, useFocusEffect } from "expo-router";
+import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
 import { useAuth } from "@/app/_layout";
 import { supabase } from "@/lib/supabase";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -48,6 +48,7 @@ const AVATAR_EMOJI: Record<string, string> = {
 
 export default function ParentScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ childId?: string; tab?: string }>();
   const { session } = useAuth();
   const contentScrollRef = useRef<ScrollView>(null);
   const [children, setChildren] = useState<Child[]>([]);
@@ -58,6 +59,8 @@ export default function ParentScreen() {
   const [showMenu, setShowMenu] = useState(false);
   const [parentName, setParentName] = useState("");
   const [activeTab, setActiveTab] = useState<ParentTab>("today");
+  const routeChildId = params.childId ? String(params.childId) : "";
+  const routeTab = params.tab ? String(params.tab) : "";
 
   useFocusEffect(
     useCallback(() => {
@@ -109,6 +112,15 @@ export default function ParentScreen() {
     }
   };
 
+  useEffect(() => {
+    if (["today", "progress", "rewards", "documents"].includes(routeTab)) {
+      setActiveTab(routeTab as ParentTab);
+    }
+    if (routeChildId && children.some((child) => child.id === routeChildId)) {
+      setSelectedChildId(routeChildId);
+    }
+  }, [children, routeChildId, routeTab]);
+
   const fetchChildren = async () => {
     setIsLoading(true);
     setError("");
@@ -129,7 +141,10 @@ export default function ParentScreen() {
     console.log("[parent] children fetched:", childrenData.length);
     setChildren(childrenData);
 
-    if (childrenData.length > 0 && !selectedChildId) {
+    const routeChildExists = routeChildId && childrenData.some((child) => child.id === routeChildId);
+    if (routeChildExists) {
+      setSelectedChildId(routeChildId);
+    } else if (childrenData.length > 0 && !selectedChildId) {
       setSelectedChildId(childrenData[0].id);
     }
 

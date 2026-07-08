@@ -1,6 +1,6 @@
 import { supabase } from "./supabase";
-import { generateQuestion, Question } from "./tutor/generate";
-import { currentTierAndBand } from "./tutor/ability";
+import { coverageKeysForQuestion, generateQuestion, Question } from "./tutor/generate";
+import { currentTierAndBand, requiredCoverageKeys } from "./tutor/ability";
 import { LADDERS, Operation } from "./tutorConfig";
 import { generateWordProblem } from "./tutor/wordProblems";
 import { getListItems } from "./spelling";
@@ -119,8 +119,9 @@ export async function createMathAssignment(params: {
   multiplicationTables?: number[];
   operationTables?: number[];
   tierId?: string | null;
+  targetFactKeys?: string[];
 }): Promise<Assignment> {
-  const { childId, topic, count, dueDate, mode = "practice", wordProblemOp, multiplicationTables, operationTables, tierId } = params;
+  const { childId, topic, count, dueDate, mode = "practice", wordProblemOp, multiplicationTables, operationTables, tierId, targetFactKeys } = params;
 
   // Get the current authenticated user to ensure parent_id is set correctly
   const { data: authData, error: authError } = await supabase.auth.getUser();
@@ -199,6 +200,11 @@ export async function createMathAssignment(params: {
     const tierOverride = tierId && LADDERS[operation].some((tier) => tier.id === tierId) ? tierId : null;
     const { tierId: currentTierId } = currentTierAndBand(attempts, operation, childData || {});
     const assignmentTierId = tierOverride || currentTierId;
+    const requiredFactKeys = requiredCoverageKeys(assignmentTierId);
+    const targetedFactKeys = new Set((targetFactKeys || []).filter((key) => requiredFactKeys?.has(key)));
+    const coveredFactKeys = requiredFactKeys && targetedFactKeys.size > 0
+      ? new Set(Array.from(requiredFactKeys).filter((key) => !targetedFactKeys.has(key)))
+      : null;
     const tableQuestionPool = (topic === "multiplication" || topic === "division") && tables.length > 0
       ? buildTableQuestionPool(topic as "multiplication" | "division", tables, assignmentTierId)
       : [];
@@ -207,7 +213,15 @@ export async function createMathAssignment(params: {
       const genQ =
         tableQuestionPool.length > 0
           ? tableQuestionPool[i % tableQuestionPool.length]
-          : generateQuestion(operation, assignmentTierId, childData?.max_times_table);
+          : generateQuestion(
+              operation,
+              assignmentTierId,
+              childData?.max_times_table,
+              coveredFactKeys ? { coveredFactKeys } : undefined
+            );
+      if (coveredFactKeys) {
+        coverageKeysForQuestion(genQ).forEach((key) => coveredFactKeys.add(key));
+      }
       customQuestions.push(questionToCustom(genQ, operation));
     }
   }
