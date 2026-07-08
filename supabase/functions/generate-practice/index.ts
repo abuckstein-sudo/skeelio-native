@@ -10,6 +10,15 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+const MATH_ANSWERABILITY_RULES = `ANSWERABILITY RULES:
+- Every item must have exactly ONE answer that answer_type can express and the child can enter.
+- answer_type "number" means exactly ONE numeric value. FORBID multi-part questions, "who/which/person/name" answers, "qui ... et combien" / "which ... and how many" prompts, and prompts whose true answer could be equal/neither/same/none/non-numeric.
+- Do NOT use answer_type "number" for "who has more/less", "which collection is larger/smaller", or "how many more/less" comparison wording when equality is possible or the wording presupposes a winner.
+- Use answer_type "yesno" for comparison/equality checks: ask one boolean claim and make check_expression compute that boolean.
+- BAD NEGATIVE EXAMPLE: { "answer_type":"number", "question":"Luc a 4 boîtes de 25 billes et Marie a 5 boîtes de 20 billes. Qui a plus et combien ?", "check_expression":"(4*25)-(5*20)", "claimed_answer":0 } is INVALID because it asks for a person plus a number, and the actual comparison is equal/neither.
+- GOOD YES/NO REWRITE: { "answer_type":"yesno", "question":"Luc a-t-il plus de billes que Marie ? Luc a 4 boîtes de 25 billes. Marie a 5 boîtes de 20 billes.", "check_expression":"4*25 > 5*20", "claimed_answer":false }.
+- GOOD NUMBER REWRITE: { "answer_type":"number", "question":"Combien de billes Luc a-t-il ? Luc a 4 boîtes de 25 billes.", "check_expression":"4*25", "claimed_answer":100 }.`;
+
 const REGULAR_ER_VERB_BANK = [
   "aimer",
   "apporter",
@@ -64,6 +73,7 @@ CRITICAL SCHOOL-ALIGNMENT RULES:
 - Do NOT treat the scanned worksheet as proficiency evidence. It is context for tutoring and practice generation.
 
 Each item MUST be SELF-CONTAINED — every number the child needs IN THE QUESTION TEXT. Vary real-world contexts only for far_transfer items where that does not erase the worksheet method.
+${MATH_ANSWERABILITY_RULES}
 
 STRUCTURE:
 {
@@ -84,7 +94,9 @@ const MATH_TOPUP_PROMPT = (subSkill: string, language: string, schoolContext: st
 WORKSHEET / SCHOOL CONTEXT TO PRESERVE:
 ${schoolContext}
 
-Use the same classroom method/representation where appropriate, then vary slightly. If the worksheet is c-d-u place value, do NOT turn it into generic multiplication or shopping word problems. Every number the child needs IN THE QUESTION TEXT. Structure:
+Use the same classroom method/representation where appropriate, then vary slightly. If the worksheet is c-d-u place value, do NOT turn it into generic multiplication or shopping word problems. Every number the child needs IN THE QUESTION TEXT.
+${MATH_ANSWERABILITY_RULES}
+Structure:
 {
   "kind":"math",
   "answer_type":"number"|"yesno",
@@ -237,6 +249,70 @@ function extractNumbersFromExpression(expr: string): Set<number> {
     }
   }
   return numbers;
+}
+
+function normalizeQuestionForGate(question: string): string {
+  return String(question ?? "")
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function mathAnswerabilityIssue(item: Record<string, unknown>, computed?: unknown): string | null {
+  const answerType = String(item.answer_type ?? "");
+  const claimedAnswer = item.claimed_answer;
+  const q = normalizeQuestionForGate(String(item.question ?? ""));
+
+  if (answerType === "yesno") {
+    if (typeof claimedAnswer !== "boolean") return "yesno claimed_answer is not boolean";
+    if (computed !== undefined && typeof computed !== "boolean") {
+      return "yesno check_expression did not compute a boolean";
+    }
+    return null;
+  }
+
+  if (answerType !== "number") {
+    return `unsupported answer_type ${answerType || "(missing)"}`;
+  }
+
+  if (typeof claimedAnswer !== "number" || !Number.isFinite(claimedAnswer)) {
+    return "number claimed_answer is not a finite number";
+  }
+  if (computed !== undefined && (typeof computed !== "number" || !Number.isFinite(computed))) {
+    return "number check_expression did not compute a finite number";
+  }
+
+  const asksActorChoice = /\b(qui|lequel|laquelle|lesquels|lesquelles|who|which)\b/.test(q);
+  const asksQuelChoice =
+    /\b(quel|quelle|quels|quelles)\b/.test(q) &&
+    !/\b(quel|quelle|quels|quelles)\s+(nombre|numero)\b/.test(q);
+  const asksHowMuchToo = /\bet\s+combien\b|\band\s+how\s+(many|much)\b/.test(q);
+  const comparesCollections = /\b(plus|moins|more|less|grand|petit|larger|smaller)\b/.test(q);
+  const presupposesDifference =
+    /\bde\s+plus\s+que\b|\bde\s+moins\s+que\b|\bmore\s+than\b|\bless\s+than\b/.test(q);
+  const equalityOutcome =
+    /\b(egal|egale|egaux|egalite|aucun|personne|equal|neither|none)\b/.test(q) ||
+    (comparesCollections && /\b(meme|pareil|same)\b/.test(q));
+
+  if ((asksActorChoice || asksQuelChoice) && asksHowMuchToo) {
+    return "number question asks a multi-part which/who plus amount answer";
+  }
+  if (asksActorChoice) {
+    return "number question asks for a person or which choice";
+  }
+  if (asksQuelChoice && comparesCollections) {
+    return "number question asks which comparison choice";
+  }
+  if (presupposesDifference) {
+    return "number comparison presupposes a non-equal winner";
+  }
+  if (equalityOutcome) {
+    return "number question has an equality/neither/same outcome";
+  }
+
+  return null;
 }
 
 // Deterministic answer for "do I have enough money?" word problems.
@@ -909,6 +985,11 @@ async function generateMathPractice(
         const checkExpr = item.check_expression as string;
         const answerType = item.answer_type as string;
         const claimedAnswer = item.claimed_answer;
+        const preIssue = mathAnswerabilityIssue(item);
+        if (preIssue) {
+          console.log("[generate-practice] answerability guard dropped item:", preIssue, question.substring(0, 120));
+          continue;
+        }
 
         // Deterministic affordability override: compute "enough money?" from the
         // numbers instead of trusting the model.
@@ -938,6 +1019,11 @@ async function generateMathPractice(
 
         // Evaluate
         const computed = evaluate(checkExpr);
+        const postIssue = mathAnswerabilityIssue(item, computed);
+        if (postIssue) {
+          console.log("[generate-practice] answerability guard dropped computed item:", postIssue, question.substring(0, 120));
+          continue;
+        }
 
         if (answerType === "yesno") {
           if (computed === claimedAnswer) {
@@ -984,6 +1070,11 @@ async function generateMathPractice(
             const checkExpr = item.check_expression as string;
             const answerType = item.answer_type as string;
             const claimedAnswer = item.claimed_answer;
+            const preIssue = mathAnswerabilityIssue(item);
+            if (preIssue) {
+              console.log("[generate-practice] answerability guard dropped top-up item:", preIssue, question.substring(0, 120));
+              continue;
+            }
 
             // Deterministic affordability override: compute "enough money?" from the
             // numbers instead of trusting the model.
@@ -1011,6 +1102,11 @@ async function generateMathPractice(
             if (!allNumbersInQuestion) continue;
 
             const computed = evaluate(checkExpr);
+            const postIssue = mathAnswerabilityIssue(item, computed);
+            if (postIssue) {
+              console.log("[generate-practice] answerability guard dropped computed top-up item:", postIssue, question.substring(0, 120));
+              continue;
+            }
 
             if (answerType === "yesno") {
               if (computed === claimedAnswer) {

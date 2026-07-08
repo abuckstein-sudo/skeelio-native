@@ -9,6 +9,15 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+const MATH_ANSWERABILITY_RULES = `ANSWERABILITY RULES FOR MATH ITEMS:
+- Every generated item must have exactly ONE answer, and that answer must be expressible by answer_type.
+- answer_type "number" means the child enters exactly ONE numeric value. FORBID multi-part questions, "who/which/person/name" questions, "qui ... et combien" / "which ... and how many" questions, and any question whose true answer could be equal/neither/same/none/non-numeric.
+- Do NOT use answer_type "number" for comparison prompts that ask who has more/less, which collection is larger/smaller, or "how many more/less" when equality is possible or the wording presupposes a winner.
+- answer_type "yesno" is the safe form for comparisons/equality checks: ask one boolean claim and make check_expression compute that boolean.
+- BAD NEGATIVE EXAMPLE: { "answer_type":"number", "question":"Luc a 4 boîtes de 25 billes et Marie a 5 boîtes de 20 billes. Qui a plus et combien ?", "check_expression":"(4*25)-(5*20)", "claimed_answer":0 } is INVALID because it asks for a person plus a number, and the true comparison is equal/neither.
+- GOOD YES/NO REWRITE: { "answer_type":"yesno", "question":"Luc a-t-il plus de billes que Marie ? Luc a 4 boîtes de 25 billes. Marie a 5 boîtes de 20 billes.", "check_expression":"4*25 > 5*20", "claimed_answer":false }.
+- GOOD NUMBER REWRITE: { "answer_type":"number", "question":"Combien de billes Luc a-t-il ? Luc a 4 boîtes de 25 billes.", "check_expression":"4*25", "claimed_answer":100 }.`;
+
 const INITIAL_PROMPT = `You are an expert elementary teacher (ages 6–10). You are given a photo of a page — it may be a worksheet (filled or blank), a textbook page, or an explanatory sheet with no questions. Identify the DISTINCT sub-skills it teaches or practises from the actual question TYPES on the page. Do NOT invent sub-skills. Classify the domain. Respond with ONLY a JSON object (no markdown). ALL text must be in the page's language — never use English:
 {
  "language": "<the page's language>",
@@ -56,6 +65,7 @@ LANGUAGE LABEL RULE:
 - Use "vocabulaire" / "vocabulary" ONLY when the page asks about meanings, definitions, synonyms, categories, or word knowledge.
 Each practice MATH item MUST be SELF-CONTAINED — the question text includes EVERY number needed:
 - { "kind":"math", "answer_type":"number"|"yesno", "sub_skill":"<which sub_skill>", "practice_mode":"same_form"|"near_transfer"|"far_transfer", "unit":"€"|"" (€ if the answer is a money amount; "" if a plain count), "question":"<COMPLETE word problem in page's language with EVERY numeric value stated explicitly. E.g. 'Un livre coûte 5,20 € et un cahier coûte 3,50 €. Si tu achètes un livre et un cahier, combien dépenses-tu en tout ?' or 'Tu as 15 €. Une paire de chaussures coûte 12 €. As-tu assez d'argent pour les chaussures ?'>", "check_expression":"<arithmetic or boolean expression using the exact numeric values stated in the question text (in standard decimal form, e.g., 5.20 not 5,20); no variable names, only literals>", "claimed_answer":<number for 'number' type, or boolean for 'yesno'> }
+${MATH_ANSWERABILITY_RULES}
 Other items (reference, open) can use simple text.
 CRITICAL:
 1. Derive sub_skills ONLY from question types on the page (don't invent).
@@ -69,7 +79,9 @@ CRITICAL:
 8. Include a "how many can you buy" item where relevant (e.g., "Tu as 10 €. Un stylo coûte 2 €. Combien de stylos peux-tu acheter?").
 9. Each item is distinct, NO duplicates or near-clones; ALL text in page's language only.`;
 
-const RETRY_PROMPT = (subSkillsList: string, language: string) => `Generate 4 more DISTINCT math practice items (${language}) for sub-skills: ${subSkillsList}. Distribute evenly across the sub-skills listed. Use a spread of practice_mode values where the skill allows it: same_form, near_transfer, far_transfer. EACH ITEM MUST BE SELF-CONTAINED — every number the child needs must be IN THE QUESTION TEXT. Preserve the worksheet task shape when the sub-skill names imply a specific school method such as c/d/u, equivalent writings, comparison, or equalizing collections. Far-transfer items must not erase visible school methods. Vary numbers, objects, names, and contexts; do not create near-duplicates or the same problem with only one number changed. Structure:
+const RETRY_PROMPT = (subSkillsList: string, language: string) => `Generate 4 more DISTINCT math practice items (${language}) for sub-skills: ${subSkillsList}. Distribute evenly across the sub-skills listed. Use a spread of practice_mode values where the skill allows it: same_form, near_transfer, far_transfer. EACH ITEM MUST BE SELF-CONTAINED — every number the child needs must be IN THE QUESTION TEXT. Preserve the worksheet task shape when the sub-skill names imply a specific school method such as c/d/u, equivalent writings, comparison, or equalizing collections. Far-transfer items must not erase visible school methods. Vary numbers, objects, names, and contexts; do not create near-duplicates or the same problem with only one number changed.
+${MATH_ANSWERABILITY_RULES}
+Structure:
 {
   "kind":"math",
   "answer_type":"number"|"yesno",
@@ -120,7 +132,9 @@ Structure:
 Return ONLY the JSON array, NO EXPLANATION, ALL TEXT IN ${language}:
 [...]`;
 
-const MATH_TOPUP_PROMPT = (subSkill: string, language: string) => `Generate 4 more math practice items (${language}) focused ONLY on the sub-skill: "${subSkill}". Include a spread of practice_mode values where the skill allows it: same_form, near_transfer, far_transfer. EACH ITEM MUST be SELF-CONTAINED — every number the child needs must be IN THE QUESTION TEXT. Preserve worksheet-shaped methods such as c/d/u notation, equivalent writings, comparison, or equalizing collections instead of turning them into generic word problems. Far-transfer items must not erase visible school methods. Vary numbers, objects, names, and contexts; do not create near-duplicates or the same problem with only one number changed. Return ONLY the JSON array with structure { "kind":"math", "answer_type":"...", "sub_skill":"${subSkill}", "practice_mode":"same_form"|"near_transfer"|"far_transfer", "unit":"€"|"" (€ if money; "" if count), "question":"...", "check_expression":"...", "claimed_answer":... }:
+const MATH_TOPUP_PROMPT = (subSkill: string, language: string) => `Generate 4 more math practice items (${language}) focused ONLY on the sub-skill: "${subSkill}". Include a spread of practice_mode values where the skill allows it: same_form, near_transfer, far_transfer. EACH ITEM MUST be SELF-CONTAINED — every number the child needs must be IN THE QUESTION TEXT. Preserve worksheet-shaped methods such as c/d/u notation, equivalent writings, comparison, or equalizing collections instead of turning them into generic word problems. Far-transfer items must not erase visible school methods. Vary numbers, objects, names, and contexts; do not create near-duplicates or the same problem with only one number changed.
+${MATH_ANSWERABILITY_RULES}
+Return ONLY the JSON array with structure { "kind":"math", "answer_type":"...", "sub_skill":"${subSkill}", "practice_mode":"same_form"|"near_transfer"|"far_transfer", "unit":"€"|"" (€ if money; "" if count), "question":"...", "check_expression":"...", "claimed_answer":... }:
 [...]`;
 
 const LANGUAGE_TOPUP_PROMPT = (subSkill: string, language: string, conceptScope: string) => `Generate 4 more grammar/language practice items (${language}) focused ONLY on the sub-skill: "${subSkill}". Constrain to the RULE taught (NO irregulars/exceptions beyond scope). Include a spread of practice_mode values where the skill allows it: same_form, near_transfer, far_transfer. Vary words, names, sentence frames, and contexts; do not create near-duplicates or the same exercise with only one word changed.
@@ -288,6 +302,11 @@ async function generateWorksheetPractice(worksheet: Record<string, unknown>, ima
           const checkExpr = item.check_expression as string;
           const answerType = item.answer_type as string;
           const claimedAnswer = item.claimed_answer;
+          const preIssue = mathAnswerabilityIssue(item);
+          if (preIssue) {
+            console.log("[absorb-worksheet] answerability guard dropped item:", preIssue, question.substring(0, 120));
+            continue;
+          }
 
           // GUARD: Extract numbers from question and expression; verify all expression numbers appear in question
           const questionNumbers = extractNumbersFromText(question);
@@ -308,6 +327,11 @@ async function generateWorksheetPractice(worksheet: Record<string, unknown>, ima
 
           // Evaluate expression directly (no context needed)
           const computed = evaluate(checkExpr);
+          const postIssue = mathAnswerabilityIssue(item, computed);
+          if (postIssue) {
+            console.log("[absorb-worksheet] answerability guard dropped computed item:", postIssue, question.substring(0, 120));
+            continue;
+          }
 
           let verified = false;
           if (answerType === "yesno") {
@@ -388,6 +412,11 @@ async function generateWorksheetPractice(worksheet: Record<string, unknown>, ima
             const checkExpr = item.check_expression as string;
             const answerType = item.answer_type as string;
             const claimedAnswer = item.claimed_answer;
+            const preIssue = mathAnswerabilityIssue(item);
+            if (preIssue) {
+              console.log("[absorb-worksheet] answerability guard dropped retry item:", preIssue, question.substring(0, 120));
+              continue;
+            }
 
             // GUARD: Extract numbers from question and expression; verify all expression numbers appear in question
             const questionNumbers = extractNumbersFromText(question);
@@ -408,6 +437,11 @@ async function generateWorksheetPractice(worksheet: Record<string, unknown>, ima
 
             // Evaluate expression directly
             const computed = evaluate(checkExpr);
+            const postIssue = mathAnswerabilityIssue(item, computed);
+            if (postIssue) {
+              console.log("[absorb-worksheet] answerability guard dropped computed retry item:", postIssue, question.substring(0, 120));
+              continue;
+            }
 
             if (answerType === "yesno") {
               if (computed === claimedAnswer) {
@@ -478,6 +512,11 @@ async function generateWorksheetPractice(worksheet: Record<string, unknown>, ima
           const checkExpr = item.check_expression as string;
           const answerType = item.answer_type as string;
           const claimedAnswer = item.claimed_answer;
+          const preIssue = mathAnswerabilityIssue(item);
+          if (preIssue) {
+            console.log("[absorb-worksheet] answerability guard dropped top-up item:", preIssue, question.substring(0, 120));
+            continue;
+          }
 
           // GUARD: numeric verification
           const questionNumbers = extractNumbersFromText(question);
@@ -498,6 +537,11 @@ async function generateWorksheetPractice(worksheet: Record<string, unknown>, ima
 
           // Evaluate
           const computed = evaluate(checkExpr);
+          const postIssue = mathAnswerabilityIssue(item, computed);
+          if (postIssue) {
+            console.log("[absorb-worksheet] answerability guard dropped computed top-up item:", postIssue, question.substring(0, 120));
+            continue;
+          }
 
           let verified = false;
           if (answerType === "yesno") {
@@ -572,6 +616,11 @@ async function generateWorksheetPractice(worksheet: Record<string, unknown>, ima
           const checkExpr = item.check_expression as string;
           const answerType = item.answer_type as string;
           const claimedAnswer = item.claimed_answer;
+          const preIssue = mathAnswerabilityIssue(item);
+          if (preIssue) {
+            console.log("[absorb-worksheet] answerability guard dropped backfill item:", preIssue, question.substring(0, 120));
+            continue;
+          }
 
           // GUARD: numeric verification
           const questionNumbers = extractNumbersFromText(question);
@@ -592,6 +641,11 @@ async function generateWorksheetPractice(worksheet: Record<string, unknown>, ima
 
           // Evaluate
           const computed = evaluate(checkExpr);
+          const postIssue = mathAnswerabilityIssue(item, computed);
+          if (postIssue) {
+            console.log("[absorb-worksheet] answerability guard dropped computed backfill item:", postIssue, question.substring(0, 120));
+            continue;
+          }
 
           let verified = false;
           if (answerType === "yesno") {
@@ -710,6 +764,71 @@ function extractNumbersFromExpression(expr: string): Set<number> {
     }
   }
   return numbers;
+}
+
+function normalizeQuestionForGate(question: string): string {
+  return String(question ?? "")
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function mathAnswerabilityIssue(item: Record<string, unknown>, computed?: unknown): string | null {
+  const answerType = String(item.answer_type ?? "");
+  const claimedAnswer = item.claimed_answer;
+  const question = String(item.question ?? "");
+  const q = normalizeQuestionForGate(question);
+
+  if (answerType === "yesno") {
+    if (typeof claimedAnswer !== "boolean") return "yesno claimed_answer is not boolean";
+    if (computed !== undefined && typeof computed !== "boolean") {
+      return "yesno check_expression did not compute a boolean";
+    }
+    return null;
+  }
+
+  if (answerType !== "number") {
+    return `unsupported answer_type ${answerType || "(missing)"}`;
+  }
+
+  if (typeof claimedAnswer !== "number" || !Number.isFinite(claimedAnswer)) {
+    return "number claimed_answer is not a finite number";
+  }
+  if (computed !== undefined && (typeof computed !== "number" || !Number.isFinite(computed))) {
+    return "number check_expression did not compute a finite number";
+  }
+
+  const asksActorChoice = /\b(qui|lequel|laquelle|lesquels|lesquelles|who|which)\b/.test(q);
+  const asksQuelChoice =
+    /\b(quel|quelle|quels|quelles)\b/.test(q) &&
+    !/\b(quel|quelle|quels|quelles)\s+(nombre|numero)\b/.test(q);
+  const asksHowMuchToo = /\bet\s+combien\b|\band\s+how\s+(many|much)\b/.test(q);
+  const comparesCollections = /\b(plus|moins|more|less|grand|petit|larger|smaller)\b/.test(q);
+  const presupposesDifference =
+    /\bde\s+plus\s+que\b|\bde\s+moins\s+que\b|\bmore\s+than\b|\bless\s+than\b/.test(q);
+  const equalityOutcome =
+    /\b(egal|egale|egaux|egalite|aucun|personne|equal|neither|none)\b/.test(q) ||
+    (comparesCollections && /\b(meme|pareil|same)\b/.test(q));
+
+  if ((asksActorChoice || asksQuelChoice) && asksHowMuchToo) {
+    return "number question asks a multi-part which/who plus amount answer";
+  }
+  if (asksActorChoice) {
+    return "number question asks for a person or which choice";
+  }
+  if (asksQuelChoice && comparesCollections) {
+    return "number question asks which comparison choice";
+  }
+  if (presupposesDifference) {
+    return "number comparison presupposes a non-equal winner";
+  }
+  if (equalityOutcome) {
+    return "number question has an equality/neither/same outcome";
+  }
+
+  return null;
 }
 
 // Check if language is French (robust: français/francais/french or fr code)
