@@ -9,6 +9,8 @@ import {
   ScrollView,
   TextInput,
   Keyboard,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useAuth } from "../../_layout";
@@ -840,70 +842,93 @@ export default function ConjugationPracticeScreen() {
     return (
       <SafeAreaView style={styles.container}>
         <QuitButton />
-        <ScrollView
-          contentContainerStyle={styles.quizScrollContent}
-          keyboardShouldPersistTaps="handled"
-          scrollEnabled={!isWritingStroke}
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          style={{ flex: 1 }}
         >
-          <View style={styles.header}>
-            <Text style={styles.progress}>
-              {copy.question} {currentIndex + 1} {copy.of} {questions.length}
-            </Text>
-            <View style={styles.stars}>
-              <Text style={styles.starsText}>⭐ {correctCount}</Text>
+          <ScrollView
+            contentContainerStyle={styles.quizScrollContent}
+            keyboardShouldPersistTaps="handled"
+            scrollEnabled={!isWritingStroke}
+          >
+            <View style={styles.header}>
+              <Text style={styles.progress}>
+                {copy.question} {currentIndex + 1} {copy.of} {questions.length}
+              </Text>
+              <View style={styles.stars}>
+                <Text style={styles.starsText}>⭐ {correctCount}</Text>
+              </View>
             </View>
-          </View>
 
-          <View style={styles.questionCard}>
-            <Text style={styles.heading}>{copy.conjugate} {currentQuestion.verb}</Text>
-            <View style={styles.tenseBadge}>
-              <Text style={styles.tenseBadgeText}>{currentQuestion.tense}</Text>
+            <View style={styles.questionCard}>
+              <Text style={styles.heading}>{copy.conjugate} {currentQuestion.verb}</Text>
+              <View style={styles.tenseBadge}>
+                <Text style={styles.tenseBadgeText}>{currentQuestion.tense}</Text>
+              </View>
+              <Text style={styles.pronounText}>
+                {currentQuestion.pronoun} <Text style={styles.blank}>_____</Text>
+              </Text>
             </View>
-            <Text style={styles.pronounText}>
-              {currentQuestion.pronoun} <Text style={styles.blank}>_____</Text>
-            </Text>
-          </View>
 
-          {questionMode === "choice" ? (
-          <View style={styles.optionsContainer}>
-            {shuffledOptions.map((option, idx) => {
-              const isCorrect = option === currentQuestion.correct_answer;
-              const isSelected = feedback.type !== "idle" && option === feedback.correctAnswer;
+            {questionMode === "choice" && (
+              <View style={styles.optionsContainer}>
+                {shuffledOptions.map((option, idx) => {
+                  const isCorrect = option === currentQuestion.correct_answer;
+                  const isSelected = feedback.type !== "idle" && option === feedback.correctAnswer;
 
-              return (
+                  return (
+                    <TouchableOpacity
+                      key={idx}
+                      style={[
+                        styles.optionButton,
+                        feedback.type === "wrong" && isCorrect && styles.optionCorrect,
+                        feedback.type === "wrong" && !isCorrect && isSelected && styles.optionWrong,
+                      ]}
+                      onPress={() => handleSelectOption(option, true)}
+                      disabled={feedback.type !== "idle" || isSubmitting}
+                    >
+                      <Text style={styles.optionText}>{option}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )}
+
+            {feedback.type !== "idle" && (
+              <View style={styles.feedbackContainer}>
+                <Text style={[styles.feedbackText, feedback.type === "correct" ? styles.correct : styles.incorrect]}>
+                  {feedback.type === "correct" ? copy.correct : copy.wrong(feedback.correctAnswer)}
+                </Text>
                 <TouchableOpacity
-                  key={idx}
-                  style={[
-                    styles.optionButton,
-                    feedback.type === "wrong" && isCorrect && styles.optionCorrect,
-                    feedback.type === "wrong" && !isCorrect && isSelected && styles.optionWrong,
-                  ]}
-                  onPress={() => handleSelectOption(option, true)}
-                  disabled={feedback.type !== "idle" || isSubmitting}
+                  style={styles.nextButton}
+                  onPress={handleNext}
                 >
-                  <Text style={styles.optionText}>{option}</Text>
+                  <Text style={styles.nextButtonText}>
+                    {currentIndex === questions.length - 1 ? copy.finish : copy.next}
+                  </Text>
                 </TouchableOpacity>
-              );
-            })}
-          </View>
-          ) : (
-            <View style={styles.inputContainer}>
-              <TextInput
-                ref={inputRef}
-                style={[styles.input, inputMethod === "type" && styles.inputTyping]}
-                value={writtenAnswer}
-                onChangeText={setWrittenAnswer}
-                placeholder={copy.recognizedAnswer}
-                placeholderTextColor="#94a3b8"
-                editable={inputMethod === "type" && feedback.type === "idle" && !isSubmitting}
-                autoCapitalize="none"
-                autoCorrect={false}
-                spellCheck={false}
-                autoFocus={true}
-                showSoftInputOnFocus
-                blurOnSubmit={false}
-              />
-              {feedback.type === "idle" && (
+              </View>
+            )}
+          </ScrollView>
+
+          {questionMode === "input" && feedback.type === "idle" && (
+            <View style={styles.footer}>
+              <View style={styles.inputContainer}>
+                <TextInput
+                  ref={inputRef}
+                  style={[styles.input, inputMethod === "type" && styles.inputTyping]}
+                  value={writtenAnswer}
+                  onChangeText={setWrittenAnswer}
+                  placeholder={copy.recognizedAnswer}
+                  placeholderTextColor="#94a3b8"
+                  editable={inputMethod === "type" && !isSubmitting}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  spellCheck={false}
+                  autoFocus={true}
+                  showSoftInputOnFocus
+                  blurOnSubmit={false}
+                />
                 <View style={styles.inputModeRow}>
                   <Text style={styles.inputModeLabel}>{copy.inputType}</Text>
                   <TouchableOpacity
@@ -929,9 +954,7 @@ export default function ConjugationPracticeScreen() {
                     </Text>
                   </TouchableOpacity>
                 </View>
-              )}
-              {feedback.type === "idle" && (
-                inputMethod === "write" && (
+                {inputMethod === "write" && (
                   <View style={styles.handwritingBox}>
                     <HandwritingAnswerPad
                       language={appLanguage}
@@ -940,9 +963,7 @@ export default function ConjugationPracticeScreen() {
                       onDrawingChange={setIsWritingStroke}
                     />
                   </View>
-                )
-              )}
-              {feedback.type === "idle" && (
+                )}
                 <TouchableOpacity
                   style={[styles.submitWrittenButton, (!writtenAnswer.trim() || isSubmitting) && styles.submitWrittenButtonDisabled]}
                   onPress={handleSubmitWrittenAnswer}
@@ -950,26 +971,10 @@ export default function ConjugationPracticeScreen() {
                 >
                   <Text style={styles.submitWrittenButtonText}>{copy.check}</Text>
                 </TouchableOpacity>
-              )}
+              </View>
             </View>
           )}
-
-          {feedback.type !== "idle" && (
-            <View style={styles.feedbackContainer}>
-              <Text style={[styles.feedbackText, feedback.type === "correct" ? styles.correct : styles.incorrect]}>
-                {feedback.type === "correct" ? copy.correct : copy.wrong(feedback.correctAnswer)}
-              </Text>
-              <TouchableOpacity
-                style={styles.nextButton}
-                onPress={handleNext}
-              >
-                <Text style={styles.nextButtonText}>
-                  {currentIndex === questions.length - 1 ? copy.finish : copy.next}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          )}
-        </ScrollView>
+        </KeyboardAvoidingView>
       </SafeAreaView>
     );
   }
@@ -1027,6 +1032,13 @@ const styles = StyleSheet.create({
   },
   quizScrollContent: {
     paddingBottom: 32,
+  },
+  footer: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: "#fff",
+    borderTopWidth: 1,
+    borderTopColor: "#e5e7eb",
   },
   title: {
     fontSize: 24,
@@ -1187,9 +1199,7 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   inputContainer: {
-    marginHorizontal: 16,
     gap: 10,
-    marginBottom: 24,
   },
   input: {
     borderWidth: 2,
