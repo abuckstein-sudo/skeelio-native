@@ -309,6 +309,7 @@ export default function EpisodeScreen() {
 
       if (reviewedPractice.length > 0) {
         const items = reviewedPractice.filter((item) => {
+          if (!isDisplayablePracticeItem(item)) return false;
           const key = normalizeQuestionKey(item.question);
           if (shownQuestionKeysRef.current.has(key)) return false;
           shownQuestionKeysRef.current.add(key);
@@ -371,6 +372,7 @@ export default function EpisodeScreen() {
 
       const rawItems = (result.practice || []) as PracticeItem[];
       const items = rawItems.filter((item) => {
+        if (!isDisplayablePracticeItem(item)) return false;
         const key = normalizeQuestionKey(item.question);
         if (shownQuestionKeysRef.current.has(key)) return false;
         shownQuestionKeysRef.current.add(key);
@@ -451,6 +453,43 @@ export default function EpisodeScreen() {
       .toLowerCase()
       .replace(/\s+/g, " ")
       .trim();
+
+  const normalizeQuestionForAnswerability = (text: string): string =>
+    String(text ?? "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/\s+/g, " ")
+      .trim();
+
+  const isDisplayablePracticeItem = (item: PracticeItem): boolean => {
+    if (item.kind !== "math" || item.answer_type !== "number") return true;
+
+    const q = normalizeQuestionForAnswerability(item.question);
+    const asksActorChoice = /\b(qui|lequel|laquelle|lesquels|lesquelles|who|which)\b/.test(q);
+    const asksQuelChoice =
+      /\b(quel|quelle|quels|quelles)\b/.test(q) &&
+      !/\b(quel|quelle|quels|quelles)\s+(nombre|numero)\b/.test(q);
+    const asksHowMuchToo = /\bet\s+combien\b|\band\s+how\s+(many|much)\b/.test(q);
+    const comparesCollections = /\b(plus|moins|more|less|grand|petit|larger|smaller)\b/.test(q);
+    const presupposesDifference =
+      /\bde\s+plus\s+que\b|\bde\s+moins\s+que\b|\bmore\s+than\b|\bless\s+than\b/.test(q);
+    const equalityOutcome =
+      /\b(egal|egale|egaux|egalite|aucun|personne|equal|neither|none)\b/.test(q) ||
+      (comparesCollections && /\b(meme|pareil|same)\b/.test(q));
+
+    const blocked =
+      ((asksActorChoice || asksQuelChoice) && asksHowMuchToo) ||
+      asksActorChoice ||
+      (asksQuelChoice && comparesCollections) ||
+      presupposesDifference ||
+      equalityOutcome;
+
+    if (blocked) {
+      console.log("[episode] dropped unanswerable math item before display:", item.question);
+    }
+    return !blocked;
+  };
 
   const normalizeNumberInput = (text: string): number => {
     // Remove € symbol and spaces
