@@ -11,6 +11,8 @@ export type SpellingCurriculumWord = {
   echelon: number;
   sentence?: string | null;
   audio_url?: string | null;
+  sentence_audio_url?: string | null;
+  voice?: string | null;
 };
 
 export async function fetchSpellingCurriculumPool(params: {
@@ -23,7 +25,7 @@ export async function fetchSpellingCurriculumPool(params: {
 
   let query = supabase
     .from("spelling_curriculum_words")
-    .select("id, word, nature, frequency, strand, tier_id, language, echelon, sentence, audio_url")
+    .select("id, word, nature, frequency, strand, tier_id, language, echelon, sentence, audio_url, sentence_audio_url, voice")
     .eq("language", language)
     .eq("excluded", false)
     .in("tier_id", params.tierIds)

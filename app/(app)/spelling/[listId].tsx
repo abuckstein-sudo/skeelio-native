@@ -221,6 +221,8 @@ export default function SpellingPracticeScreen() {
             student_id: childId,
             normalized_text: normalise(word.word),
             sentence: word.sentence ?? undefined,
+            audio_url: word.audio_url ?? undefined,
+            sentence_audio_url: word.sentence_audio_url ?? undefined,
             source: "curriculum",
           }));
 
@@ -233,7 +235,7 @@ export default function SpellingPracticeScreen() {
 
           setTimeout(() => {
             console.log("[SpellingPracticeScreen] speaking first curriculum word:", selectedItems[0].item_text);
-            speakWord(selectedItems[0].item_text, "French");
+            speakWord(selectedItems[0].item_text, "French", selectedItems[0].audio_url);
           }, 250);
 
           setIsLoading(false);
@@ -290,7 +292,7 @@ export default function SpellingPracticeScreen() {
   const handleReplay = async () => {
     if (currentItem) {
       console.log("[handleReplay] speaking word:", currentItem.item_text);
-      await speakWord(currentItem.item_text, language);
+      await speakWord(currentItem.item_text, language, currentItem.audio_url);
     }
   };
 
@@ -305,7 +307,7 @@ export default function SpellingPracticeScreen() {
       // If sentence is cached, speak it directly
       if (sentence) {
         console.log("[handleSentence] speaking cached sentence");
-        await speakSentence(sentence, language);
+        await speakSentence(sentence, language, currentItem.sentence_audio_url);
       } else {
         // Generate sentence from OpenAI
         console.log("[handleSentence] generating sentence for:", currentItem.item_text);
@@ -473,7 +475,7 @@ export default function SpellingPracticeScreen() {
       setFeedback({ type: "idle", text: "" });
 
       setTimeout(() => {
-        speakWord(items[nextIndex].item_text, language);
+        speakWord(items[nextIndex].item_text, language, items[nextIndex].audio_url);
         inputRef.current?.focus();
       }, 200);
     }
